@@ -32,6 +32,10 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.withKeyDown
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.hasSetTextAction
@@ -317,6 +321,12 @@ class UiFlowTest {
         runOnIdle { assertTrue(keys(Key.N, ctrl = true, shift = false, alt = false, ui, {}, {})) }
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("CHOOSE A LOCATION").fetchSemanticsNodes().isNotEmpty() }
         shot("10-picker")
+        // A dialog for the keyboard too: focus starts inside it, and Shift+Tab from there doesn't leave it for the page.
+        val inPicker = isFocused() and hasAnyAncestor(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, "Choose a location"))
+        waitUntil(timeoutMillis = 5_000) { onAllNodes(inPicker).fetchSemanticsNodes().isNotEmpty() }
+        onNode(inPicker).performKeyInput { withKeyDown(Key.ShiftLeft) { pressKey(Key.Tab) } }
+        waitForIdle()
+        onNode(inPicker).assertExists()
         onNodeWithTag("picker").performScrollToNode(hasText("All countries"))
         onNodeWithText("All countries").performClick()
         onNodeWithTag("picker").performScrollToNode(hasContentDescription("Cities and servers in Germany"))
