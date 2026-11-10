@@ -59,6 +59,8 @@ dependencies {
     implementation("io.grpc:grpc-kotlin-stub:$grpcKotlin")
     // Lite: no descriptors, which the daemon's messages (USB "descriptor" fields) would clash with, and a smaller app.
     implementation("com.google.protobuf:protobuf-javalite:$protobuf")
+    // grpc's Guava, at a release without CVE-2026-102554.
+    constraints { implementation("com.google.guava:guava:33.8.0-jre") }
     testImplementation("junit:junit:4.13.2")
     // The screens, composed headless and clicked through.
     testImplementation("org.jetbrains.compose.ui:ui-test-junit4:$cmp")

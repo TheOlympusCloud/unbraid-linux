@@ -36,6 +36,9 @@ object Keyring {
         }
     }
 
+    /** The key sits in a file beside what it seals: there was no desktop keyring when it was made. */
+    fun inFile(dir: File) = File(dir, WHERE).takeIf { it.exists() }?.readText()?.trim() == "file"
+
     private fun decode(text: String): SecretKey = SecretKeySpec(Base64.getDecoder().decode(text.trim()), "AES")
 
     /** A new empty file only this user can read or write. */

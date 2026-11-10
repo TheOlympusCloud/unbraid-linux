@@ -38,8 +38,10 @@ unbraid comes in two parts:
   app keeps its VPN; the tray (where your desktop has one), the launcher or `unbraid` brings it back.
 - **The engine** (`unbraid-engine.service`) is a system service: sing-box's own Linux daemon, built with the same
   patches as the Android engine. It needs root for the TUN interface and routes, and nothing else. The app reaches it
-  over a local socket; the engine knows which user connects, and asks polkit before one user takes over another's
-  connection.
+  over a local socket; the engine knows which user connects, and asks polkit before anyone first takes charge of it
+  (a user at the computer is let through without a question; system accounts never are) and before one user takes over
+  another's connection. It runs in a systemd sandbox: only the capabilities networking needs, the system read-only, no
+  home folders.
 
 Each TCP and UDP connection is routed by the program that owns it, which the engine looks up for every connection. An app
 is a desktop entry (what your launcher lists), resolved to the programs it starts: the program itself, the folder it is
@@ -202,6 +204,14 @@ file only you can read), and are only sent to the service they belong to. The en
 configuration to disk. A Tailscale node's keys stay in the engine's own folder, which only root can read, as with
 Tailscale's own Linux daemon. The list of installed apps is read on your computer so you can assign routes, and it never
 leaves it. The privacy policy, with every service the app talks to, is at [unbraid.app/privacy](https://unbraid.app/privacy).
+
+Routing by program is not a security boundary. A program you run can give itself another program's name, or put
+itself in a folder an app runs from, and so take that app's route, Direct included. Android tells apps apart by their
+user ID, which they can't change.
+
+On a computer with several users, the connection belongs to the user who started it. While it runs, every user's
+programs follow that user's routes, and that user's statistics list their connections too. Another user takes it over
+with an administrator's password.
 
 To report a security problem, see [SECURITY.md](SECURITY.md).
 

@@ -516,10 +516,14 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
 
             p == "about" -> Page("About & support", up) {
                 notice(ui, notice)
-                group(null, listOf(
+                group(null, listOfNotNull(
                     Item("Take the tour", "How $APP works, in eight stops", tour, icon = Icons.routes) { Chevron() },
                     Item("$WORDMARK ${BuildConfig.VERSION_NAME}", "sing-box 1.14 · GPL-3.0", icon = Icons.info),
                     Item("Privacy policy", "No analytics, no ads, no account with us", { openUrl(PRIVACY) }) { Icon(Icons.external, null, Modifier.size(20.dp), tint = Ink.dim) },
+                    // Without a desktop keyring the key is only as safe as the folder it seals: say so, where backups are thought of.
+                    Item("Your logins' key is in a file", "There was no desktop keyring, so the key that seals your setup is kept beside it, in " +
+                        "${app.unbraid.linux.Paths.data.path.replace(System.getProperty("user.home"), "~")}. A backup of that folder holds both: keep it private.",
+                        icon = Icons.vpnKey).takeIf { app.unbraid.linux.Keyring.inFile(app.unbraid.linux.Paths.data) },
                     Item("Terms of use", TERMS_URL.removePrefix("https://"), { openUrl(TERMS_URL) }) { Icon(Icons.external, null, Modifier.size(20.dp), tint = Ink.dim) },
                 ))
                 group("Credits", listOf(

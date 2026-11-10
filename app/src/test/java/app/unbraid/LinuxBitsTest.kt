@@ -45,6 +45,7 @@ class LinuxBitsTest {
         val tool = fakeTool(kept).path
         val k = Keyring.key(dir, tool)
         assertEquals("keyring", File(dir, "key.where").readText())
+        assertTrue(!Keyring.inFile(dir))
         assertTrue(!File(dir, "key").exists() && kept.length() > 0)
         assertArrayEquals(k.encoded, Keyring.key(dir, tool).encoded)
         // The keyring said no (locked, gone): fail, don't start a key the sealed files can't be read with.
@@ -141,6 +142,7 @@ class LinuxBitsTest {
         val dir = tmp.newFolder()
         val k = Keyring.key(dir, File(tmp.root, "no-such-tool").path)
         assertEquals("file", File(dir, "key.where").readText())
+        assertTrue(Keyring.inFile(dir)) // Settings says so
         assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(File(dir, "key").toPath())))
         assertArrayEquals(k.encoded, Keyring.key(dir, "no-such-tool").encoded)
     }
