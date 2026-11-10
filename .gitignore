@@ -1,0 +1,26 @@
+.gradle/
+.kotlin/
+build/
+*/build/
+dist/
+engine/out/
+local.properties
+.idea/
+*.iml
+
+# Never published: local notes and tool state
+_INTERNAL/
+.claude/
+AGENTS.md
+CLAUDE.md
+.multica/
+.playwright-mcp/
+
+# Keys and configs (synthetic test configs are listed explicitly)
+*.p12
+*.pfx
+*.pem
+*.key
+*.conf
+*.ovpn
+!app/src/test/resources/ovpn/*.ovpn
