@@ -149,7 +149,8 @@ class AppsTest {
     @Test fun launchersOnASharedInterpreterMatchNothing() {
         val python = elf(File(tmp.root, "usr/bin/python3"))
         val dir = File(tmp.root, "opt/foo").apply { elf(File(this, "helper")) }
-        listOf("exec ${python.path} ${dir.path}/main.py \"\$@\"", "cd \"\${0%/*}\" && exec python3 main.py", "LANG=C python3 -m foo")
+        listOf("exec ${python.path} ${dir.path}/main.py \"\$@\"", "cd \"\${0%/*}\" && exec python3 main.py", "LANG=C python3 -m foo",
+            "exec \"${python.path}\" main.py", "PY=${python.path}\nexec \"\$PY\" main.py")
             .forEach { assertEquals(it, Matchers(), Apps.entry("x", entry(script(File(dir, "run.sh"), it).path), path = emptyList())!!.matchers) }
         File(dir, "run.py").apply { writeText("#!/usr/bin/env python3\nimport foo\n"); setExecutable(true) }
             .let { assertEquals(Matchers(), Apps.entry("p", entry(it.path), path = emptyList())!!.matchers) }

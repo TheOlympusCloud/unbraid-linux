@@ -232,7 +232,7 @@ object Apps {
         val bang = lines.first().removePrefix("#!").trim().split(WS)
         if (bang.drop(if (File(bang[0]).name == "env") 1 else 0).firstOrNull { !it.startsWith("-") }?.let { RUNTIMES.matches(File(it).name) } == true) return true
         return lines.drop(1).filterNot { it.trimStart().startsWith("#") }.flatMap { it.split(Regex("&&|\\|\\||[;|&]")) }.any { cmd ->
-            val w = cmd.trim().split(WS).dropWhile { it in SKIP || ASSIGN.matches(it) }.firstOrNull() ?: return@any false
+            val w = cmd.trim().split(WS).dropWhile { it in SKIP || ASSIGN.matches(it) }.firstOrNull()?.trim('"', '\'') ?: return@any false
             RUNTIMES.matches(File(w).name) && ('/' !in w || w.startsWith('/') && (dir == null || !w.startsWith(dir)))
         }
     }
