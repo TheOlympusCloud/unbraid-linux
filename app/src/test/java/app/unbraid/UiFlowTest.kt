@@ -3,6 +3,8 @@ package app.unbraid
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.onNodeWithContentDescription
+import app.unbraid.stats.Stats
 import org.junit.Assert.assertTrue
 import app.unbraid.ui.Ink
 import app.unbraid.ui.Tab
@@ -122,6 +124,25 @@ class UiFlowTest {
             )
         }
         Onboarding.tourSeen()
+        // A week of recorded traffic, so Stats and the Apps table's Today column have something to show.
+        Unbraid.store.update { it.copy(prefs = it.prefs.copy(stats = true)) }
+        val routes = Unbraid.store.setup.value.routes.associateBy { it.id }
+        val exit = { id: String -> Stats.idOf(routes.getValue(id)) }
+        val written = java.util.concurrent.CountDownLatch(1)
+        Stats.post {
+            val hour = 3_600_000L
+            val now = System.currentTimeMillis()
+            for (h in 0 until 24 * 7) {
+                val at = now - h * hour
+                val w = 0.4 + 0.6 * kotlin.math.sin(h / 4.0).let { it * it } * if ((at / hour) % 24 in 1..6) 0.1 else 1.0
+                Stats.add(at, "firefox", exit("us"), null, (3e6 * w).toLong(), (60e6 * w).toLong())
+                Stats.add(at, "spotify", exit("it"), null, (1e6 * w).toLong(), (24e6 * w).toLong())
+                Stats.add(at, "chromium", exit("nl"), null, (2e6 * w).toLong(), (38e6 * w).toLong())
+            }
+            Stats.flushNow(force = true)
+            written.countDown()
+        }
+        written.await(10, java.util.concurrent.TimeUnit.SECONDS)
         val ui = Ui()
         setContent { Box(Modifier.size(1280.dp, 800.dp).testTag("app")) { App(ui) } }
         onNodeWithText("DEFAULT ROUTE").assertIsDisplayed()
@@ -185,7 +206,13 @@ class UiFlowTest {
             ui.notice.value = null // the refusal's notice, which would show on the next screens
         }
         click("Stats")
+        waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("APPS · BY DATA").fetchSemanticsNodes().isNotEmpty() }
         shot("7-stats")
+        // A tile opens its section, at a reading width; Back returns to the overview.
+        onNodeWithText("Usage").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("by provider", substring = true, ignoreCase = true).fetchSemanticsNodes().isNotEmpty() }
+        shot("7-stats-usage")
+        onNodeWithContentDescription("Back").performClick()
         click("Settings")
         shot("8-settings")
         // Settings › Desktop: login, the tray, the window and the theme. Light turns the whole window at once.
