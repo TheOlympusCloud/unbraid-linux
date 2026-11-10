@@ -354,11 +354,15 @@ class Ui : ViewModel() {
         }
     } }
 
-    /** A program without a desktop entry (a command-line tool, a game), picked by its file: routed by its own path. */
-    fun addProgram(file: File) {
-        if (!file.isFile || !file.canExecute()) { notice.value = "${file.name} isn't a program this computer can run."; return }
+    /**
+     * A program without a desktop entry (a command-line tool, an AppImage), picked by its file and routed by its own path,
+     * which becomes its key; null if it isn't a program. It stays listed once it has a route.
+     */
+    fun addProgram(file: File): String? {
+        if (!file.isFile || !file.canExecute()) { notice.value = "${file.name} isn't a program this computer can run."; return null }
         val path = file.canonicalPath
         if (_apps.value.none { it.pkg == path }) _apps.value = (_apps.value + AppInfo(path, file.name, false)).sortedBy { it.label.lowercase() }
+        return path
     }
 
     /** A config file picked in a sign-in form, read here so a rotation during a slow read doesn't lose it. */

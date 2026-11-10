@@ -11,6 +11,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -25,6 +28,8 @@ import app.unbraid.data.WgPeer
 import app.unbraid.linux.Paths
 import app.unbraid.ui.Onboarding
 import app.unbraid.ui.Ui
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.BeforeClass
 import org.junit.FixMethodOrder
 import org.junit.Rule
@@ -102,6 +107,13 @@ class UiFlowTest {
         compose.onNodeWithText("Agree and continue").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Spotify").fetchSemanticsNodes().isNotEmpty() }
         shot("6-apps")
+        // A program the launcher doesn't list is added by its file (the chooser is the desktop's own), keyed by its real path.
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Add a program"))
+        compose.onNodeWithText("Add a program").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(File("/bin/true").canonicalPath, ui.addProgram(File("/bin/true")))
+            assertNull(ui.addProgram(File(Paths.data, "unbraid_ui.properties")))
+        }
         compose.click("Stats")
         shot("7-stats")
         compose.click("Settings")

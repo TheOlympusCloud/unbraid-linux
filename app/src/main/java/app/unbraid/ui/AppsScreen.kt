@@ -158,6 +158,14 @@ fun AppsScreen(ui: Ui, disclose: () -> Unit, openPicker: (String) -> Unit) {
                 }
             }
         }
+        // Linux: a program the launcher doesn't list (a command-line tool, an AppImage) is added by its file, then routed as any app.
+        if (disclosed) item("add") {
+            val pick = rememberFilePicker("Choose a program") { f -> f?.let(ui::addProgram)?.let { p -> q = ""; filter = null; open = p; openedAs = setup.routeOf(p); land = p } }
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 12.dp).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Secondary("Add a program", pick)
+                Text("For programs your launcher doesn't list: command-line tools, AppImages, games.", style = Type.caption, color = Ink.dim)
+            }
+        }
     }
 }
 
