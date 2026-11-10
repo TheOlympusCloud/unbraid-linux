@@ -6,7 +6,7 @@ pkgdesc='Split tunneling VPN client: every app its own exit'
 arch=('x86_64')
 url='https://github.com/TheOlympusCloud/unbraid-linux'
 license=('GPL-3.0-or-later')
-depends=('jre21-openjdk' 'glibc' 'libx11' 'libxext' 'libxrender' 'libxtst' 'libxi' 'fontconfig' 'freetype2' 'libglvnd' 'zlib')
+depends=('jre21-openjdk' 'glibc' 'gcc-libs' 'libx11' 'libxext' 'libxrender' 'libxtst' 'libxi' 'fontconfig' 'freetype2' 'libglvnd' 'zlib')
 optdepends=('polkit: to take over the connection another user started'
             'libsecret: to keep the store key in the desktop keyring'
             'libnotify: for desktop notifications')

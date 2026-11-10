@@ -3,7 +3,7 @@ Version: @VERSION@-1
 Architecture: amd64
 Maintainer: Pablo Saura Sánchez <saurasanchezpablo@gmail.com>
 Installed-Size: @SIZE@
-Depends: default-jre (>= 2:1.17), libc6, libx11-6, libxext6, libxrender1, libxtst6, libxi6, libfontconfig1, libfreetype6, libgl1, zlib1g
+Depends: default-jre (>= 2:1.17), libstdc++6 (>= 13), libc6, libx11-6, libxext6, libxrender1, libxtst6, libxi6, libfontconfig1, libfreetype6, libgl1, zlib1g
 Recommends: polkitd | policykit-1, libsecret-tools, libnotify-bin
 Section: net
 Priority: optional

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds dist/unbraid_<version>-1_amd64.deb (Debian 12+, Ubuntu 24.04+ and their derivatives) and dist/arch/ (a
+# Builds dist/unbraid_<version>-1_amd64.deb (Debian 13+, Ubuntu 24.04+ and their derivatives) and dist/arch/ (a
 # PKGBUILD and the tree it packages, for Arch and its derivatives). The app runs on the distribution's own Java (17 or
 # later); the engine is built by engine/build.sh. Both packages hold the same files.
 set -euo pipefail

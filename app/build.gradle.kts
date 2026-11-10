@@ -18,7 +18,7 @@ val protobuf = "4.36.2"
 kotlin {
     jvmToolchain(21)
     compilerOptions {
-        // Runs on the distribution's Java, 17 or later (Debian 12's default is 17).
+        // Runs on the distribution's Java, 17 or later.
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
         // As the Android build compiles the same screens: Material 3 Expressive and the desktop's back handling are still marked experimental.
         optIn.addAll("androidx.compose.ui.ExperimentalComposeUiApi", "androidx.compose.material3.ExperimentalMaterial3ExpressiveApi")

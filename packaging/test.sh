@@ -4,7 +4,9 @@
 # bubblewrap gives a fake root. The window is shown on the X display $DISPLAY (an Xvfb is fine) and screenshotted into
 # dist/test/. A live tunnel needs a real machine (no TUN device here); everything up to it is checked.
 #
-# usage: packaging/test.sh [debian-13|ubuntu-24.04|archlinux]...    (default: all three)
+# Debian 12 must refuse the package: its C++ runtime is older than the app's launcher needs (GLIBCXX_3.4.32).
+#
+# usage: packaging/test.sh [debian-12|debian-13|ubuntu-24.04|archlinux]...    (default: all four)
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DIST=$ROOT/dist
@@ -89,6 +91,18 @@ debian() {
     echo "PASS $name: $(grep -h -E '^(Version|java|unbraid|engine|window|removed)' "$OUT/$name-install.log" "$OUT/$name.log" "$OUT/$name-remove.log" | tr '\n' ';')"
 }
 
+# A release too old for the launcher: apt must refuse the package over its C++ runtime, never install a broken one.
+refused() {
+    local name=$1 image=$2 root=$CACHE/$1
+    fresh "$name" "$image"
+    if ! run "$root" "apt-get -o APT::Sandbox::User=root -qq update && ! apt-get -o APT::Sandbox::User=root -y install --no-install-recommends /dist/unbraid_${VERSION}-1_amd64.deb >/tmp/apt.log 2>&1
+        grep -h 'libstdc++6 (>= 13)' /tmp/apt.log | head -1; ! dpkg -s unbraid >/dev/null 2>&1" > "$OUT/$name-install.log" 2>&1 \
+        || ! grep -q 'libstdc++6' "$OUT/$name-install.log"; then
+        echo "FAIL $name: not refused"; cat "$OUT/$name-install.log"; return 1
+    fi
+    echo "PASS $name: refused ($(head -1 "$OUT/$name-install.log" | sed 's/^ *//'))"
+}
+
 arch() {
     local name=archlinux root=$CACHE/archlinux
     fresh "$name" archlinux:latest
@@ -110,9 +124,10 @@ arch() {
     echo "PASS $name: $(grep -h -E '^(unbraid [0-9]|java|engine|window|removed)' "$OUT/$name-install.log" "$OUT/$name.log" "$OUT/$name-remove.log" | tr '\n' ';')"
 }
 
-for target in "${@:-debian-13 ubuntu-24.04 archlinux}"; do
+for target in "${@:-debian-12 debian-13 ubuntu-24.04 archlinux}"; do
     for t in $target; do
         case $t in
+            debian-12) refused debian-12 debian:12 ;;
             debian-13) debian debian-13 debian:13 ;;
             ubuntu-24.04) debian ubuntu-24.04 ubuntu:24.04 ;;
             archlinux) arch ;;

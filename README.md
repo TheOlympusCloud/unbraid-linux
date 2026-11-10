@@ -5,7 +5,7 @@ a streaming app leaves from the US, a second app from Italy and everything else 
 time. If you use Tailscale, your home network stays reachable too.
 
 This is the Linux version of [unbraid for Android](https://github.com/Quiet-Crafts/unbraid) 2.8.2: the same features,
-the same look, and the same code where Linux allows it. It runs on Debian 12 and later, Ubuntu 24.04 and later, Arch
+the same look, and the same code where Linux allows it. It runs on Debian 13 and later, Ubuntu 24.04 and later, Arch
 Linux, and the distributions built on them, on x86-64.
 
 ## What it works with
@@ -79,6 +79,9 @@ sudo systemctl enable --now unbraid-engine
 
 Turn off any other VPN that routes all traffic, including your provider's own app.
 
+Upgrading the package restarts the engine, which ends the connection (it never keeps your configuration to bring it
+back by itself): apps use your normal connection until you connect again.
+
 ## Use
 
 Open unbraid from your launcher. The first start walks you through the terms and signing in. Then give apps their exits
@@ -126,7 +129,8 @@ UNBRAID_ENGINE_BIN=$PWD/engine/out/unbraid-engine ./gradlew :app:run
 ./gradlew test              # the Android app's unit tests, the Linux ones, and the screens clicked through headless
 engine/build.sh test && ./gradlew engineTest   # the engine's patch tests; the real engine checks every compiled
                                                # config and routes three programs through their own exits
-DISPLAY=:99 packaging/test.sh   # installs, runs and removes the packages in clean Debian 13, Ubuntu 24.04 and Arch
+DISPLAY=:99 packaging/test.sh   # installs, runs and removes the packages in clean Debian 13, Ubuntu 24.04 and Arch,
+                                #   and checks that Debian 12 refuses the package
 ```
 
 `./gradlew test` saves a screenshot of each screen it visits in `app/build/screenshots`. `packaging/test.sh` needs
