@@ -2,6 +2,8 @@ package app.unbraid
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.onNodeWithContentDescription
 import app.unbraid.stats.Stats
@@ -10,6 +12,14 @@ import app.unbraid.ui.Ink
 import app.unbraid.ui.Tab
 import app.unbraid.ui.Desk
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.navigationevent.NavigationEventInput
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.platform.testTag
@@ -21,6 +31,10 @@ import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.isPopup
@@ -36,6 +50,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import app.unbraid.data.DIRECT
+import app.unbraid.data.LIMIT_OPT
 import app.unbraid.data.City
 import app.unbraid.data.Country
 import app.unbraid.data.Location
@@ -48,6 +63,7 @@ import app.unbraid.ui.Onboarding
 import app.unbraid.ui.Ui
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.BeforeClass
 import org.junit.FixMethodOrder
 import org.junit.Test
@@ -104,11 +120,26 @@ class UiFlowTest {
     @OptIn(ExperimentalTestApi::class)
     private fun desktop(block: ComposeUiTest.() -> Unit) = runDesktopComposeUiTest(1280, 800) { block() }
 
+    /** What a window does with a key nothing in it took (Compose's own input is internal): Esc becomes back, for the innermost handler. */
+    private class Esc : NavigationEventInput() {
+        fun press() = dispatchOnBackCompleted()
+        fun onKeyEvent(e: KeyEvent) = (e.type == KeyEventType.KeyDown && e.key == Key.Escape).also { if (it) press() }
+    }
+    private val esc = Esc()
+
+    /** The app as in its window: the window's keys first, then the focused node's; Esc that nobody took goes back. */
+    @Composable private fun TestWindow(ui: Ui, width: Int = 1280, height: Int = 800) {
+        val back = LocalNavigationEventDispatcherOwner.current!!.navigationEventDispatcher
+        DisposableEffect(back) { back.addInput(esc); onDispose { back.removeInput(esc) } }
+        Box(Modifier.size(width.dp, height.dp).testTag("app").onPreviewKeyEvent { windowKey(it, ui, {}, {}) }.onKeyEvent { esc.onKeyEvent(it) }) { App(ui) }
+    }
+
     private fun SemanticsNodeInteractionsProvider.click(text: String) = onAllNodesWithText(text).filterToOne(hasClickAction()).performClick()
 
     @OptIn(ExperimentalTestApi::class)
     @Test fun a_welcomeTermsAndSignIn() = desktop {
-        setContent { Box(Modifier.size(1280.dp, 800.dp).testTag("app")) { App(Ui()) } }
+        val ui = Ui()
+        setContent { TestWindow(ui) }
         onNodeWithText("EVERY APP, ITS OWN", substring = true).assertIsDisplayed()
         shot("1-welcome")
         onNodeWithText("Next").performClick()
@@ -120,6 +151,13 @@ class UiFlowTest {
         onNodeWithText("Choose your VPN").assertIsDisplayed()
         onNodeWithText("NordVPN").assertIsDisplayed()
         shot("4-sign-in")
+        // Esc in a provider's form, typed in its field: the field leaves it, and the form's Back takes it and forgets what was typed.
+        onNodeWithText("NordVPN").performClick()
+        onNode(hasSetTextAction()).performTextInput("half a token")
+        waitUntil(timeoutMillis = 5_000) { ui.form.keys.any { it.startsWith("nord:") } }
+        onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Escape) }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Choose your VPN").fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(ui.form.keys.none { it.startsWith("nord:") })
     }
 
     /** A set-up app: provider routes, an imported WireGuard server, and desktop apps on routes and Direct. */
@@ -174,7 +212,7 @@ class UiFlowTest {
             Country(228, "United States", "US", 1960, listOf(City(11, "New York"), City(12, "Los Angeles"), City(13, "Chicago"))),
         ))
         val ui = Ui()
-        setContent { Box(Modifier.size(1280.dp, 800.dp).testTag("app")) { App(ui) } }
+        setContent { TestWindow(ui) }
         onNodeWithText("DEFAULT ROUTE").assertIsDisplayed()
         // The default route's card (the exits list names it too).
         onAllNodesWithText("Netherlands").filterToOne(hasClickAction()).assertIsDisplayed()
@@ -271,7 +309,8 @@ class UiFlowTest {
         runOnIdle { assertTrue(key(Key.Slash)) }
         onNodeWithText("KEYBOARD SHORTCUTS").assertIsDisplayed()
         shot("shortcuts")
-        runOnIdle { assertTrue(key(Key.Escape, ctrl = false)) }
+        // Esc: the window's keys leave it, so it goes back, to the list on top (a dialog takes back, not keys).
+        runOnIdle { assertTrue(!key(Key.Escape, ctrl = false)); esc.press() }
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("KEYBOARD SHORTCUTS").fetchSemanticsNodes().isEmpty() }
         runOnIdle { assertTrue(!key(Key.Z)); Desk.tab.value = Tab.Settings }
         // A new route (Ctrl+N): the location picker, a dialog over the page; a country's cities open beside the list.
@@ -284,8 +323,10 @@ class UiFlowTest {
         onNodeWithContentDescription("Cities and servers in Germany").performClick()
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("in Germany", substring = true).fetchSemanticsNodes().isNotEmpty() }
         shot("10-picker-country")
-        runOnIdle { assertTrue(keys(Key.Escape, ctrl = false, shift = false, alt = false, ui, {}, {})) }
+        // Esc in the picker, where its focus stays: it closes the dialog, never the Settings page behind it.
+        onNodeWithTag("picker").performKeyInput { pressKey(Key.Escape) }
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("CHOOSE A LOCATION").fetchSemanticsNodes().isEmpty() }
+        runOnIdle { assertEquals(Tab.Settings, Desk.tab.value) }
         click("Routes")
         // Routes with the apps known: their names, and the default's share.
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Thunderbird", substring = true).fetchSemanticsNodes().isNotEmpty() }
@@ -294,19 +335,48 @@ class UiFlowTest {
         onAllNodesWithText("Netherlands").filterToOne(hasClickAction()).performMouseInput { rightClick() }
         onNodeWithText("Change location…").assertIsDisplayed()
         shot("9-route-menu")
-        onNodeWithText("Change location…").performMouseInput { moveTo(Offset(-50f, -50f)) }
+        runOnIdle { esc.press() } // Esc closes the menu
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Change location…").fetchSemanticsNodes().isEmpty() }
         onAllNodesWithText("Netherlands").filterToOne(hasClickAction()).performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Change location").fetchSemanticsNodes().isNotEmpty() }
         shot("9-route-sheet")
+        runOnIdle { esc.press() }
+        // Removing a route takes it from the saved profiles that list it too: the menu says which, as the sheet does.
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Change location").fetchSemanticsNodes().isEmpty() }
+        onAllNodesWithText("United States").filterToOne(hasClickAction()).performMouseInput { rightClick() }
+        onNodeWithText("Remove route, also from Home").assertIsDisplayed()
+        runOnIdle { esc.press() }
     }
 
     /** The smallest window: the sidebar folds to a rail of icons whose names show on hover; the pages keep their layout. */
     @OptIn(ExperimentalTestApi::class)
     @Test fun c_smallestWindow() = runDesktopComposeUiTest(880, 600) {
         Desk.tab.value = Tab.Routes
-        setContent { Box(Modifier.size(880.dp, 600.dp).testTag("app")) { App(Ui()) } }
+        setContent { TestWindow(Ui(), 880, 600) }
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("DEFAULT ROUTE").fetchSemanticsNodes().isNotEmpty() }
         onNodeWithContentDescription("Apps").assertIsDisplayed()
         assertTrue(onAllNodesWithText("Ctrl+2").fetchSemanticsNodes().isEmpty()) // no names, no keys: only icons
         shot("11-smallest-window")
+    }
+
+    /**
+     * The tray's profile switch (the set-up app's profiles): one that waits on the window opens it, an empty profile to be
+     * given a default route and a provider's limit, whose question only the window shows. One that completes doesn't.
+     */
+    @Test fun d_trayProfileSwitch() = desktop {
+        val ui = Ui()
+        setContent { TestWindow(ui) }
+        Unbraid.store.update { s -> s.copy(profiles = s.profiles + Profile("Travel", "") + Profile("Solo", "nl"), opts = s.opts + ("nord" to mapOf(LIMIT_OPT to "1"))) }
+        runOnIdle {
+            assertTrue(ui.useProfileOutside("Travel")); assertEquals("Travel", ui.viewing.value); ui.view(null)
+            ui.useProfile("Solo") // NordVPN: the Netherlands only, within 1
+            assertEquals("Solo", Unbraid.store.setup.value.profile)
+            assertTrue(ui.useProfileOutside("Home")); assertNotNull(ui.limitAsk.value) // and the United States: over 1
+        }
+        Unbraid.store.update { s -> s.copy(opts = s.opts + ("nord" to mapOf(LIMIT_OPT to "10"))) }
+        runOnIdle {
+            assertTrue(!ui.useProfileOutside("Home")); assertNull(ui.limitAsk.value)
+            assertEquals("Home", Unbraid.store.setup.value.profile)
+        }
     }
 }

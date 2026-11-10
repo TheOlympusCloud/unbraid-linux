@@ -28,17 +28,21 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.backhandler.BackHandler
-import androidx.compose.ui.backhandler.PredictiveBackHandler
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -90,10 +94,8 @@ import java.nio.channels.Channels
 import java.nio.channels.ServerSocketChannel
 import java.nio.channels.SocketChannel
 import kotlin.concurrent.thread
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.system.exitProcess
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -114,7 +116,6 @@ import app.unbraid.ui.ShortcutsDialog
 import app.unbraid.ui.Sidebar
 import app.unbraid.ui.WIDE
 import java.awt.GraphicsEnvironment
-import java.awt.Rectangle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -186,8 +187,8 @@ fun main(args: Array<String>) {
     if (!Instance.serve(::handle)) return // lost a race with another start
     // The engine's worker and statistics end with the app; the tunnels end with it too, as with the Android app.
     Runtime.getRuntime().addShutdownHook(Thread { UnbraidVpn.quit() })
-    // Shown unless started for the background; a connect that can't happen yet (setup unfinished) shows it too.
-    if ("--background" !in a && command != "connect") shown.value = true
+    // A connect that can't happen yet (setup unfinished) shows the window too.
+    if (DesktopSettings.showsAtStart("--background" in a, "--connect" in a, command, isTraySupported)) shown.value = true
     if ("--connect" in a || command == "connect") handle("connect")
     // The theme before the first frame, so the window doesn't open in the other one.
     systemDark.value = Desktop.systemDark()
@@ -221,15 +222,14 @@ private fun window() = application {
     val summary by UnbraidVpn.summary.collectAsState()
     val closeToTray by DesktopSettings.closeToTray.collectAsState()
     val quit = { thread { UnbraidVpn.quit(); exitProcess(0) }; Unit }
-    // Closing leaves unbraid in the tray, or running in the background while connected where there's no tray; off, it quits.
-    val close = { if (closeToTray && (isTraySupported || UnbraidVpn.state.value.phase != VpnState.Phase.Off)) shown.value = false else quit() }
+    val close = { if (DesktopSettings.closeHides(closeToTray, isTraySupported, UnbraidVpn.state.value.phase != VpnState.Phase.Off)) shown.value = false else quit() }
     // Hidden with nothing running and no tray to come back from (disconnected from the command line): nothing left to do.
     var wasOn by remember { mutableStateOf(false) }
-    LaunchedEffect(vpn.phase, visible, closeToTray) {
+    LaunchedEffect(vpn.phase, visible) {
         if (vpn.phase != VpnState.Phase.Off) wasOn = true
-        else if (!visible && wasOn && !(isTraySupported && closeToTray)) quit()
+        else if (DesktopSettings.quitsWhenHidden(visible, wasOn, isTraySupported)) quit()
     }
-    ReadSystemTheme()
+    ReadSystemTheme(visible)
     val icon = painterResource("unbraid.svg")
     // The tray shows the state: the logo in its colour while connected, greyed out otherwise.
     val grey = remember(icon) { Grey(icon) }
@@ -244,13 +244,16 @@ private fun window() = application {
         if (vpn.phase == VpnState.Phase.On) Item("Pause 15 minutes", onClick = { ui.pause(15) })
         if (vpn.phase == VpnState.Phase.Paused) Item("Resume", onClick = { ui.connect() })
         if (setup.profiles.isNotEmpty()) Menu("Profile") {
-            setup.profiles.forEach { p -> RadioButtonItem(p.name, selected = p.name == setup.profile, onClick = { if (p.name != setup.profile) ui.useProfile(p.name) }) }
+            // A switch that waits on the window (an empty profile, a provider's limit to answer) opens it on Routes.
+            setup.profiles.forEach { p -> RadioButtonItem(p.name, selected = p.name == setup.profile, onClick = {
+                if (p.name != setup.profile && ui.useProfileOutside(p.name)) { Desk.tab.value = Tab.Routes; shown.value = true }
+            }) }
         }
         Separator()
         Item("Open $APP", onClick = { shown.value = true })
         Item("Quit", onClick = quit)
     }
-    val placement = remember { DesktopSettings.placement()?.takeIf(::onScreen) }
+    val placement = remember { DesktopSettings.placement()?.takeIf { p -> DesktopSettings.onScreen(p, screens()) } }
     val state = rememberWindowState(
         placement = if (placement?.maximized == true) WindowPlacement.Maximized else WindowPlacement.Floating,
         position = placement?.let { WindowPosition(it.x.dp, it.y.dp) } ?: WindowPosition.PlatformDefault,
@@ -261,16 +264,14 @@ private fun window() = application {
         snapshotFlow { Triple(state.position, state.size, state.placement) }.collectLatest { (pos, size, how) ->
             delay(800)
             if (!DesktopSettings.rememberWindow.value) return@collectLatest
-            val was = DesktopSettings.placement()
-            if (how == WindowPlacement.Maximized) DesktopSettings.save((was ?: DesktopSettings.Placement(0, 0, 1280, 800, false)).copy(maximized = true))
-            else if (pos.isSpecified && how == WindowPlacement.Floating)
-                DesktopSettings.save(DesktopSettings.Placement(pos.x.value.toInt(), pos.y.value.toInt(), size.width.value.toInt(), size.height.value.toInt(), false))
+            DesktopSettings.toSave(DesktopSettings.placement(), pos.x.value.toInt().takeIf { pos.isSpecified }, pos.y.value.toInt().takeIf { pos.isSpecified },
+                size.width.value.toInt(), size.height.value.toInt(), how == WindowPlacement.Maximized, how == WindowPlacement.Floating)?.let(DesktopSettings::save)
         }
     }
     // A hidden window leaves the composition: in the background only the connection and the tray keep running.
     if (visible) Window(
         onCloseRequest = close, state = state, title = APP, icon = icon,
-        onPreviewKeyEvent = { e -> e.type == KeyEventType.KeyDown && keys(e.key, e.isCtrlPressed, e.isShiftPressed, e.isAltPressed, ui, close, quit) },
+        onPreviewKeyEvent = { windowKey(it, ui, close, quit) },
     ) {
         // Android's onResume: the installed apps can change while unbraid is in the background.
         DisposableEffect(Unit) {
@@ -291,18 +292,17 @@ private class Grey(private val p: Painter) : Painter() {
     override fun DrawScope.onDraw() = with(p) { draw(size, colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })) }
 }
 
-/** A remembered place still on one of the screens (one may have gone since). */
-private fun onScreen(p: DesktopSettings.Placement) = runCatching {
-    GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.any { it.defaultConfiguration.bounds.intersects(Rectangle(p.x, p.y, p.width, p.height)) }
-}.getOrDefault(false)
+/** The screens' bounds, to check a remembered place against. */
+private fun screens() = runCatching { GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.map { it.defaultConfiguration.bounds } }.getOrDefault(emptyList())
 
 /** The desktop's own light or dark, while the theme follows it: read at start, every 30 s and when the window comes to the front. */
 private val systemDark = MutableStateFlow<Boolean?>(null)
 
 @Composable
-private fun ReadSystemTheme() {
+private fun ReadSystemTheme(visible: Boolean) {
     val theme by DesktopSettings.theme.collectAsState()
-    LaunchedEffect(theme) { while (theme == DesktopSettings.Theme.System) { systemDark.value = withContext(Dispatchers.IO) { Desktop.systemDark() }; delay(30_000) } }
+    // Only while the window shows: in the tray nothing needs it, and coming back to the front reads it anyway.
+    LaunchedEffect(theme, visible) { while (visible && theme == DesktopSettings.Theme.System) { systemDark.value = withContext(Dispatchers.IO) { Desktop.systemDark() }; delay(30_000) } }
 }
 
 /** The theme in force: Settings › Desktop's choice, or the desktop's own. */
@@ -315,9 +315,13 @@ private fun FollowTheme() {
     SideEffect { Ink.light = light }
 }
 
+/** The window's keys, before anything in it sees them. */
+internal fun windowKey(e: KeyEvent, ui: Ui, close: () -> Unit, quit: () -> Unit) =
+    e.type == KeyEventType.KeyDown && keys(e.key, e.isCtrlPressed, e.isShiftPressed, e.isAltPressed, ui, close, quit)
+
 /** The window's keyboard shortcuts ([Desk.shortcuts]); true for a key it used. */
 internal fun keys(key: Key, ctrl: Boolean, shift: Boolean, alt: Boolean, ui: Ui, close: () -> Unit, quit: () -> Unit): Boolean {
-    if (key == Key.Escape) return run { back.value?.invoke(); back.value != null }
+    // Esc isn't handled here: Compose sends it as back, to the innermost back handler (a form's Back, then the page's).
     if (key == Key.F1) return Desk.asks.tryEmit(Desk.Ask.Shortcuts)
     if (!ctrl || alt) return false
     if (shift) return when (key) {
@@ -339,9 +343,6 @@ internal fun keys(key: Key, ctrl: Boolean, shift: Boolean, alt: Boolean, ui: Ui,
     }
     return true
 }
-
-/** What Escape does: Android's back, for the screen on top. */
-private val back = MutableStateFlow<(() -> Unit)?>(null)
 
 /** The screens, as MainActivity composes them on Android, around the desktop's sidebar ([Sidebar]). */
 @Composable
@@ -410,23 +411,11 @@ internal fun App(ui: Ui) = UnbraidTheme {
                 adding -> "add"
                 else -> tab.name
             }
-            // Seekable, so a back gesture can drive the real transition (the picker shrinking back into its route).
             val screens = remember { SeekableTransitionState(screenNow) }
             LaunchedEffect(screenNow) { screens.animateTo(screenNow) }
-            val scope = rememberCoroutineScope()
             val motion = MaterialTheme.motionScheme
-            PredictiveBackHandler(adding || picker != null) { events ->
-                try {
-                    events.collect { screens.seekTo(it.progress, targetState = tab.name) }
-                    if (adding) adding = false else picker = null
-                } catch (e: CancellationException) {
-                    scope.launch { screens.animateTo(screens.currentState) }
-                    throw e
-                }
-            }
-            BackHandler(picker == null && !adding && tab != Tab.Routes) { Desk.tab.value = Tab.Routes }
-            // Escape closes what Android's back closes; the screens' own handlers (pages, sheets) come first.
-            back.value = when { shortcuts -> { { shortcuts = false } }; adding -> { { adding = false } }; picker != null -> { { picker = null } }; else -> null }
+            // Esc (back) closes Add provider; a provider's form inside it steps back to the list first, by its own handler.
+            BackHandler(adding) { adding = false }
 
             Box(Modifier.fillMaxSize()) {
                 // While touring the app is looked at, not used: screen readers read the tour's note only.
@@ -459,11 +448,17 @@ internal fun App(ui: Ui) = UnbraidTheme {
                 }
                 // The location picker: a dialog over the page it came from; a click beside it closes it, as Esc does.
                 picker?.let { target ->
+                    // Composed after the page, so Esc (back) closes the dialog before anything behind it.
+                    BackHandler { picker = null }
+                    val inside = remember { FocusRequester() }
+                    LaunchedEffect(Unit) { runCatching { inside.requestFocus() } }
                     // Taps, not clicks: a clickable would merge the whole dialog into one node for screen readers.
                     Box(Modifier.fillMaxSize().background(Ink.scrim).pointerInput(Unit) { detectTapGestures { picker = null } }, contentAlignment = Alignment.Center) {
                         Box(
                             Modifier.padding(24.dp).widthIn(max = 1040.dp).heightIn(max = 720.dp).fillMaxSize().clip(RoundedCornerShape(28.dp)).background(Ink.ground)
-                                .border(1.dp, Ink.line, RoundedCornerShape(28.dp)).pointerInput(Unit) { detectTapGestures { } },
+                                .border(1.dp, Ink.line, RoundedCornerShape(28.dp)).pointerInput(Unit) { detectTapGestures { } }
+                                // A dialog: named for screen readers, and Tab stays inside it, never on the page behind.
+                                .semantics { paneTitle = "Choose a location" }.focusRequester(inside).focusProperties { onExit = { cancelFocusChange() } }.focusGroup(),
                         ) {
                             PickerScreen(
                                 ui, target, close = { picker = null },

@@ -236,7 +236,9 @@ fun RoutesScreen(ui: Ui, connect: () -> Unit, openPicker: (String) -> Unit) {
             if (id != setup.defaultRoute) {
                 MenuItem("Make default", { done(); ui.setDefault(id) }, Icons.star)
                 HorizontalDivider(Modifier.padding(vertical = 4.dp), color = Ink.line)
-                MenuItem("Remove route", { done(); ui.removeRoute(id) }, Icons.close, color = Ink.bad)
+                // As the sheet says: removing it takes it from the saved profiles that list it too.
+                val others = setup.saved.filter { p -> p.name != setup.profile && id in p.own }.map { it.name }
+                MenuItem(if (others.isEmpty()) "Remove route" else "Remove route, also from ${others.joinToString()}", { done(); ui.removeRoute(id) }, Icons.close, color = Ink.bad)
             }
         }
     }

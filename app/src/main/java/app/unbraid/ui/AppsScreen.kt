@@ -205,7 +205,7 @@ fun AppsScreen(ui: Ui, disclose: () -> Unit, openPicker: (String) -> Unit) {
                 if (shown.isEmpty()) item("empty") { Text("No apps match", style = Type.sub, color = Ink.dim, modifier = Modifier.padding(vertical = 16.dp, horizontal = 14.dp)) }
                 itemsIndexed(shown, key = { _, a -> a.pkg }) { i, a ->
                     Box(Modifier.then(if (i == 0) tourAnchor(TourStop.AppsList) else Modifier)) {
-                        AppTableRow(ui, a, apps, setup, selected == a.pkg, today[a.pkg], stats, draft, onClick = { selected = a.pkg; runCatching { table.requestFocus() } }, select = select, openPicker = openPicker)
+                        AppTableRow(ui, a, apps, setup, selected == a.pkg, today[a.pkg], stats, onClick = { selected = a.pkg; runCatching { table.requestFocus() } }, select = select, openPicker = openPicker)
                     }
                 }
                 item("addNote") {
@@ -231,7 +231,7 @@ private fun noteOf(a: AppInfo, setup: Setup, apps: List<AppInfo>) = a.follows(se
     ?: "Default only".takeIf { !a.routable }
 
 @Composable
-private fun AppTableRow(ui: Ui, a: AppInfo, apps: List<AppInfo>, setup: Setup, selected: Boolean, today: Long?, stats: Boolean, draft: Boolean, onClick: () -> Unit, select: (String) -> Unit, openPicker: (String) -> Unit) {
+private fun AppTableRow(ui: Ui, a: AppInfo, apps: List<AppInfo>, setup: Setup, selected: Boolean, today: Long?, stats: Boolean, onClick: () -> Unit, select: (String) -> Unit, openPicker: (String) -> Unit) {
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     var menu by remember { mutableStateOf<Offset?>(null) }
@@ -278,7 +278,7 @@ private fun AppTableRow(ui: Ui, a: AppInfo, apps: List<AppInfo>, setup: Setup, s
                     MenuItem("Direct", { done(); ui.assign(a.pkg, DIRECT) }, lead = { RouteMark(null, Ink.direct, direct = true) }, checked = current == DIRECT, keys = null)
                     HorizontalDivider(Modifier.padding(vertical = 4.dp), color = Ink.line)
                     if (explicit != null) MenuItem("Use the default route", { done(); ui.assign(a.pkg, null) }, icon = Icons.back)
-                    if (!draft) MenuItem("New route for this app…", { done(); openPicker("app:${a.pkg}") }, icon = Icons.add)
+                    MenuItem("New route for this app…", { done(); openPicker("app:${a.pkg}") }, icon = Icons.add)
                 }
             }
             Apps.programOf(a.pkg)?.let { path ->

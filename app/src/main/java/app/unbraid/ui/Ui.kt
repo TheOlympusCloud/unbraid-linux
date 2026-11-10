@@ -706,6 +706,16 @@ class Ui : ViewModel() {
     val switching = Profiles.switching
     val switchFailed = Profiles.refused
 
+    /**
+     * Switches to profile [name] from outside the window (the tray). True when the switch waits on the window: an empty
+     * profile, shown to be given a default route, or a provider's limit to answer ([limitAsk], which only it shows).
+     */
+    fun useProfileOutside(name: String): Boolean {
+        limitAsk.value = null // a question left from an earlier switch: this one replaces it
+        useProfile(name)
+        return limitAsk.value != null || viewing.value == name
+    }
+
     /** Switches to profile [name]; [then] runs once it is saved (at once, or after the user's yes to a provider's limit). */
     fun useProfile(name: String, then: () -> Unit = {}) {
         switchFailed.value = null

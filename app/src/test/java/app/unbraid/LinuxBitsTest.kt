@@ -99,6 +99,43 @@ class LinuxBitsTest {
         assertTrue(!Autostart.enabled)
     }
 
+    /** Closing hides the window only where there's a way back to it; a hidden unbraid quits only without a tray. */
+    @Test fun windowCloseAndQuit() {
+        assertTrue(DesktopSettings.closeHides(closeToTray = true, tray = true, connected = false))
+        assertTrue(DesktopSettings.closeHides(closeToTray = true, tray = false, connected = true))
+        assertTrue(!DesktopSettings.closeHides(closeToTray = true, tray = false, connected = false))
+        assertTrue(!DesktopSettings.closeHides(closeToTray = false, tray = true, connected = true))
+        // Disconnected from the tray while hidden: with a tray it stays, whatever closing the window does; without, it ends.
+        assertTrue(!DesktopSettings.quitsWhenHidden(visible = false, wasOn = true, tray = true))
+        assertTrue(DesktopSettings.quitsWhenHidden(visible = false, wasOn = true, tray = false))
+        assertTrue(!DesktopSettings.quitsWhenHidden(visible = true, wasOn = true, tray = false))
+        assertTrue(!DesktopSettings.quitsWhenHidden(visible = false, wasOn = false, tray = false))
+    }
+
+    /** The window's place: floating as it is, maximized with the size it had, nothing before the desktop places it or full screen. */
+    @Test fun windowPlacement() {
+        val was = DesktopSettings.Placement(100, 80, 1100, 700, false)
+        assertEquals(DesktopSettings.Placement(40, 30, 1280, 800, false), DesktopSettings.toSave(was, 40, 30, 1280, 800, maximized = false, floating = true))
+        assertEquals(was.copy(maximized = true), DesktopSettings.toSave(was, 0, 0, 1920, 1080, maximized = true, floating = false))
+        assertEquals(DesktopSettings.Placement(0, 0, 1280, 800, true), DesktopSettings.toSave(null, 0, 0, 1920, 1080, maximized = true, floating = false))
+        assertNull(DesktopSettings.toSave(was, null, null, 1280, 800, maximized = false, floating = true))
+        assertNull(DesktopSettings.toSave(was, 0, 0, 1920, 1080, maximized = false, floating = false))
+        // A place on a screen that has gone isn't used: the window opens where the desktop puts it.
+        val screens = listOf(java.awt.Rectangle(0, 0, 1920, 1080))
+        assertTrue(DesktopSettings.onScreen(was, screens))
+        assertTrue(!DesktopSettings.onScreen(DesktopSettings.Placement(2500, 100, 1280, 800, false), screens))
+        assertTrue(!DesktopSettings.onScreen(was, emptyList()))
+    }
+
+    /** A start shows the window unless it's for the background or to connect; without a tray, one that won't connect does. */
+    @Test fun startShowsTheWindow() {
+        assertTrue(DesktopSettings.showsAtStart(background = false, connect = false, command = "show", tray = true))
+        assertTrue(!DesktopSettings.showsAtStart(background = false, connect = false, command = "connect", tray = true))
+        assertTrue(!DesktopSettings.showsAtStart(background = true, connect = false, command = "", tray = true))
+        assertTrue(DesktopSettings.showsAtStart(background = true, connect = false, command = "", tray = false))
+        assertTrue(!DesktopSettings.showsAtStart(background = true, connect = true, command = "", tray = false))
+    }
+
     /** No keyring: a key file only this user can read. */
     @Test fun keyFileWithoutKeyring() {
         val dir = tmp.newFolder()
