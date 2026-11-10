@@ -57,6 +57,8 @@ class UiFlowTest {
             listOf("firefox" to "Firefox", "spotify" to "Spotify", "org.gnome.Terminal" to "Terminal").forEach { (id, name) ->
                 File(apps, "$id.desktop").writeText("[Desktop Entry]\nType=Application\nName=$name\nExec=/bin/true %u\n")
             }
+            // Runs as python3, like every other Python program: the engine can't tell it apart.
+            File(apps, "org.example.Tool.desktop").writeText("[Desktop Entry]\nType=Application\nName=Tool\nExec=python3 /opt/tool/tool.py\n")
             Unbraid.init()
             Onboarding.init()
         }
@@ -93,7 +95,7 @@ class UiFlowTest {
             s.copy(
                 routes = listOf(Route("nl", Location("nord", 153, "NL", "Netherlands")), Route("us", Location("nord", 228, "US", "United States"), hue = 1),
                     Route("it", Location("nord", 106, "IT", "Italy"), hue = 2), Route("lab", wg = lab, hue = 3)),
-                defaultRoute = "nl", apps = mapOf("firefox" to "us", "spotify" to "it", "org.gnome.Terminal" to DIRECT), version = VERSION,
+                defaultRoute = "nl", apps = mapOf("firefox" to "us", "spotify" to "it", "org.gnome.Terminal" to DIRECT, "org.example.Tool" to "us"), version = VERSION,
             )
         }
         Onboarding.tourSeen()
@@ -107,12 +109,23 @@ class UiFlowTest {
         compose.onNodeWithText("Agree and continue").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Spotify").fetchSemanticsNodes().isNotEmpty() }
         shot("6-apps")
+        // An app that runs as a script loses the route it could never take, and says it follows the default.
+        compose.waitUntil(10_000) { Unbraid.store.setup.value.apps["org.example.Tool"] == null }
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Tool"))
+        compose.onNodeWithText("Tool").performClick()
+        compose.onNodeWithText("Follows the default route", substring = true).assertIsDisplayed()
         // A program the launcher doesn't list is added by its file (the chooser is the desktop's own), keyed by its real path.
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Add a program"))
         compose.onNodeWithText("Add a program").assertIsDisplayed()
         compose.runOnIdle {
             assertEquals(File("/bin/true").canonicalPath, ui.addProgram(File("/bin/true")))
             assertNull(ui.addProgram(File(Paths.data, "unbraid_ui.properties")))
+            // A script runs as its interpreter, an AppImage from a mount of its own: neither can have a route of its own.
+            val script = File(Paths.data, "tool.sh").apply { writeText("#!/bin/sh\necho hi\n"); setExecutable(true) }
+            assertNull(ui.addProgram(script))
+            val appImage = File(Paths.data, "App.AppImage").apply { writeBytes(byteArrayOf(0x7f, 69, 76, 70, 2, 1, 1, 0, 65, 73, 2, 0)); setExecutable(true) }
+            assertNull(ui.addProgram(appImage))
+            assertEquals(true, ui.notice.value?.contains("AppImage"))
             ui.notice.value = null // the refusal's notice, which would show on the next screens
         }
         compose.click("Stats")

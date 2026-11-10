@@ -9,11 +9,14 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.nio.file.Files
 
 class AppsTest {
     @get:Rule val tmp = TemporaryFolder()
 
     private fun elf(f: File) = f.apply { parentFile.mkdirs(); writeBytes(byteArrayOf(0x7f, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte(), 2, 1)); setExecutable(true) }
+    /** An AppImage (type 2): an ELF file with "AI" and 2 at byte 8. */
+    private fun appImage(f: File) = f.apply { parentFile.mkdirs(); writeBytes(byteArrayOf(0x7f, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte(), 2, 1, 1, 0, 'A'.code.toByte(), 'I'.code.toByte(), 2, 0)); setExecutable(true) }
     private fun script(f: File, body: String) = f.apply { parentFile.mkdirs(); writeText("#!/bin/sh\n$body\n"); setExecutable(true) }
     private fun entry(exec: String, extra: String = "") = "[Desktop Entry]\nType=Application\nName=Thing\nName[de]=Ding\nExec=$exec\n$extra\n[Desktop Action new]\nExec=other\n"
 
@@ -35,7 +38,7 @@ class AppsTest {
         assertEquals(listOf(File(tmp.root, "opt/game").canonicalPath + "/"), m.dirs) // ".../bin" counts as its parent
     }
 
-    /** A launcher script on the PATH: the program it names, that program's folder, and the launcher's name. */
+    /** A launcher script on the PATH: the program it starts and that program's folder (the script itself runs as its shell). */
     @Test fun launcherScriptFollowsItsProgram() {
         val real = elf(File(tmp.root, "lib/firefox/firefox"))
         val bin = File(tmp.root, "bin").apply { mkdirs() }
@@ -43,7 +46,51 @@ class AppsTest {
         val m = Apps.entry("firefox", entry("env MOZ_X=1 firefox %u"), path = listOf(bin))!!.matchers
         assertEquals(listOf(real.canonicalPath), m.paths)
         assertTrue(File(real.parentFile.canonicalPath).path + "/" in m.dirs)
-        assertEquals(listOf("firefox"), m.names)
+        assertEquals(emptyList<String>(), m.names)
+    }
+
+    /**
+     * The engine knows a process by its program file: a script's is its interpreter, shared with every other script it
+     * runs. Such apps get no matcher, so they show as following the default route, never on one they wouldn't take.
+     */
+    @Test fun scriptsAndInterpretersMatchNothing() {
+        val bin = File(tmp.root, "bin").apply { mkdirs() }
+        elf(File(bin, "python3.13")).also { Files.createSymbolicLink(File(bin, "python3").toPath(), it.toPath()) }
+        elf(File(bin, "dash")).also { Files.createSymbolicLink(File(bin, "sh").toPath(), it.toPath()) }
+        script(File(bin, "yt-dlp"), "").writeText("#!/usr/bin/env python3\nimport yt_dlp\n")
+        assertEquals(Matchers(), Apps.entry("a", entry("python3 /opt/foo/foo.py"), path = listOf(bin))!!.matchers)
+        assertEquals(Matchers(), Apps.entry("b", entry("sh -c \"exec foo\""), path = listOf(bin))!!.matchers)
+        assertEquals(Matchers(), Apps.entry("c", entry("yt-dlp %U"), path = listOf(bin))!!.matchers)
+        assertEquals(Matchers(), Apps.entry("d", entry("env LANG=C python3 -m http.server"), path = listOf(bin))!!.matchers)
+        assertEquals(Matchers(), Apps.entry("e", entry("missing-program"), path = listOf(bin))!!.matchers)
+    }
+
+    /** An AppImage's programs run from a mount of their own: no matcher either. */
+    @Test fun appImagesMatchNothing() {
+        val app = appImage(File(tmp.root, "Applications/Obsidian-1.6.AppImage"))
+        assertEquals(Matchers(), Apps.entry("obsidian", entry(app.path), path = emptyList())!!.matchers)
+    }
+
+    /** A launcher script in the app's own folder (Chrome's, VS Code's) keeps that folder, where its programs live. */
+    @Test fun launcherKeepsTheFolderItsProgramsLiveIn() {
+        val dir = File(tmp.root, "opt/google/chrome")
+        elf(File(dir, "chrome"))
+        val launcher = script(File(dir, "google-chrome"), "HERE=\"\${0%/*}\"\nexec -a \"\$0\" \"\$HERE/chrome\" \"\$@\"")
+        assertEquals(Matchers(dirs = listOf(dir.canonicalPath + "/")), Apps.entry("chrome", entry(launcher.path), path = emptyList())!!.matchers)
+        // A script folder with only scripts (and interpreters) in it holds nothing the engine could match.
+        val py = File(tmp.root, "opt/tool")
+        elf(File(py, "bin/python3"))
+        val tool = script(File(py, "tool"), "exec python3 -m tool")
+        assertEquals(Matchers(), Apps.entry("tool", entry(tool.path), path = emptyList())!!.matchers)
+    }
+
+    /** Add a program says why it can't route a script, an interpreter or an AppImage, and takes an ordinary program. */
+    @Test fun unroutableProgramsSayWhy() {
+        assertNull(Apps.unroutable(elf(File(tmp.root, "opt/game/game"))))
+        assertTrue(Apps.unroutable(script(File(tmp.root, "bin/tool"), "echo"))!!.contains("is a script"))
+        assertTrue(Apps.unroutable(elf(File(tmp.root, "bin/python3.12")))!!.contains("runs other programs' scripts"))
+        assertTrue(Apps.unroutable(appImage(File(tmp.root, "App.AppImage")))!!.contains("is an AppImage"))
+        assertTrue(Apps.unroutable(File(tmp.root, "nothing"))!!.contains("isn't a program"))
     }
 
     @Test fun snapAndFlatpak() {

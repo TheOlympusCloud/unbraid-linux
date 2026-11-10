@@ -44,6 +44,10 @@ is a desktop entry (what your launcher lists), resolved to the programs it start
 installed in (so its helpers follow it), Flatpak apps by their command and Snaps by their folder. A program without a
 desktop entry, such as a command-line tool, can be added by its file.
 
+The engine knows a process by its program file. A script's is the interpreter that runs it (Python, a shell), which
+other scripts share, and an AppImage runs its programs from a new folder each time. Such apps can't be told apart, so
+unbraid shows them following the default route rather than offering them one of their own.
+
 DNS is answered with fake addresses and looked up again on the exit the app really uses, so a site sees the country you
 picked for that app. Linux can't leave single apps out of a tunnel, so Direct apps, like your local network, pass
 through the engine and leave directly. Nothing goes around the engine while it runs, and the lookups your router would
@@ -130,7 +134,8 @@ bubblewrap and an X display (an `Xvfb :99` is fine), and no root.
 
 ## Differences from the Android app
 
-- Apps are desktop entries and programs, matched by the program that runs (see above), not Android packages.
+- Apps are desktop entries and programs, matched by the program that runs (see above), not Android packages. Scripts and
+  AppImages follow the default route.
 - Direct apps pass through the engine and leave directly; Android leaves them out of the VPN.
 - There are no quick-settings tiles or home-screen widget: the launcher's actions, the tray and the command line do
   their jobs.

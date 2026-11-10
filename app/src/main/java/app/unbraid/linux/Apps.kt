@@ -1,5 +1,6 @@
 package app.unbraid.linux
 
+import app.unbraid.APP
 import app.unbraid.vpn.Matchers
 import java.io.File
 
@@ -107,7 +108,11 @@ object Apps {
         return args.filterNot { Regex("%[a-zA-Z]").matches(it) }.map { it.replace("%%", "%") }
     }
 
-    /** The processes [argv] starts, as far as can be known without running it. */
+    /**
+     * The processes [argv] starts, as far as the engine can tell them apart: it knows a process by its program file (its
+     * /proc exe), which for a script is its interpreter and for an AppImage a program in a mount of its own. Those give
+     * no matcher, so the app is shown following the default route rather than on one it would never take.
+     */
     internal fun resolve(argv: List<String>, path: List<File>): Matchers {
         // "env VAR=x program …" runs the program.
         val a = if (File(argv[0]).name == "env") argv.drop(1).dropWhile { '=' in it && !it.startsWith('/') } else argv
@@ -115,13 +120,38 @@ object Apps {
         // A snap runs from /snap/<name>/<revision>/…, whichever revision is installed.
         if (prog.startsWith("/snap/bin/")) return Matchers(dirs = listOf("/snap/${File(prog).name.substringBefore('.')}/"))
         if (prog == "snap" && a.getOrNull(1) == "run") a.getOrNull(2)?.let { return Matchers(dirs = listOf("/snap/${it.substringBefore('.')}/")) }
-        val exe = which(prog, path) ?: return Matchers(names = listOf(File(prog).name))
-        val real = exe.canonicalFile
-        if (elf(real)) return Matchers(paths = listOf(real.path), dirs = listOfNotNull(installDir(real.parentFile)))
-        // A launcher script: the programs it names in its own folders, its folder, and its name (often the program's too).
-        val targets = scriptTargets(real)
-        return Matchers(paths = targets.map { it.path }, dirs = (targets.mapNotNull { installDir(it.parentFile) } + listOfNotNull(installDir(real.parentFile))).distinct(), names = listOf(exe.name))
+        val real = which(prog, path)?.canonicalFile ?: return Matchers()
+        if (elf(real)) return program(real)
+        // A launcher script: the programs it starts by path, and the folder it is installed in when its programs live there.
+        val targets = scriptTargets(real).filter { program(it) != Matchers() }
+        val dir = installDir(real.parentFile)?.takeIf { holdsPrograms(File(it)) }
+        return Matchers(paths = targets.map { it.path }, dirs = (targets.mapNotNull { installDir(it.parentFile) } + listOfNotNull(dir)).distinct())
     }
+
+    /** A program file as the engine knows it: none for an interpreter (every script it runs would match) or an AppImage. */
+    private fun program(f: File) = if (interpreter(f) || appImage(f)) Matchers() else Matchers(paths = listOf(f.path), dirs = listOfNotNull(installDir(f.parentFile)))
+
+    /** Why the engine couldn't tell [f]'s traffic apart from other programs', or null for a program file it can. */
+    fun unroutable(f: File): String? {
+        val real = runCatching { f.canonicalFile }.getOrNull()?.takeIf { it.isFile && it.canExecute() } ?: return "${f.name} isn't a program this computer can run."
+        return when {
+            appImage(real) -> "${f.name} is an AppImage: its programs run from a new folder each time, so $APP can't recognize them."
+            !elf(real) -> "${f.name} is a script: its traffic comes from the interpreter that runs it, which other programs share."
+            interpreter(real) -> "${f.name} runs other programs' scripts too: routing it would move them all."
+            else -> null
+        }
+    }
+
+    /** Interpreters, whose processes are every script they run. */
+    private val INTERPRETERS = Regex("(python|pypy|perl|ruby|lua|luajit|php|tclsh|wish|node|nodejs|deno|bun|java|sh|bash|dash|zsh|fish|ksh|mksh|tcsh|csh|busybox|gjs|Rscript|julia|guile|gawk|mawk|awk)[0-9.]*")
+
+    private fun interpreter(f: File) = INTERPRETERS.matches(f.name)
+
+    /** An AppImage (types 1 and 2): an ELF file marked "AI" and its type at byte 8. */
+    private fun appImage(f: File) = head(f, 11).let { it.size == 11 && it[8] == 'A'.code.toByte() && it[9] == 'I'.code.toByte() && it[10] in 1..2 }
+
+    /** A folder with an app's own programs in it (or in its bin/), which a launcher script there starts. */
+    private fun holdsPrograms(d: File) = (d.listFiles().orEmpty().asList() + File(d, "bin").listFiles().orEmpty()).take(500).any { it.isFile && it.canExecute() && elf(it) && program(it) != Matchers() }
 
     /** [prog] as the shell would find it on [path]. */
     internal fun which(prog: String, path: List<File>): File? =
@@ -129,7 +159,9 @@ object Apps {
 
     fun searchPath() = ((env["PATH"] ?: "").split(':') + listOf("/usr/local/bin", "/usr/bin", "/bin", "/usr/games", "/snap/bin")).filter { it.isNotEmpty() }.distinct().map(::File)
 
-    private fun elf(f: File) = runCatching { f.inputStream().use { s -> ByteArray(4).also { s.read(it) } }.contentEquals(byteArrayOf(0x7f, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte())) }.getOrDefault(false)
+    private fun elf(f: File) = head(f, 4).contentEquals(byteArrayOf(0x7f, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte()))
+
+    private fun head(f: File, n: Int): ByteArray = runCatching { f.inputStream().use { it.readNBytes(n) } }.getOrDefault(ByteArray(0))
 
     /** Programs a shell script starts by absolute path, outside the shared system folders (where /bin/sh and friends live). */
     private fun scriptTargets(f: File): List<File> {
