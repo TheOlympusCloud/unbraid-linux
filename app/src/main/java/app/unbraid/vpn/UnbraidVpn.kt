@@ -166,7 +166,8 @@ object UnbraidVpn {
     /** The engine reports its service running; kept by [watchEngine]. */
     @Volatile private var engineUp = false
     /** This process, as the engine sees it ([Linux]): its own connections leave directly, as Android leaves the app out. */
-    private val self: String? = ProcessHandle.current().info().command().orElse(null)
+    // Only the app's own launcher: run from source, the process is Java, and every Java program would leave directly.
+    private val self: String? = ProcessHandle.current().info().command().orElse(null)?.takeIf { Apps.unroutable(java.io.File(it)) == null }
     /** What the tray and the command line show of the running connection. */
     val summary = MutableStateFlow("")
 

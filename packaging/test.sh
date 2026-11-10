@@ -54,8 +54,13 @@ check() {
         echo "engine: listening"
         mkdir -p /tmp/run && chmod 700 /tmp/run
         XDG_RUNTIME_DIR=/tmp/run timeout 40 unbraid >/tmp/app.log 2>&1 &
+        app=$!
         for _ in $(seq 60); do [ -S /tmp/run/unbraid/app.sock ] && break; sleep 0.5; done
         test -S /tmp/run/unbraid/app.sock || { cat /tmp/app.log; exit 1; }
+        # The engine sends the app itself direct by its program: that must be its launcher, never the Java all Java programs share.
+        exe=$(readlink "/proc/$(cut -d" " -f1 "/proc/$app/task/$app/children")/exe")
+        [ "$exe" = /usr/lib/unbraid/bin/unbraid ] || { echo "the app runs as $exe"; exit 1; }
+        echo "app: $exe"
         sleep 8
         XDG_RUNTIME_DIR=/tmp/run unbraid status
         echo "window: up"
@@ -88,7 +93,7 @@ debian() {
     check "$name"
     run "$root" "apt-get -o APT::Sandbox::User=root -y -qq purge unbraid >/dev/null && ! test -e /usr/lib/unbraid && ! test -e /usr/bin/unbraid && ! test -e /var/lib/unbraid-engine && ! dpkg -s unbraid >/dev/null 2>&1 && echo removed" > "$OUT/$name-remove.log" 2>&1 \
         || { cat "$OUT/$name-remove.log"; return 1; }
-    echo "PASS $name: $(grep -h -E '^(Version|java|unbraid|engine|window|removed)' "$OUT/$name-install.log" "$OUT/$name.log" "$OUT/$name-remove.log" | tr '\n' ';')"
+    echo "PASS $name: $(grep -h -E '^(Version|java|unbraid|engine|app|window|removed)' "$OUT/$name-install.log" "$OUT/$name.log" "$OUT/$name-remove.log" | tr '\n' ';')"
 }
 
 # A release too old for the launcher: apt must refuse the package over its C++ runtime, never install a broken one.
@@ -121,7 +126,7 @@ arch() {
     check "$name"
     run "$root" "pacman -R --noconfirm unbraid >/dev/null 2>&1 && ! test -e /usr/lib/unbraid && ! test -e /usr/bin/unbraid && ! pacman -Q unbraid >/dev/null 2>&1 && echo removed" > "$OUT/$name-remove.log" 2>&1 \
         || { cat "$OUT/$name-remove.log"; return 1; }
-    echo "PASS $name: $(grep -h -E '^(unbraid [0-9]|java|engine|window|removed)' "$OUT/$name-install.log" "$OUT/$name.log" "$OUT/$name-remove.log" | tr '\n' ';')"
+    echo "PASS $name: $(grep -h -E '^(unbraid [0-9]|java|engine|app|window|removed)' "$OUT/$name-install.log" "$OUT/$name.log" "$OUT/$name-remove.log" | tr '\n' ';')"
 }
 
 for target in "${@:-debian-12 debian-13 ubuntu-24.04 archlinux}"; do
