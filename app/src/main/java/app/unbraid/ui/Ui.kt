@@ -368,8 +368,10 @@ class Ui : ViewModel() {
         val now = store.setup.value
         // A route that loses to another of its group's is said, never dropped silently.
         val label = listed.associate { it.pkg to it.label }
-        val lost = (listOf(now.apps) + now.profiles.map { it.apps }).flatMap { a -> a.keys.filter { it in installed && it !in keep(a) }.map { k -> k to groups.first { k in it }.first { it in a } } }.distinct()
-        if (lost.isNotEmpty()) warn(lost.joinToString(" ") { (k, l) -> "${label[k]} runs as ${label[l]}, so it takes ${label[l]}'s route now." })
+        val lost = (listOf(null to now.apps) + now.profiles.map { it.name to it.apps }).flatMap { (profile, a) ->
+            a.keys.filter { it in installed && it !in keep(a) }.map { k -> Triple(k, groups.first { k in it }.first { it in a }, profile) }
+        }
+        if (lost.isNotEmpty()) warn(lost.joinToString(" ") { (k, l, profile) -> "${label[k]} runs as ${label[l]}, so it takes ${label[l]}'s route now${profile?.let { " in $it" }.orEmpty()}." })
         val gone = { s: Setup -> s.apps != keep(s.apps) || s.profiles.any { p -> p.apps != keep(p.apps) } }
         if (gone(now)) store.edit { s -> s.copy(apps = keep(s.apps), profiles = s.profiles.map { p -> p.copy(apps = keep(p.apps)) }) }
     } }

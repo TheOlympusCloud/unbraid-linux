@@ -78,6 +78,8 @@ object Apps {
      */
     fun matchers(key: String, routed: Collection<String> = emptyList()): Matchers {
         if (key.startsWith('/')) {
+            // Before any scan (a login start), the apps aren't known yet: read them, so the app's folder counts too.
+            if (scannedAt == 0L) runCatching { scan() }
             val app = cache.firstOrNull { matches(it.matchers, key) } ?: return Matchers(paths = listOf(key))
             return if (app.group.ifEmpty { listOf(app.key) }.none { it in routed }) app.matchers else Matchers()
         }

@@ -67,15 +67,24 @@ class UiFlowTest {
         private val key = "5p4RkybdRU5uaDi90eu4KZPTFif0lKCg4Qp6t1c4F30="
 
         /** One app per test JVM, as on Android: the store and onboarding are the process's. Fake desktop apps to route. */
+        /** The apps' stand-in programs: an /opt of their own, which the screenshots show (never this computer's paths). */
+        val programs = File(System.getProperty("java.io.tmpdir"), "unbraid-ui-test/opt")
+
         @BeforeClass @JvmStatic fun app() {
             Paths.data.listFiles()?.forEach { it.deleteRecursively() }
             val apps = File(Paths.data.parentFile, "applications").apply { deleteRecursively(); mkdirs() }
             // Each app its own program in its own folder (stand-ins, never run): apps on one program share its route.
-            val programs = File(Paths.data.parentFile, "programs").apply { deleteRecursively() }
+            programs.deleteRecursively()
             fun program(id: String) = File(programs, "$id/$id").apply { parentFile.mkdirs(); writeBytes(byteArrayOf(0x7f, 69, 76, 70, 2, 1)); setExecutable(true) }
-            listOf("firefox" to "Firefox", "spotify" to "Spotify", "org.gnome.Terminal" to "Terminal").forEach { (id, name) ->
+            listOf("firefox" to "Firefox", "spotify" to "Spotify", "org.gnome.Terminal" to "Terminal", "chromium" to "Chromium", "thunderbird" to "Thunderbird",
+                "signal-desktop" to "Signal", "discord" to "Discord", "code" to "Visual Studio Code", "libreoffice-startcenter" to "LibreOffice", "org.gimp.GIMP" to "GIMP").forEach { (id, name) ->
                 File(apps, "$id.desktop").writeText("[Desktop Entry]\nType=Application\nName=$name\nExec=${program(id).path} %u\n")
             }
+            // Runs as LibreOffice: Writer is the same program.
+            File(apps, "libreoffice-writer.desktop").writeText("[Desktop Entry]\nType=Application\nName=LibreOffice Writer\nExec=${File(programs, "libreoffice-startcenter/libreoffice-startcenter").path} --writer %U\n")
+            // A launcher script that starts its program through a variable it can't see into: the default route only.
+            val steam = File(programs, "steam/steam").apply { parentFile.mkdirs(); writeText("#!/bin/sh\nexec \"\$HOME/.steam/steam.sh\" \"\$@\"\n"); setExecutable(true) }
+            File(apps, "steam.desktop").writeText("[Desktop Entry]\nType=Application\nName=Steam\nExec=${steam.path} %U\n")
             // Runs as Firefox: it takes Firefox's route.
             File(apps, "firefox-private.desktop").writeText("[Desktop Entry]\nType=Application\nName=Private Browsing\nExec=${File(programs, "firefox/firefox").path} --private-window %u\n")
             // Runs as python3, like every other Python program: the engine can't tell it apart.
@@ -121,9 +130,11 @@ class UiFlowTest {
             s.copy(
                 routes = listOf(Route("nl", Location("nord", 153, "NL", "Netherlands")), Route("us", Location("nord", 228, "US", "United States"), hue = 1),
                     Route("it", Location("nord", 106, "IT", "Italy"), hue = 2), Route("lab", wg = lab, hue = 3)),
-                defaultRoute = "nl", apps = mapOf("firefox" to "us", "spotify" to "it", "org.gnome.Terminal" to DIRECT, "org.example.Tool" to "us", "firefox-private" to "it"), version = VERSION,
+                defaultRoute = "nl", apps = mapOf("firefox" to "us", "spotify" to "it", "org.gnome.Terminal" to DIRECT, "org.example.Tool" to "us", "firefox-private" to "it",
+                    "thunderbird" to "us", "discord" to "it", "code" to DIRECT), version = VERSION,
                 // Here Private Browsing is the one of its group with a route: it leads, and keeps it.
-                profiles = listOf(Profile("Work", "nl", mapOf("firefox-private" to "it"))),
+                // In Home both have one: the first keeps it, and the notice names the profile.
+                profiles = listOf(Profile("Work", "nl", mapOf("firefox-private" to "it")), Profile("Home", "nl", mapOf("firefox" to "us", "firefox-private" to "it"))),
             )
         }
         Onboarding.tourSeen()
@@ -141,6 +152,9 @@ class UiFlowTest {
                 Stats.add(at, "firefox", exit("us"), null, (3e6 * w).toLong(), (60e6 * w).toLong())
                 Stats.add(at, "spotify", exit("it"), null, (1e6 * w).toLong(), (24e6 * w).toLong())
                 Stats.add(at, "chromium", exit("nl"), null, (2e6 * w).toLong(), (38e6 * w).toLong())
+                Stats.add(at, "thunderbird", exit("us"), null, (1e6 * w).toLong(), (6e6 * w).toLong())
+                Stats.add(at, "discord", exit("it"), null, (2e6 * w).toLong(), (9e6 * w).toLong())
+                Stats.add(at, "signal-desktop", exit("nl"), null, (1e6 * w).toLong(), (3e6 * w).toLong())
             }
             Stats.flushNow(force = true)
             written.countDown()
@@ -172,8 +186,10 @@ class UiFlowTest {
         // Two of a group with routes (Firefox's own and its private window's): the first keeps its route, and the other's is said.
         waitUntil(timeoutMillis = 10_000) { Unbraid.store.setup.value.apps["firefox-private"] == null }
         assertEquals(true, ui.notice.value?.contains("Private Browsing runs as Firefox, so it takes Firefox's route now."))
+        assertEquals(true, ui.notice.value?.contains("Private Browsing runs as Firefox, so it takes Firefox's route now in Home."))
         ui.notice.value = null
-        assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.single().apps)
+        assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.first { it.name == "Work" }.apps)
+        assertEquals(mapOf("firefox" to "us"), Unbraid.store.setup.value.profiles.first { it.name == "Home" }.apps)
         shot("6-apps")
         // An app that runs as a script loses the route it could never take, and its panel says it follows the default.
         waitUntil(timeoutMillis = 10_000) { Unbraid.store.setup.value.apps["org.example.Tool"] == null }
@@ -181,12 +197,12 @@ class UiFlowTest {
         onNodeWithText("Tool").performClick()
         onNodeWithText("Follows the default route", substring = true).assertIsDisplayed()
         // A new entry for Firefox's program, whose label sorts first, doesn't take Firefox's route: it takes the route too.
-        File(Paths.data.parentFile, "applications/alacarte-made-1.desktop").writeText("[Desktop Entry]\nType=Application\nName=Browser\nExec=${File(Paths.data.parentFile, "programs/firefox/firefox").path}\n")
+        File(Paths.data.parentFile, "applications/alacarte-made-1.desktop").writeText("[Desktop Entry]\nType=Application\nName=Browser\nExec=${File(programs, "firefox/firefox").path}\n")
         ui.refreshApps()
         waitUntil(timeoutMillis = 10_000) { ui.apps.value.any { it.pkg == "alacarte-made-1" } }
         waitForIdle()
         assertEquals("us", Unbraid.store.setup.value.apps["firefox"])
-        assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.single().apps)
+        assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.first { it.name == "Work" }.apps)
         onNodeWithTag("apps").performScrollToNode(hasText("Browser"))
         onNodeWithText("Browser").performClick()
         onNodeWithText("Takes Firefox's route", substring = true).assertIsDisplayed()
@@ -217,7 +233,7 @@ class UiFlowTest {
             assertNull(ui.addProgram(appImage))
             assertEquals(true, ui.notice.value?.contains("AppImage"))
             // A program an app runs takes that app's route: it can't have one of its own.
-            assertNull(ui.addProgram(File(Paths.data.parentFile, "programs/spotify/spotify")))
+            assertNull(ui.addProgram(File(programs, "spotify/spotify")))
             assertEquals(true, ui.notice.value?.contains("part of Spotify"))
             ui.notice.value = null // the refusal's notice, which would show on the next screens
         }
@@ -271,6 +287,9 @@ class UiFlowTest {
         runOnIdle { assertTrue(keys(Key.Escape, ctrl = false, shift = false, alt = false, ui, {}, {})) }
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("CHOOSE A LOCATION").fetchSemanticsNodes().isEmpty() }
         click("Routes")
+        // Routes with the apps known: their names, and the default's share.
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Thunderbird", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        shot("5-routes-set-up")
         // A right click on a route offers what its sheet does.
         onAllNodesWithText("Netherlands").filterToOne(hasClickAction()).performMouseInput { rightClick() }
         onNodeWithText("Change location…").assertIsDisplayed()
