@@ -15,7 +15,11 @@ val grpc = "1.85.1"
 val grpcKotlin = "1.5.0"
 val protobuf = "4.36.2"
 
-kotlin { jvmToolchain(21) }
+kotlin {
+    jvmToolchain(21)
+    // As the Android build compiles the same screens: Material 3 Expressive and the desktop's back handling are still marked experimental.
+    compilerOptions.optIn.addAll("androidx.compose.ui.ExperimentalComposeUiApi", "androidx.compose.material3.ExperimentalMaterial3ExpressiveApi")
+}
 
 // The Android build's BuildConfig, for the code that reads it.
 val buildConfig by tasks.registering {
@@ -34,6 +38,7 @@ sourceSets.main { kotlin.srcDir(buildConfig) }
 dependencies {
     implementation("org.jetbrains.compose.desktop:desktop-jvm-linux-x64:$cmp")
     implementation("org.jetbrains.compose.material3:material3:$cmp")
+    implementation("org.jetbrains.compose.ui:ui-backhandler:$cmp")
     implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")

@@ -716,6 +716,18 @@ object UnbraidVpn {
         state.value = VpnState(VpnState.Phase.Paused, pausedUntil = until, pausedAt = System.currentTimeMillis())
     }
 
+    /**
+     * Deletes the Tailscale node the engine keeps for this user (on Linux its state is the engine's, in its root-only
+     * folder), as Android deletes the app's sealed copy; only while stopped ([whileStopped]). An engine that never ran
+     * for this user has none to delete.
+     */
+    fun forgetTailscale(): Boolean {
+        val e = runCatching { Engine.forget() }.exceptionOrNull()
+        val gone = e == null || (e as? io.grpc.StatusRuntimeException)?.status?.code == io.grpc.Status.Code.UNKNOWN
+        if (gone) store.tsStored = false else Log.w(TAG, "tailscale: node not deleted: ${Redact.log(e!!)}")
+        return gone
+    }
+
     /** Quitting the app ends its connection, as Android ends the VPN with the app. */
     fun quit() = kotlinx.coroutines.runBlocking { withTimeoutOrNull(10_000) { lock.withLock { if (state.value.phase != VpnState.Phase.Off) teardown(null) } } }
 

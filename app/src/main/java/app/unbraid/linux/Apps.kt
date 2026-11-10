@@ -46,6 +46,9 @@ object Apps {
         return (cache.firstOrNull { it.key == key } ?: if (fresh) null else scan().firstOrNull { it.key == key })?.matchers ?: Matchers()
     }
 
+    /** [key]'s icon file, from the last scan. */
+    fun iconFile(key: String): File? = cache.firstOrNull { it.key == key }?.icon
+
     /** The app [processPath] belongs to, for statistics: one of [routed] first, then any entry, else the path itself. */
     fun keyOf(processPath: String, routed: Collection<String>): String {
         if (processPath.isEmpty()) return "?"
