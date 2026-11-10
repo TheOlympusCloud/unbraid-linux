@@ -156,7 +156,7 @@ private fun View.byProvider(): List<Pair<String, Long>> =
 
 internal fun bytesText(b: Long) = bytes(b).let { "${it.first} ${it.second}" }
 /** A live speed: kbps under 1 Mbps so small transfers don't read as zero. */
-private fun rate(bps: Long): Pair<String, String> = when {
+internal fun rate(bps: Long): Pair<String, String> = when {
     bps >= 1_000_000 -> mbps(bps) to "Mbps"
     bps >= 100 -> String.format(Locale.US, "%.0f", bps / 1e3).let { if (it == "0") "0.1" else it } to "kbps"
     else -> "0" to "kbps"

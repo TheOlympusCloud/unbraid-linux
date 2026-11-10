@@ -114,7 +114,7 @@ fun Sidebar(ui: Ui, tab: Tab, wide: Boolean, onTab: (Tab) -> Unit, connect: () -
                 Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("PROFILE", style = Type.overline, color = Ink.dim, modifier = Modifier.weight(1f))
                     Text(if (setup.profiles.isEmpty()) "Save…" else "Manage", style = Type.caption, color = Ink.accent,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).tap({ Desk.tab.value = Tab.Routes; Desk.asks.tryEmit(Desk.Ask.ManageProfiles) }, role = Role.Button)
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).tap({ Desk.tab.value = Tab.Routes; Desk.pending.value = Desk.Ask.ManageProfiles }, role = Role.Button)
                             .pointerHoverIcon(PointerIcon.Hand).padding(horizontal = 6.dp, vertical = 2.dp))
                 }
                 if (setup.profiles.isEmpty()) Text("Save this setup to switch back to it in one click.", style = Type.caption, color = Ink.faint, modifier = Modifier.padding(horizontal = 10.dp))

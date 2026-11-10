@@ -107,37 +107,6 @@ fun Manage(onClick: () -> Unit) = Row(
     Icon(Icons.chevron, null, Modifier.size(20.dp), tint = Ink.dim)
 }
 
-/** Scrolling profile segments, keeping the selected profile in view. */
-@Composable
-fun ProfileStrip(setup: Setup, switching: String?, viewing: String?, onView: (String) -> Unit) {
-    val names = setup.profiles.map { it.name }
-    val inUse = switching ?: setup.profile
-    val selected = viewing ?: inUse
-    val list = rememberLazyListState()
-    val clear = with(LocalDensity.current) { 28.dp.toPx() } // clear of the fade, with a neighbour peeking
-    LaunchedEffect(selected, names) {
-        val i = names.indexOf(selected).takeIf { it >= 0 } ?: return@LaunchedEffect
-        if (list.layoutInfo.visibleItemsInfo.none { it.index == i }) list.scrollToItem(i)
-        val seen = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == i } ?: return@LaunchedEffect
-        val end = list.layoutInfo.viewportEndOffset - clear
-        val by = when {
-            seen.offset < clear && i > 0 -> seen.offset - clear
-            seen.offset + seen.size > end && i < names.lastIndex -> seen.offset + seen.size - end
-            else -> 0f
-        }
-        if (by != 0f) list.animateScrollBy(by)
-    }
-    Box(Modifier.fillMaxWidth().padding(horizontal = Gutter).height(48.dp)) {
-        LazyRow(Modifier.fillMaxSize().selectableGroup(), state = list, horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-            itemsIndexed(names, key = { _, n -> n }) { i, n -> Segment(n, i, names.size, shown = n == selected, inUse = n == inUse, busy = n == switching) { onView(n) } }
-        }
-        // A fade where more profiles are hidden.
-        val fade = { start: Boolean -> Brush.horizontalGradient(if (start) listOf(Ink.ground, Color.Transparent) else listOf(Color.Transparent, Ink.ground)) }
-        if (list.canScrollBackward) Box(Modifier.align(Alignment.CenterStart).width(20.dp).fillMaxHeight().background(fade(true)))
-        if (list.canScrollForward) Box(Modifier.align(Alignment.CenterEnd).width(20.dp).fillMaxHeight().background(fade(false)))
-    }
-}
-
 /**
  * One profile; corners follow its place in the group, and state is colour, never shape. The one shown is tinted; the
  * one in use carries the check (and a loader while it is being switched to).

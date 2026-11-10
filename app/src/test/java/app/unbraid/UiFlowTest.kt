@@ -3,6 +3,7 @@ package app.unbraid
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -17,6 +18,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.rightClick
+import androidx.compose.ui.test.moveTo
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.runDesktopComposeUiTest
@@ -118,7 +120,8 @@ class UiFlowTest {
         val ui = Ui()
         setContent { Box(Modifier.size(1280.dp, 800.dp).testTag("app")) { App(ui) } }
         onNodeWithText("DEFAULT ROUTE").assertIsDisplayed()
-        onNodeWithText("Netherlands").assertIsDisplayed()
+        // The default route's card (the exits list names it too).
+        onAllNodesWithText("Netherlands").filterToOne(hasClickAction()).assertIsDisplayed()
         shot("5-routes")
         click("Apps")
         onNodeWithText("Show my apps").performClick()
@@ -181,7 +184,12 @@ class UiFlowTest {
         click("Settings")
         shot("8-settings")
         click("Routes")
-        onNodeWithText("Netherlands").performClick()
+        // A right click on a route offers what its sheet does.
+        onAllNodesWithText("Netherlands").filterToOne(hasClickAction()).performMouseInput { rightClick() }
+        onNodeWithText("Change location…").assertIsDisplayed()
+        shot("9-route-menu")
+        onNodeWithText("Change location…").performMouseInput { moveTo(Offset(-50f, -50f)) }
+        onAllNodesWithText("Netherlands").filterToOne(hasClickAction()).performClick()
         shot("9-route-sheet")
     }
 }
