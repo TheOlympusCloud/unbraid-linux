@@ -51,6 +51,9 @@ object Desktop {
     /** The clipboard's text, if any. */
     fun clipText(): String? = runCatching { Toolkit.getDefaultToolkit().systemClipboard.getData(DataFlavor.stringFlavor) as String }.getOrNull()
 
+    /** Puts [text] on the clipboard. */
+    fun copy(text: String) { runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null) } }
+
     /** Empties the clipboard (a secret must not stay there for the next app to read). */
     fun clearClip() { runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(""), null) } }
 

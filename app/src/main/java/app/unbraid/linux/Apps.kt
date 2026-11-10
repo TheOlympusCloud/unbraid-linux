@@ -8,7 +8,7 @@ import java.io.File
  * An app the Apps page lists: [key] is what the setup routes (a desktop entry's id, or a program's path). Apps the engine
  * can't tell apart share one [group] of keys and their matchers ([Apps.shareRoutes]); [argc] counts its Exec line.
  */
-data class DesktopApp(val key: String, val label: String, val system: Boolean, val icon: File?, val matchers: Matchers, val group: List<String> = emptyList(), val argc: Int = 0)
+data class DesktopApp(val key: String, val label: String, val system: Boolean, val icon: File?, val matchers: Matchers, val group: List<String> = emptyList(), val argc: Int = 0, val kind: String = "App")
 
 /**
  * The installed apps, from their desktop entries (XDG), and how the engine knows each one's processes. A program
@@ -87,6 +87,9 @@ object Apps {
         return if (app.group.isEmpty() || app.group.firstOrNull { it in routed } == key) app.matchers else Matchers()
     }
 
+    /** The program [key] runs as, to show or copy: itself for a program, an entry's first program file. */
+    fun programOf(key: String): String? = if (key.startsWith('/')) key else cache.firstOrNull { it.key == key }?.matchers?.paths?.firstOrNull()
+
     /** [key]'s icon file, from the last scan. */
     fun iconFile(key: String): File? = cache.firstOrNull { it.key == key }?.icon
 
@@ -109,7 +112,8 @@ object Apps {
         val flatpak = e["X-Flatpak"] ?: exec.takeIf { File(it[0]).name == "flatpak" }?.let { a -> a.drop(a.indexOf("run") + 1).firstOrNull { !it.startsWith("-") } }
         val m = if (flatpak == null) resolve(exec, path)
             else Matchers(names = flatpakNames(flatpak, exec.firstOrNull { it.startsWith("--command=") }?.removePrefix("--command="), installs))
-        return DesktopApp(id, e["Name"] ?: id, e["NoDisplay"] == "true", e["Icon"]?.let { icon(it, dirs) }, m, argc = exec.size)
+        val kind = if (flatpak != null) "Flatpak" else if (m.dirs.any { it.startsWith("/snap/") }) "Snap" else "App"
+        return DesktopApp(id, e["Name"] ?: id, e["NoDisplay"] == "true", e["Icon"]?.let { icon(it, dirs) }, m, argc = exec.size, kind = kind)
     }
 
     /** The [Desktop Entry] group's keys (unlocalized: the app is English only). */

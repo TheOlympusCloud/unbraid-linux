@@ -135,21 +135,28 @@ fun Screen(
     bottom?.invoke()
 }
 
+/**
+ * A search box. [compact] for a desktop page's toolbar, without the phone's gutter; [field] reaches the text field
+ * itself (focus for Ctrl+F, keys), and [trailing] sits at its end (the shortcut).
+ */
 @Composable
-fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String) = Row(
-    Modifier.padding(horizontal = Gutter).fillMaxWidth().height(56.dp).clip(RoundedCornerShape(28.dp)).background(Ink.surfaceHigh).padding(horizontal = 20.dp),
+fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, compact: Boolean = false, field: Modifier = Modifier, trailing: (@Composable () -> Unit)? = null) = Row(
+    (if (compact) Modifier else Modifier.padding(horizontal = Gutter)).fillMaxWidth().height(if (compact) 44.dp else 56.dp)
+        .clip(RoundedCornerShape(28.dp)).background(Ink.surfaceHigh).padding(horizontal = if (compact) 16.dp else 20.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(12.dp),
 ) {
-    Icon(Icons.search, null, tint = Ink.dim, modifier = Modifier.size(24.dp))
+    Icon(Icons.search, null, tint = Ink.dim, modifier = Modifier.size(if (compact) 20.dp else 24.dp))
+    val style = if (compact) Type.sub else Type.body
     Box(Modifier.weight(1f)) {
-        if (value.isEmpty()) Text(placeholder, style = Type.body.copy(color = Ink.dim)) // faint fails 4.5:1 on this surface
+        if (value.isEmpty()) Text(placeholder, style = style.copy(color = Ink.dim)) // faint fails 4.5:1 on this surface
         BasicTextField(
-            value, onChange, singleLine = true, textStyle = Type.body.copy(color = Ink.text), cursorBrush = SolidColor(Ink.accent),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), modifier = Modifier.fillMaxWidth(),
+            value, onChange, singleLine = true, textStyle = style.copy(color = Ink.text), cursorBrush = SolidColor(Ink.accent),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), modifier = Modifier.fillMaxWidth().then(field),
         )
     }
-    if (value.isNotEmpty()) IconTap(Icons.close, "Clear search", { onChange("") }, size = 40.dp)
+    if (value.isNotEmpty()) IconTap(Icons.close, "Clear search", { onChange("") }, size = if (compact) 32.dp else 40.dp)
+    else trailing?.invoke()
 }
 
 // ---------------------------------------------------------------------------------------------

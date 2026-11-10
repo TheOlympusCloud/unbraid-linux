@@ -14,6 +14,10 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.isPopup
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.rightClick
+import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.runDesktopComposeUiTest
 import androidx.compose.ui.test.onAllNodesWithText
@@ -119,18 +123,17 @@ class UiFlowTest {
         click("Apps")
         onNodeWithText("Show my apps").performClick()
         onNodeWithText("Agree and continue").performClick()
-        waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("Spotify").fetchSemanticsNodes().isNotEmpty() }
+        waitUntil(timeoutMillis = 10_000) { ui.apps.value.any { it.pkg == "spotify" } }
         // Two of a group with routes (Firefox's own and its private window's): the first keeps its route, and the other's is said.
         waitUntil(timeoutMillis = 10_000) { Unbraid.store.setup.value.apps["firefox-private"] == null }
         assertEquals(true, ui.notice.value?.contains("Private Browsing runs as Firefox, so it takes Firefox's route now."))
         ui.notice.value = null
         assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.single().apps)
         shot("6-apps")
-        // An app that runs as a script loses the route it could never take, and says it follows the default.
+        // An app that runs as a script loses the route it could never take, and its panel says it follows the default.
         waitUntil(timeoutMillis = 10_000) { Unbraid.store.setup.value.apps["org.example.Tool"] == null }
-        onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Tool"))
+        onNodeWithTag("apps").performScrollToNode(hasText("Tool"))
         onNodeWithText("Tool").performClick()
-        onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Follows the default route", substring = true))
         onNodeWithText("Follows the default route", substring = true).assertIsDisplayed()
         // A new entry for Firefox's program, whose label sorts first, doesn't take Firefox's route: it takes the route too.
         File(Paths.data.parentFile, "applications/alacarte-made-1.desktop").writeText("[Desktop Entry]\nType=Application\nName=Browser\nExec=${File(Paths.data.parentFile, "programs/firefox/firefox").path}\n")
@@ -139,19 +142,25 @@ class UiFlowTest {
         waitForIdle()
         assertEquals("us", Unbraid.store.setup.value.apps["firefox"])
         assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.single().apps)
-        onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Browser"))
+        onNodeWithTag("apps").performScrollToNode(hasText("Browser"))
         onNodeWithText("Browser").performClick()
-        onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Takes Firefox's route", substring = true))
         onNodeWithText("Takes Firefox's route", substring = true).assertIsDisplayed()
-        onNodeWithText("Browser").performClick()
         // So does one that runs as another app and has no route of its own here.
-        onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Private Browsing"))
+        onNodeWithTag("apps").performScrollToNode(hasText("Private Browsing"))
         onNodeWithText("Private Browsing").performClick()
-        onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Takes Firefox's route", substring = true))
         onNodeWithText("Takes Firefox's route", substring = true).assertIsDisplayed()
         shot("6-apps-runs-as-another")
+        // A right click offers the routes at once.
+        onNodeWithTag("apps").performScrollToNode(hasText("Spotify"))
+        onAllNodesWithText("Spotify").filterToOne(hasClickAction()).performMouseInput { rightClick() }
+        onAllNodesWithText("Italy").filterToOne(hasAnyAncestor(isPopup())).assertIsDisplayed()
+        shot("6-apps-menu")
+        onAllNodesWithText("United States").filterToOne(hasAnyAncestor(isPopup())).performClick()
+        waitUntil(timeoutMillis = 5_000) { Unbraid.store.setup.value.apps["spotify"] == "us" }
+        onAllNodesWithText("Spotify").filterToOne(hasClickAction()).performMouseInput { rightClick() }
+        onAllNodesWithText("Italy").filterToOne(hasAnyAncestor(isPopup())).performClick()
+        waitUntil(timeoutMillis = 5_000) { Unbraid.store.setup.value.apps["spotify"] == "it" }
         // A program the launcher doesn't list is added by its file (the chooser is the desktop's own), keyed by its real path.
-        onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Add a program"))
         onNodeWithText("Add a program").assertIsDisplayed()
         runOnIdle {
             assertEquals(File("/bin/true").canonicalPath, ui.addProgram(File("/bin/true")))

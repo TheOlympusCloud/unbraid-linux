@@ -54,6 +54,16 @@ import app.unbraid.vpn.UnbraidVpn
 import app.unbraid.vpn.VpnState.Phase
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.DpOffset
 
 /** What the window's keys, the tray and the sidebar ask the screens for. */
 object Desk {
@@ -220,3 +230,64 @@ fun ShortcutsDialog(close: () -> Unit) = Dialog(onDismissRequest = close) {
 
 /** Below this width the sidebar folds to a rail. */
 val WIDE = 1000.dp
+
+/** A desktop page's head: what it holds (the overline), its title in the display face, its actions on the right. */
+@Composable
+fun PageHeader(overline: String, title: String, overlineColor: Color = Ink.dim, sub: String? = null, actions: @Composable RowScope.() -> Unit = {}) = Row(
+    Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp),
+) {
+    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(wordmarked(overline.uppercase()), style = Type.overline, color = overlineColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(title.uppercase(), style = Type.headline, color = Ink.text, maxLines = 1)
+        sub?.let { Text(it, style = Type.sub, color = Ink.dim, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+    }
+    actions()
+}
+
+enum class Pill { Primary, Tonal, Outline }
+
+/** A toolbar button: a pill, filled for the page's main action. */
+@Composable
+fun PillButton(text: String, onClick: () -> Unit, icon: ImageVector? = null, kind: Pill = Pill.Tonal, enabled: Boolean = true, modifier: Modifier = Modifier) {
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(20.dp)
+    val (bg, fg) = when (kind) {
+        Pill.Primary -> Ink.accent to Ink.onAccent
+        Pill.Tonal -> (if (hovered) Ink.surfaceTop else Ink.surfaceHigh) to Ink.text
+        Pill.Outline -> (if (hovered) Ink.surfaceHigh else Color.Transparent) to Ink.text
+    }
+    Row(
+        modifier.height(40.dp).clip(shape).background(bg).then(if (kind == Pill.Outline) Modifier.border(1.dp, Ink.line, shape) else Modifier)
+            .then(if (enabled) Modifier.hover(source).tap(onClick, text, Role.Button) else Modifier).padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        icon?.let { Icon(it, null, Modifier.size(18.dp), tint = if (enabled) fg else Ink.faint) }
+        Text(text, style = Type.title.copy(fontSize = Type.sub.fontSize), color = if (enabled) fg else Ink.faint, maxLines = 1)
+    }
+}
+
+/** A right click, where it happened in the element's own coordinates. */
+@OptIn(ExperimentalComposeUiApi::class)
+fun Modifier.onRightClick(at: (Offset) -> Unit) = onPointerEvent(PointerEventType.Press) { e -> if (e.buttons.isSecondaryPressed) at(e.changes.first().position) }
+
+/** A menu at a right click ([at], in the anchor's coordinates; the anchor is [height] px tall), in the app's colours. */
+@Composable
+fun ClickMenu(at: Offset?, height: Int, close: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    val d = LocalDensity.current
+    DropdownMenu(at != null, close, containerColor = Ink.surfaceTop, shape = RoundedCornerShape(14.dp),
+        offset = at?.let { with(d) { DpOffset(it.x.toDp(), (it.y - height).toDp()) } } ?: DpOffset.Zero, content = content)
+}
+
+@Composable
+fun MenuItem(text: String, onClick: () -> Unit, icon: ImageVector? = null, lead: (@Composable () -> Unit)? = null, checked: Boolean = false, keys: String? = null, color: Color = Ink.text, enabled: Boolean = true) =
+    DropdownMenuItem(
+        { Text(text, style = Type.sub, color = if (enabled) color else Ink.faint, maxLines = 1) }, onClick, enabled = enabled,
+        leadingIcon = lead ?: icon?.let { { Icon(it, null, Modifier.size(18.dp), tint = if (enabled) color else Ink.faint) } },
+        trailingIcon = when { checked -> { { Icon(Icons.check, null, Modifier.size(18.dp), tint = Ink.accent) } }; keys != null -> { { Text(keys, style = Type.small, color = Ink.faint) } }; else -> null },
+        modifier = Modifier.height(38.dp),
+    )
+
+/** A menu's section name. */
+@Composable
+fun MenuLabel(text: String) = Text(text.uppercase(), style = Type.overline, color = Ink.dim, modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp, end = 16.dp))

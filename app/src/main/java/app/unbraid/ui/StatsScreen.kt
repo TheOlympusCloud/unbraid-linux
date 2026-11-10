@@ -154,7 +154,7 @@ private fun View.fastestDown(e: String) = tests[e]?.down ?: 0
 private fun View.byProvider(): List<Pair<String, Long>> =
     byExit.groupBy({ providerOf(it.first, exits[it.first]) }, { it.second.total }).mapValues { it.value.sum() }.entries.sortedByDescending { it.value }.map { it.key to it.value }
 
-private fun bytesText(b: Long) = bytes(b).let { "${it.first} ${it.second}" }
+internal fun bytesText(b: Long) = bytes(b).let { "${it.first} ${it.second}" }
 /** A live speed: kbps under 1 Mbps so small transfers don't read as zero. */
 private fun rate(bps: Long): Pair<String, String> = when {
     bps >= 1_000_000 -> mbps(bps) to "Mbps"

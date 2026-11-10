@@ -50,7 +50,7 @@ import kotlinx.coroutines.withContext
  * [group]: the apps it runs as one program with, itself included, in the order that picks which leads (Linux: LibreOffice's
  * Writer and Calc, a browser and its web apps, [Apps.shareRoutes]).
  */
-data class AppInfo(val pkg: String, val label: String, val system: Boolean, val routable: Boolean = true, val group: List<String> = emptyList()) {
+data class AppInfo(val pkg: String, val label: String, val system: Boolean, val routable: Boolean = true, val group: List<String> = emptyList(), val kind: String = "App") {
     /** The app whose route this one takes in [s]: the first of its [group] with a route there, when that isn't itself. */
     fun follows(s: Setup): String? = group.firstOrNull { it in s.apps }?.takeIf { it != pkg }
 }
@@ -355,8 +355,8 @@ class Ui : ViewModel() {
         // A program one of the apps runs (added before that app was installed) joins that app's group, after its entries.
         val owned = programs.mapNotNull { p -> entries.firstOrNull { Apps.matches(it.matchers, p) }?.let { o -> p to o.group.ifEmpty { listOf(o.key) } } }
         fun group(g: List<String>) = (g + owned.filter { it.second == g }.map { it.first }).takeIf { it.size > 1 }.orEmpty()
-        val listed = entries.map { AppInfo(it.key, it.label, it.system, routable = !it.matchers.empty, group = group(it.group.ifEmpty { listOf(it.key) })) } +
-            programs.map { p -> AppInfo(p, File(p).name, false, routable = Apps.unroutable(File(p)) == null, group = owned.firstOrNull { it.first == p }?.second?.let(::group).orEmpty()) }
+        val listed = entries.map { AppInfo(it.key, it.label, it.system, routable = !it.matchers.empty, group = group(it.group.ifEmpty { listOf(it.key) }), kind = it.kind) } +
+            programs.map { p -> AppInfo(p, File(p).name, false, routable = Apps.unroutable(File(p)) == null, group = owned.firstOrNull { it.first == p }?.second?.let(::group).orEmpty(), kind = "Program") }
         _apps.value = listed.sortedBy { it.label.lowercase() }
         val installed = listed.filter { it.routable }.mapTo(HashSet()) { it.pkg }
         val groups = listed.map { it.group }.filter { it.isNotEmpty() }.distinct()
@@ -386,7 +386,7 @@ class Ui : ViewModel() {
             val app = _apps.value.firstOrNull { it.pkg == k }?.label ?: k
             notice.value = "${file.name} is part of $app: it takes $app's route."; return null
         }
-        if (_apps.value.none { it.pkg == path }) _apps.value = (_apps.value + AppInfo(path, file.name, false)).sortedBy { it.label.lowercase() }
+        if (_apps.value.none { it.pkg == path }) _apps.value = (_apps.value + AppInfo(path, file.name, false, kind = "Program")).sortedBy { it.label.lowercase() }
         return path
     }
 
