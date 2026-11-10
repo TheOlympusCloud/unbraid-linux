@@ -113,6 +113,7 @@ class UiFlowTest {
         compose.runOnIdle {
             assertEquals(File("/bin/true").canonicalPath, ui.addProgram(File("/bin/true")))
             assertNull(ui.addProgram(File(Paths.data, "unbraid_ui.properties")))
+            ui.notice.value = null // the refusal's notice, which would show on the next screens
         }
         compose.click("Stats")
         shot("7-stats")

@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
  * leave alone) as "interface gateway". The engine follows the interface by itself; the app only needs to know when the
  * network changed, to retry blocked routes and to stop judging servers by checks made on another network.
  */
+// shortcut: IPv4 default route only, polled every 3 s; follow netlink or NetworkManager events if IPv6-only networks matter.
 class NetMonitor(private val routes: File = File("/proc/net/route")) {
     @Volatile var network: String? = null
         private set

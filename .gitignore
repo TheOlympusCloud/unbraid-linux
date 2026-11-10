@@ -13,7 +13,6 @@ _INTERNAL/
 .claude/
 AGENTS.md
 CLAUDE.md
-.multica/
 .playwright-mcp/
 
 # Keys and configs (synthetic test configs are listed explicitly)

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Reproducible build of engine/out/unbraid-engine: sing-box v1.14.4's Linux daemon (experimental/boxdd) with unbraid's
 # patches, the same build tags as the Android engine, and the daemon renamed so it never collides with a stock one.
-# `engine/build.sh test` also runs the tests the patches bring.
+# `engine/build.sh test` also runs the tests the patches bring, and builds the CLI the upstream unit tests check configs with.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORK=${WORK:-$HOME/.cache/unbraid-engine}
@@ -20,6 +20,8 @@ export GOTOOLCHAIN=go1.26.10 CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH
 TAGS=with_gvisor,with_wireguard,with_utls,with_tailscale,ts_omit_logtail,ts_omit_cachenetmap,ts_omit_ssh,ts_omit_drive,ts_omit_taildrop,ts_omit_webclient,ts_omit_doctor,ts_omit_capture,ts_omit_kube,ts_omit_aws,ts_omit_synology,ts_omit_bird,with_openvpn,badlinkname,tfogo_checklinkname0
 if [ "${1:-}" = test ]; then
   go test -tags "$TAGS" -ldflags "-checklinkname=0" ./daemon/ ./protocol/openvpn/ ./protocol/tailscale/ -run 'STUN|Resolver|Fallback|Taildrop'
+  # The upstream unit tests' own `sing-box check` (KeyProvidersTest): the same patched engine as a plain CLI, never shipped.
+  go build -o "$ROOT/engine/out/sing-box-cli" -trimpath -buildvcs=false -tags "$TAGS" -ldflags "-checklinkname=0 -s -w" ./cmd/sing-box
 fi
 mkdir -p "$ROOT/engine/out"
 # Built beside the real binary and swapped only on success.

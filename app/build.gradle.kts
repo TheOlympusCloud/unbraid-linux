@@ -70,6 +70,8 @@ tasks.withType<Test>().configureEach {
     environment("XDG_DATA_HOME", layout.buildDirectory.dir("test-home").get().asFile.path)
     environment("XDG_RUNTIME_DIR", run.path)
     rootProject.file("engine/out/unbraid-engine").takeIf { it.exists() }?.let { environment("UNBRAID_ENGINE_BIN", it.path) }
+    // Upstream's KeyProvidersTest checks its configs with this CLI (engine/build.sh test builds it); skipped without.
+    rootProject.file("engine/out/sing-box-cli").takeIf { it.exists() }?.let { environment("SING_BOX_CLI", it.path) }
     doFirst { run.mkdirs() }
 }
 tasks.test { filter { excludeTestsMatching("app.unbraid.EngineCheckTest") } }

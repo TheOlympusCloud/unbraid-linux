@@ -158,7 +158,10 @@ object Apps {
         "/usr/libexec", "/usr/share", "/usr/local", "/usr/local/bin", "/usr/local/sbin", "/usr/local/games", "/usr/local/lib", "/usr/local/share", "/opt",
         "/snap", "/snap/bin", "/var/lib/flatpak/exports/bin", "/tmp", "/var/tmp")
 
-    /** A Flatpak's command (inside its sandbox) from its metadata, as the engine sees its process name. */
+    /**
+     * A Flatpak's command (inside its sandbox) from its metadata, as the engine sees its process name.
+     * shortcut: matched by name only, so another program of that name matches too; match by app id once the engine can.
+     */
     private fun flatpakCommand(appId: String): String? =
         listOf("$home/.local/share/flatpak", "/var/lib/flatpak").map { File(it, "app/$appId/current/active/metadata") }.firstOrNull { it.isFile }
             ?.readLines()?.firstOrNull { it.startsWith("command=") }?.removePrefix("command=")?.trim()?.let { File(it).name }
