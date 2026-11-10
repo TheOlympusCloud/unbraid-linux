@@ -137,6 +137,29 @@ class LinuxBitsTest {
         assertTrue(!DesktopSettings.showsAtStart(background = true, connect = true, command = "", tray = false))
     }
 
+    /** Connecting: another user's service is taken over; a refused claim isn't asked twice; a lost owner is asked once more. */
+    @Test fun engineStart() {
+        fun run(codes: List<io.grpc.Status.Code?>, other: Boolean): Pair<List<String>, io.grpc.Status.Code?> {
+            val calls = mutableListOf<String>()
+            val left = codes.toMutableList()
+            val e = runCatching {
+                app.unbraid.vpn.Engine.starting({ calls += "start"; left.removeAt(0)?.let { throw io.grpc.StatusRuntimeException(it.toStatus()) } },
+                    { calls += "owner"; other }, { calls += "takeOver" })
+            }.exceptionOrNull()
+            return calls to (e as io.grpc.StatusRuntimeException?)?.status?.code
+        }
+        val denied = io.grpc.Status.Code.PERMISSION_DENIED
+        val aborted = io.grpc.Status.Code.ABORTED
+        assertEquals(listOf("start") to null, run(listOf(null), other = false))
+        assertEquals(listOf("start", "owner", "takeOver", "start") to null, run(listOf(denied, null), other = true))
+        // Nobody owns it: polkit refused the claim itself. No take-over, so no second prompt.
+        assertEquals(listOf("start", "owner") to denied, run(listOf(denied), other = false))
+        // The owner left mid-call: once more, and only once.
+        assertEquals(listOf("start", "start") to null, run(listOf(aborted, null), other = false))
+        assertEquals(listOf("start", "start") to aborted, run(listOf(aborted, aborted), other = false))
+        assertEquals(listOf("start") to io.grpc.Status.Code.UNAVAILABLE, run(listOf(io.grpc.Status.Code.UNAVAILABLE), other = false))
+    }
+
     /** No keyring: a key file only this user can read. */
     @Test fun keyFileWithoutKeyring() {
         val dir = tmp.newFolder()

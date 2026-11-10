@@ -11,6 +11,7 @@ import app.unbraid.engine.daemon.SubscribeStatusRequest
 import app.unbraid.engine.daemon.TailscaleLogoutRequest
 import app.unbraid.engine.desktop.ApplicationServiceGrpc
 import app.unbraid.engine.desktop.ConfigContent
+import app.unbraid.engine.desktop.DaemonOwnership
 import app.unbraid.engine.desktop.DesktopServiceGrpc
 import app.unbraid.engine.desktop.StartServiceRequest
 import app.unbraid.linux.Paths
@@ -69,11 +70,23 @@ object Engine {
      */
     fun start(config: String) {
         val request = StartServiceRequest.newBuilder().setConfigContent(config).build()
-        try { desktop().startService(request) } catch (e: StatusRuntimeException) {
-            if (e.status.code != Status.Code.PERMISSION_DENIED) throw e
-            desktop(120).takeOverService(empty)
-            desktop().startService(request)
+        // 120 s: with nobody owning it the engine asks polkit first, which away from the session at the screen is a password.
+        starting({ desktop(120).startService(request) }, { desktop().getDaemonInfo(empty).ownership == DaemonOwnership.DAEMON_OWNERSHIP_OTHER },
+            { desktop(120).takeOverService(empty) })
+    }
+
+    /**
+     * [start], taking the service over first ([takeOver]) only from another user: refused while nobody owns it, it was the
+     * claim itself that polkit refused, and asking again would show the prompt twice. An engine that lost its owner between
+     * its check and its lock (ABORTED) is asked once more, claim and all; a second time the error stands.
+     */
+    internal fun starting(start: () -> Unit, ownedByOther: () -> Boolean, takeOver: () -> Unit) {
+        fun once() = try { start() } catch (e: StatusRuntimeException) {
+            if (e.status.code != Status.Code.PERMISSION_DENIED || !ownedByOther()) throw e
+            takeOver()
+            start()
         }
+        try { once() } catch (e: StatusRuntimeException) { if (e.status.code != Status.Code.ABORTED) throw e; once() }
     }
 
     fun stop() { managed().stopService(empty) }
