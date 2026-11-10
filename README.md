@@ -211,6 +211,9 @@ unbraid was created by [Quiet Crafts](https://unbraid.app). This Linux version i
 [Android app](https://github.com/Quiet-Crafts/unbraid): its design, its features and most of its code are theirs. If you
 find it useful, you can support its creator at [unbraid.app/donate](https://unbraid.app/donate/).
 
+It is a modified version of [unbraid](https://github.com/Quiet-Crafts/unbraid) 2.8.2, changed in November 2026 to run
+on Linux, and keeps the original's licence and its notice below: the GNU General Public License, version 3 or later.
+
 ## Licence
 
 unbraid is free software under the GNU General Public License, version 3 or (at your option) any later version. See
