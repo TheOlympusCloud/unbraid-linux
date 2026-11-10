@@ -8,6 +8,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -371,7 +374,8 @@ internal fun App(ui: Ui) = UnbraidTheme {
                 Desk.asks.collect { a ->
                     when (a) {
                         Desk.Ask.Shortcuts -> shortcuts = true
-                        Desk.Ask.NewRoute -> if (signedIn) { Desk.tab.value = Tab.Routes; picker = "" }
+                        // A dialog: it opens over whichever page is shown.
+                        Desk.Ask.NewRoute -> if (signedIn) picker = ""
                         Desk.Ask.Connect -> if (signedIn) when (ui.vpn.value.phase) { VpnState.Phase.Off, VpnState.Phase.Paused -> connect(); else -> ui.disconnect() }
                         else -> Unit
                     }
@@ -388,11 +392,10 @@ internal fun App(ui: Ui) = UnbraidTheme {
             }
             val endTour = { tour = -1; Onboarding.tourSeen(); Desk.tab.value = Tab.Routes }
 
-            // The screen shown; the picker's carries its route, so a closing picker keeps its identity while it leaves.
+            // The screen shown; the location picker is a dialog over it.
             val screenNow = when {
                 !signedIn -> "signin"
                 adding -> "add"
-                picker != null -> "picker:$picker"
                 else -> tab.name
             }
             // Seekable, so a back gesture can drive the real transition (the picker shrinking back into its route).
@@ -427,15 +430,6 @@ internal fun App(ui: Ui) = UnbraidTheme {
                                         when {
                                             screen == "signin" -> Card { SignInScreen(ui) }
                                             screen == "add" -> Card { SignInScreen(ui) { adding = false } }
-                                            // The route that was clicked grows into its picker (container transform).
-                                            screen.startsWith("picker:") -> screen.removePrefix("picker:").let { target ->
-                                                Box(Modifier.fillMaxSize().then(sharedRoute(target, RoundedCornerShape(28.dp)))) {
-                                                    PickerScreen(
-                                                        ui, target, close = { picker = null },
-                                                        settings = { picker = null; Desk.tab.value = Tab.Settings }, addProvider = { picker = null; adding = true },
-                                                    )
-                                                }
-                                            }
                                             screen == Tab.Routes.name -> RoutesScreen(ui, ::connect) { picker = it }
                                             screen == Tab.Apps.name -> AppsScreen(ui, disclose = { sheet = "apps" }) { picker = it }
                                             screen == Tab.Stats.name -> StatsScreen(ui)
@@ -449,6 +443,21 @@ internal fun App(ui: Ui) = UnbraidTheme {
                         val unsaved by Unbraid.store.unsaved.collectAsStateWithLifecycle()
                         if (unsaved) Caption("Some of your changes couldn't be saved and would be lost when $APP restarts. Click to try saving again.",
                             Modifier.fillMaxWidth().tap({ thread { Unbraid.store.saveAgain() } }).padding(horizontal = 24.dp, vertical = 12.dp), color = Ink.bad)
+                    }
+                }
+                // The location picker: a dialog over the page it came from; a click beside it closes it, as Esc does.
+                picker?.let { target ->
+                    // Taps, not clicks: a clickable would merge the whole dialog into one node for screen readers.
+                    Box(Modifier.fillMaxSize().background(Ink.scrim).pointerInput(Unit) { detectTapGestures { picker = null } }, contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier.padding(24.dp).widthIn(max = 1040.dp).heightIn(max = 720.dp).fillMaxSize().clip(RoundedCornerShape(28.dp)).background(Ink.ground)
+                                .border(1.dp, Ink.line, RoundedCornerShape(28.dp)).pointerInput(Unit) { detectTapGestures { } },
+                        ) {
+                            PickerScreen(
+                                ui, target, close = { picker = null },
+                                settings = { picker = null; Desk.tab.value = Tab.Settings }, addProvider = { picker = null; adding = true },
+                            )
+                        }
                     }
                 }
                 if (tour >= 0) TourOverlay(

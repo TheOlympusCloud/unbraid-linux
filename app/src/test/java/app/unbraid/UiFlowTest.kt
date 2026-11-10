@@ -21,6 +21,7 @@ import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.hasAnyAncestor
@@ -35,6 +36,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import app.unbraid.data.DIRECT
+import app.unbraid.data.City
+import app.unbraid.data.Country
 import app.unbraid.data.Location
 import app.unbraid.data.Profile
 import app.unbraid.data.Route
@@ -143,6 +146,19 @@ class UiFlowTest {
             written.countDown()
         }
         written.await(10, java.util.concurrent.TimeUnit.SECONDS)
+        // Signed in to NordVPN, with its countries, so the location picker lists them (nothing is fetched: the list is new).
+        Unbraid.store.account("nord", "test")
+        Unbraid.store.countries("nord", listOf(
+            Country(81, "Germany", "DE", 322, listOf(City(2, "Frankfurt"), City(3, "Berlin"), City(4, "Hamburg"))),
+            Country(74, "France", "FR", 176, listOf(City(5, "Paris"), City(6, "Marseille"))),
+            Country(106, "Italy", "IT", 120, listOf(City(15, "Milan"), City(16, "Rome"))),
+            Country(108, "Japan", "JP", 113, listOf(City(14, "Tokyo"))),
+            Country(153, "Netherlands", "NL", 214, listOf(City(1, "Amsterdam"))),
+            Country(208, "Sweden", "SE", 98, listOf(City(8, "Stockholm"))),
+            Country(209, "Switzerland", "CH", 131, listOf(City(7, "Zurich"))),
+            Country(227, "United Kingdom", "GB", 440, listOf(City(9, "London"), City(10, "Manchester"))),
+            Country(228, "United States", "US", 1960, listOf(City(11, "New York"), City(12, "Los Angeles"), City(13, "Chicago"))),
+        ))
         val ui = Ui()
         setContent { Box(Modifier.size(1280.dp, 800.dp).testTag("app")) { App(ui) } }
         onNodeWithText("DEFAULT ROUTE").assertIsDisplayed()
@@ -242,6 +258,18 @@ class UiFlowTest {
         runOnIdle { assertTrue(key(Key.Escape, ctrl = false)) }
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("KEYBOARD SHORTCUTS").fetchSemanticsNodes().isEmpty() }
         runOnIdle { assertTrue(!key(Key.Z)); Desk.tab.value = Tab.Settings }
+        // A new route (Ctrl+N): the location picker, a dialog over the page; a country's cities open beside the list.
+        runOnIdle { assertTrue(keys(Key.N, ctrl = true, shift = false, alt = false, ui, {}, {})) }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("CHOOSE A LOCATION").fetchSemanticsNodes().isNotEmpty() }
+        shot("10-picker")
+        onNodeWithTag("picker").performScrollToNode(hasText("All countries"))
+        onNodeWithText("All countries").performClick()
+        onNodeWithTag("picker").performScrollToNode(hasContentDescription("Cities and servers in Germany"))
+        onNodeWithContentDescription("Cities and servers in Germany").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("in Germany", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        shot("10-picker-country")
+        runOnIdle { assertTrue(keys(Key.Escape, ctrl = false, shift = false, alt = false, ui, {}, {})) }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("CHOOSE A LOCATION").fetchSemanticsNodes().isEmpty() }
         click("Routes")
         // A right click on a route offers what its sheet does.
         onAllNodesWithText("Netherlands").filterToOne(hasClickAction()).performMouseInput { rightClick() }
@@ -250,5 +278,16 @@ class UiFlowTest {
         onNodeWithText("Change location…").performMouseInput { moveTo(Offset(-50f, -50f)) }
         onAllNodesWithText("Netherlands").filterToOne(hasClickAction()).performClick()
         shot("9-route-sheet")
+    }
+
+    /** The smallest window: the sidebar folds to a rail of icons whose names show on hover; the pages keep their layout. */
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun c_smallestWindow() = runDesktopComposeUiTest(880, 600) {
+        Desk.tab.value = Tab.Routes
+        setContent { Box(Modifier.size(880.dp, 600.dp).testTag("app")) { App(Ui()) } }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("DEFAULT ROUTE").fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithContentDescription("Apps").assertIsDisplayed()
+        assertTrue(onAllNodesWithText("Ctrl+2").fetchSemanticsNodes().isEmpty()) // no names, no keys: only icons
+        shot("11-smallest-window")
     }
 }

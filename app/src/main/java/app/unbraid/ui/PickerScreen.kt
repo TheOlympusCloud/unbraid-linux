@@ -84,6 +84,7 @@ import app.unbraid.data.Providers
 import app.unbraid.data.Server
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.layout.PaddingValues
 
 val NordGroups = listOf<Pair<String?, String>>(
     null to "Standard", "legacy_p2p" to "P2P", "legacy_dedicated_ip" to "Dedicated IP",
@@ -361,6 +362,16 @@ fun PickerScreen(ui: Ui, target: String, close: () -> Unit, settings: () -> Unit
         }
     }
 
+    // A country's servers load on request. Held here, so each one is a row of the panel's lazy list: a long list
+    // composes only the rows on screen.
+    val country = countries.firstOrNull { "c:${it.id}" == sheet }
+    val all = country?.let { c -> Location(pick.provider, c.id, c.code, c.name, group = group, protocol = protocol) }
+    var serversOpen by rememberSaveable(country?.id) { mutableStateOf(false) }
+    val servers by produceState<List<Server>?>(null, serversOpen, all) {
+        if (serversOpen && all != null) value = serverList(ui, all).sortedBy { if (it.load < 0) Int.MAX_VALUE else it.load }
+    }
+    Row(Modifier.fillMaxSize()) {
+    Box(Modifier.weight(1f)) {
     Screen(
         overline = if (route != null) "${route.code} route · location" else if (target == "default") "Default route" else "New route",
         title = route?.name ?: "Choose a location",
@@ -371,6 +382,7 @@ fun PickerScreen(ui: Ui, target: String, close: () -> Unit, settings: () -> Unit
             else -> listOfNotNull(route?.source, current.pinned?.name ?: current.city, (if (hasLoad) "fastest server" else "automatic server").takeIf { current.pinned == null }).joinToString(" · ")
         },
         navigation = { IconTap(Icons.close, "Close", close) },
+        tag = "picker",
         // Tabs, then for providers the two dropdowns, then search: each tab searches only itself.
         search = {
             Tabs(listOf("Providers", "My servers"), if (mine) 1 else 0, tint) { mine = it == 1; q = "" }
@@ -410,48 +422,49 @@ fun PickerScreen(ui: Ui, target: String, close: () -> Unit, settings: () -> Unit
             else -> locations()
         }
     }
-
-    if (sheet != null) ModalBottomSheet({ sheet = null }, containerColor = Ink.surface, contentColor = Ink.text) {
-        val s = sheet.orEmpty()
-        // A country's servers load on request. Held here, so each one is a row of the sheet's lazy list: a long list
-        // composes only the rows on screen.
-        val country = countries.firstOrNull { "c:${it.id}" == s }
-        val all = country?.let { c -> Location(pick.provider, c.id, c.code, c.name, group = group, protocol = protocol) }
-        var serversOpen by rememberSaveable(country?.id) { mutableStateOf(false) }
-        val servers by produceState<List<Server>?>(null, serversOpen, all) {
-            if (serversOpen && all != null) value = serverList(ui, all).sortedBy { if (it.load < 0) Int.MAX_VALUE else it.load }
-        }
-        LazyColumn(Modifier.padding(bottom = 16.dp)) {
-            when {
-                s == "options" -> {
-                    item { SheetTitle("Route options") }
-                    if (provider == "nord") {
-                        item { SectionLabel("Server type") }
-                        item {
-                            FlowRow(Modifier.padding(horizontal = Gutter), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                NordGroups.forEach { (key, label) -> Chip(label, group == key, tint) { groupChoice = key } }
-                            }
-                        }
-                        item { Caption("Lists only the countries that offer it. Pick a location to use it.") }
-                        item { Gap(16.dp) }
-                    }
-                    val blocker = route?.takeIf { current?.provider == provider }?.let { r -> Providers.get(provider.orEmpty())?.protection?.let { r to it } }
-                    blocker?.let { (r, o) ->
-                        // unbraid's filter on VPN routes replaces the provider's blocking resolver: shown off, the choice kept.
-                        val custom = setup.prefs.filter.routes && setup.prefs.filter.server() != null
-                        val on = setup.protects(r)
-                        item { SectionLabel("Protection") }
-                        item {
-                            val name = Providers.get(provider.orEmpty())?.name
-                            GroupRow(0, 1, "$name blocking", if (custom) "Off while unbraid's filter is on for VPN routes" else "${o.label} · " + if (r.filter == null) "as set for $name in Settings" else "for this route only",
-                                onClick = { ui.setFilter(r.id, !on); Unit }.takeUnless { custom }, checked = on && !custom, trailing = { Toggle(on && !custom, enabled = !custom) })
-                        }
-                        item { Gap(16.dp) }
-                    }
-                    item { GroupRow(0, 1, "App settings", "DNS, local network, Tailscale, kill switch", onClick = { sheet = null; settings() }, trailing = { Chevron() }) }
-                }
-                country != null && all != null -> countrySheet(ui, country, all, ownFavs, pick, serversOpen, { serversOpen = !serversOpen }, servers)
+    }
+    // A country's cities and servers, beside the list; until one is opened, what shows here.
+    Box(Modifier.fillMaxHeight().width(1.dp).background(Ink.surfaceHigh))
+    Box(Modifier.width(400.dp).fillMaxHeight().background(Ink.surface)) {
+        if (country != null && all != null) {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)) {
+                countrySheet(ui, country, all, ownFavs, pick, serversOpen, { serversOpen = !serversOpen }, servers)
             }
+            Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) { IconTap(Icons.close, "Close ${country.name}", { sheet = null }, size = 40.dp) }
+        } else Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("CITIES AND SERVERS", style = Type.overline, color = Ink.dim)
+            Text("Click a country to use its ${if (hasLoad) "fastest" else "automatic"} server, or its ⋯ to choose a city or a server here.", style = Type.sub, color = Ink.dim)
+        }
+    }
+    }
+
+    if (sheet == "options") ModalBottomSheet({ sheet = null }, containerColor = Ink.surface, contentColor = Ink.text) {
+        LazyColumn(Modifier.padding(bottom = 16.dp)) {
+            item { SheetTitle("Route options") }
+            if (provider == "nord") {
+                item { SectionLabel("Server type") }
+                item {
+                    FlowRow(Modifier.padding(horizontal = Gutter), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        NordGroups.forEach { (key, label) -> Chip(label, group == key, tint) { groupChoice = key } }
+                    }
+                }
+                item { Caption("Lists only the countries that offer it. Pick a location to use it.") }
+                item { Gap(16.dp) }
+            }
+            val blocker = route?.takeIf { current?.provider == provider }?.let { r -> Providers.get(provider.orEmpty())?.protection?.let { r to it } }
+            blocker?.let { (r, o) ->
+                // unbraid's filter on VPN routes replaces the provider's blocking resolver: shown off, the choice kept.
+                val custom = setup.prefs.filter.routes && setup.prefs.filter.server() != null
+                val on = setup.protects(r)
+                item { SectionLabel("Protection") }
+                item {
+                    val name = Providers.get(provider.orEmpty())?.name
+                    GroupRow(0, 1, "$name blocking", if (custom) "Off while unbraid's filter is on for VPN routes" else "${o.label} · " + if (r.filter == null) "as set for $name in Settings" else "for this route only",
+                        onClick = { ui.setFilter(r.id, !on); Unit }.takeUnless { custom }, checked = on && !custom, trailing = { Toggle(on && !custom, enabled = !custom) })
+                }
+                item { Gap(16.dp) }
+            }
+            item { GroupRow(0, 1, "App settings", "DNS, local network, Tailscale, kill switch", onClick = { sheet = null; settings() }, trailing = { Chevron() }) }
         }
     }
 }
@@ -491,7 +504,7 @@ private fun FavoriteLocationRow(ui: Ui, l: Location, p: Pick, favs: List<Locatio
 }
 
 @Composable
-private fun SheetTitle(text: String) = Text(text, style = Type.title, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+private fun SheetTitle(text: String) = Text(text, style = Type.title, color = Ink.text, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
 
 /** Two tabs as one connected pill: the highlight slides under the chosen tab, which also shows a check. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)

@@ -62,6 +62,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -106,6 +107,8 @@ fun Screen(
     /** The title block's own tap, when its text says "tap to …" (Routes): the same action as [action]. */
     onHeader: (() -> Unit)? = null,
     headerLabel: String? = null,
+    /** The list's test tag, for a screen whose list a test scrolls. */
+    tag: String? = null,
     content: LazyListScope.() -> Unit,
 ) = Column(Modifier.fillMaxSize().background(Ink.ground).windowInsetsPadding(WindowInsets.statusBars)) {
     navigation?.let { Box(Modifier.padding(start = 4.dp, top = 4.dp).height(56.dp), contentAlignment = Alignment.CenterStart) { it() } }
@@ -131,7 +134,7 @@ fun Screen(
     }
     search?.invoke()
     belowSearch?.invoke()
-    LazyColumn(Modifier.weight(1f), state = state, contentPadding = PaddingValues(bottom = 24.dp), content = content)
+    LazyColumn(Modifier.weight(1f).then(tag?.let { Modifier.testTag(it) } ?: Modifier), state = state, contentPadding = PaddingValues(bottom = 24.dp), content = content)
     bottom?.invoke()
 }
 
