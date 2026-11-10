@@ -173,7 +173,7 @@ fun TourOverlay(step: Int, appsShown: Boolean, back: () -> Unit, next: () -> Uni
         val leaderX = if (wide) x + 44f.px() else hole.center.x.coerceIn(x + 28f.px(), x + noteW - 28f.px())
         val round = if (stop == TourStop.Power) 999f else 26f.px()
         Canvas(Modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) {
-            drawRect(Color(0x8C060809))
+            drawRect(Ink.scrim)
             if (target == null) return@Canvas
             val r = CornerRadius(minOf(round, hole.minDimension / 2))
             drawRoundRect(Color.Transparent, hole.topLeft, hole.size, r, blendMode = BlendMode.Clear)
@@ -248,7 +248,7 @@ fun InfoSheet(
     Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
       Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(if (good) Color(0xFF173024) else Ink.accentContainer), Alignment.Center) {
+            Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(if (good) Ink.homeSurface else Ink.accentContainer), Alignment.Center) {
                 Icon(icon, null, Modifier.size(24.dp), tint = if (good) Ink.good else Ink.accent)
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

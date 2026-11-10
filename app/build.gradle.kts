@@ -68,6 +68,7 @@ tasks.withType<Test>().configureEach {
     // Never the user's own folders; the runtime folder stays short, as unix socket paths must.
     val run = File(System.getProperty("java.io.tmpdir"), "unbraid-test-${System.getProperty("user.name")}")
     environment("XDG_DATA_HOME", layout.buildDirectory.dir("test-home").get().asFile.path)
+    environment("XDG_CONFIG_HOME", layout.buildDirectory.dir("test-config").get().asFile.path)
     environment("XDG_RUNTIME_DIR", run.path)
     rootProject.file("engine/out/unbraid-engine").takeIf { it.exists() }?.let { environment("UNBRAID_ENGINE_BIN", it.path) }
     // Upstream's KeyProvidersTest checks its configs with this CLI (engine/build.sh test builds it); skipped without.

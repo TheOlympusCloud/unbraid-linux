@@ -1,5 +1,8 @@
 package app.unbraid
 
+import app.unbraid.linux.Autostart
+import app.unbraid.linux.Desktop
+import app.unbraid.linux.DesktopSettings
 import app.unbraid.linux.Keyring
 import app.unbraid.linux.SQLiteDatabase
 import app.unbraid.linux.SQLiteOpenHelper
@@ -66,6 +69,34 @@ class LinuxBitsTest {
         assertTrue("took ${(System.nanoTime() - start) / 1_000_000} ms", System.nanoTime() - start < 10_000_000_000L)
         val ready = File(tmp.root, "ready-worker").apply { writeText("#!/bin/sh\necho READY\nsleep 30\n"); setExecutable(true) }
         app.unbraid.vpn.Engine.startWorker(ready.path, socket, seconds = 5).destroyForcibly()
+    }
+
+    /** The desktop's light or dark: the portal's answer (ReadOne or Read), else GNOME's setting; one that says nothing is null. */
+    @Test fun systemTheme() {
+        assertEquals(true, Desktop.portalDark("v u 1"))
+        assertEquals(false, Desktop.portalDark("v v u 2\n"))
+        listOf("v u 0", null, "Call failed: No such interface", "").forEach { assertNull(it, Desktop.portalDark(it)) }
+        assertEquals(true, Desktop.gnomeDark("'prefer-dark'\n"))
+        assertEquals(false, Desktop.gnomeDark("'prefer-light'"))
+        assertNull(Desktop.gnomeDark("'default'"))
+        // System follows the desktop; a desktop that says nothing gets the app's own dark.
+        assertEquals(false, DesktopSettings.dark(DesktopSettings.Theme.System, false))
+        assertEquals(true, DesktopSettings.dark(DesktopSettings.Theme.System, null))
+        assertEquals(false, DesktopSettings.dark(DesktopSettings.Theme.Light, true))
+        assertEquals(true, DesktopSettings.dark(DesktopSettings.Theme.Dark, false))
+    }
+
+    /** Starting at login, with or without connecting and with or without the window; a change keeps the other choice. */
+    @Test fun autostartChoices() {
+        Autostart.set(false)
+        Autostart.set(true, connect = false, minimised = true)
+        assertTrue(Autostart.enabled && !Autostart.connects && Autostart.minimised)
+        Autostart.set(true, connect = true, minimised = false)
+        assertTrue(Autostart.connects && !Autostart.minimised)
+        Autostart.set(true, minimised = true)
+        assertTrue(Autostart.connects && Autostart.minimised)
+        Autostart.set(false)
+        assertTrue(!Autostart.enabled)
     }
 
     /** No keyring: a key file only this user can read. */

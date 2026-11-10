@@ -398,7 +398,7 @@ private fun Status(vpn: VpnState, switching: Boolean = false) {
 }
 
 /** Green protected, orange paused, red unprotected: the button and the status line say the same thing. */
-private fun stateColor(phase: Phase) = when (phase) { Phase.On -> Ink.good; Phase.Paused -> Ink.accent; Phase.Off -> Ink.bad; Phase.Connecting -> Ink.dim }
+internal fun stateColor(phase: Phase) = when (phase) { Phase.On -> Ink.good; Phase.Paused -> Ink.accent; Phase.Off -> Ink.bad; Phase.Connecting -> Ink.dim }
 
 /**
  * The expressive power button. A cookie that turns slowly while protected; while connecting it relaxes

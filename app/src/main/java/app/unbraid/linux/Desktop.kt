@@ -35,6 +35,19 @@ object Desktop {
         gnome != "false" && kde != 0.0
     }
 
+    /**
+     * The desktop's dark or light preference: true dark, false light, null when it states none. The XDG portal's
+     * org.freedesktop.appearance color-scheme, as GNOME and KDE both set it, else GNOME's own setting.
+     */
+    fun systemDark(): Boolean? = listOf("ReadOne", "Read").firstNotNullOfOrNull { m ->
+        portalDark(run("busctl", "--user", "call", "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop", "org.freedesktop.portal.Settings", m, "ss", "org.freedesktop.appearance", "color-scheme"))
+    } ?: gnomeDark(run("gsettings", "get", "org.gnome.desktop.interface", "color-scheme"))
+
+    /** busctl's answer, "v u 1" (ReadOne) or "v v u 1" (Read): 1 prefers dark, 2 light, 0 nothing. */
+    internal fun portalDark(out: String?): Boolean? = when (out?.trim()?.split(' ')?.takeIf { it.firstOrNull() == "v" }?.lastOrNull()) { "1" -> true; "2" -> false; else -> null }
+
+    internal fun gnomeDark(out: String?): Boolean? = when (out?.trim()?.trim('\'')) { "prefer-dark" -> true; "prefer-light" -> false; else -> null }
+
     /** The clipboard's text, if any. */
     fun clipText(): String? = runCatching { Toolkit.getDefaultToolkit().systemClipboard.getData(DataFlavor.stringFlavor) as String }.getOrNull()
 
