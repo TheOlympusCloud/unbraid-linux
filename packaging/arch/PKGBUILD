@@ -1,0 +1,21 @@
+# Packages the tree packaging/build.sh stages: the app (on the system's Java 21) and its engine.
+pkgname=unbraid
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='Split tunneling VPN client: every app its own exit'
+arch=('x86_64')
+url='https://github.com/TheOlympusCloud/unbraid-linux'
+license=('GPL-3.0-or-later')
+depends=('jre21-openjdk' 'glibc' 'libx11' 'libxext' 'libxrender' 'libxtst' 'libxi' 'fontconfig' 'freetype2' 'libglvnd' 'zlib')
+optdepends=('polkit: to take over the connection another user started'
+            'libsecret: to keep the store key in the desktop keyring'
+            'libnotify: for desktop notifications')
+install=unbraid.install
+# The engine is already stripped; the app's native libraries ship inside its jars.
+options=('!strip' '!debug')
+source=("unbraid-$pkgver-x86_64.tar.gz")
+sha256sums=('@SHA256@')
+
+package() {
+    cp -a --no-preserve=ownership "$srcdir/usr" "$pkgdir/"
+}

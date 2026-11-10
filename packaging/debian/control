@@ -1,0 +1,19 @@
+Package: unbraid
+Version: @VERSION@-1
+Architecture: amd64
+Maintainer: Pablo Saura Sánchez <saurasanchezpablo@gmail.com>
+Installed-Size: @SIZE@
+Depends: default-jre (>= 2:1.17), libc6, libx11-6, libxext6, libxrender1, libxtst6, libxi6, libfontconfig1, libfreetype6, libgl1, zlib1g
+Recommends: polkitd | policykit-1, libsecret-tools, libnotify-bin
+Section: net
+Priority: optional
+Homepage: https://github.com/TheOlympusCloud/unbraid-linux
+Description: split tunneling VPN client: every app its own exit
+ unbraid routes each app through its own exit, several at once and across
+ providers: a banking app can skip the VPN while a streaming app leaves from
+ one country, another app from a second and everything else from a third.
+ Tailscale is built in. You bring the VPN: NordVPN, Mullvad, PIA, IVPN,
+ ExpressVPN, Proton VPN, Surfshark, Windscribe, AirVPN, or your own WireGuard,
+ OpenVPN or Shadowsocks servers.
+ .
+ The tunnels run in the unbraid-engine system service, built on sing-box.

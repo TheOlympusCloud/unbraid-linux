@@ -1,0 +1,17 @@
+post_install() {
+    echo ':: unbraid connects through its engine, a system service. Start it now and at every boot with:'
+    echo '   sudo systemctl enable --now unbraid-engine'
+}
+
+post_upgrade() {
+    # A running engine keeps the old program until it restarts; the app reconnects when asked.
+    systemctl try-restart unbraid-engine.service >/dev/null 2>&1 || true
+}
+
+pre_remove() {
+    systemctl disable --now unbraid-engine.service >/dev/null 2>&1 || true
+}
+
+post_remove() {
+    echo ':: The engine kept its per-user folders (the Tailscale node) in /var/lib/unbraid-engine; delete it to forget them.'
+}

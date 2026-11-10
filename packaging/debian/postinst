@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+# The engine is a system service: enabled for every boot and (re)started now, as Debian does for packaged services.
+if [ "$1" = configure ]; then
+    if command -v deb-systemd-helper >/dev/null 2>&1; then
+        deb-systemd-helper unmask unbraid-engine.service >/dev/null || true
+        deb-systemd-helper enable unbraid-engine.service >/dev/null || true
+    fi
+    if [ -d /run/systemd/system ]; then
+        systemctl --system daemon-reload >/dev/null || true
+        systemctl restart unbraid-engine.service >/dev/null || true
+    fi
+fi
+exit 0
