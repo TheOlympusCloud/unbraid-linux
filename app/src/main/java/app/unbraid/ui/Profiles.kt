@@ -228,9 +228,9 @@ fun ProfileSheet(setup: Setup, editing: String?, startEmpty: Boolean, onSave: (S
     val title = when { editing != null -> "Edit profile"; setup.profile == null && !empty -> "Save this setup"; else -> "New profile" }
     val sub = when {
         editing != null -> "Rename it, or delete it"
-        empty -> "Empty, not in use until you tap Use"
-        setup.profile == null -> "Saves this setup so you can switch back in one tap"
-        else -> "A copy of ${setup.profile}, not in use until you tap Use"
+        empty -> "Empty, not in use until you click Use"
+        setup.profile == null -> "Saves this setup so you can switch back in one click"
+        else -> "A copy of ${setup.profile}, not in use until you click Use"
     }
     ModalBottomSheet(onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Ink.surface, contentColor = Ink.text) {
         Column(Modifier.imePadding().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {

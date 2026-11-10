@@ -465,7 +465,7 @@ object Manual {
         val opts = spec?.substringAfter(';', "")?.ifEmpty { null }
         // v2ray-plugin's cert= names a file on the phone, which the engine would read: only an inline certificate is taken.
         // SIP003 escapes with backslashes; they're dropped first so "c\ert=" can't slip past.
-        require(opts?.replace("\\", "")?.split(';')?.none { it.substringBefore('=').trim() == "cert" } != false) { "The plugin's cert= option reads a file on this phone; paste the certificate as certRaw= instead" }
+        require(opts?.replace("\\", "")?.split(';')?.none { it.substringBefore('=').trim() == "cert" } != false) { "The plugin's cert= option reads a file on this computer; paste the certificate as certRaw= instead" }
         return SsProfile(label, host, port, method, password, pluginName, opts)
     }
 

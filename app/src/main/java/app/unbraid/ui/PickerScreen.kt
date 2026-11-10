@@ -261,7 +261,7 @@ fun PickerScreen(ui: Ui, target: String, close: () -> Unit, settings: () -> Unit
         item(key = "all") {
             PickRow({ allOpen = !allOpen }, false, tint, Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
                 Box(Modifier.width(36.dp), Alignment.Center) { Text("${countries.size}", style = Type.code, color = Ink.dim) }
-                Title("All countries", if (allOpen) null else "Tap a country to use its fastest server")
+                Title("All countries", if (allOpen) null else "Click a country to use its fastest server")
                 val turn by animateFloatAsState(if (allOpen) 180f else 0f, MaterialTheme.motionScheme.fastSpatialSpec(), label = "chevron")
                 Icon(Icons.expand, null, tint = Ink.dim, modifier = Modifier.size(20.dp).rotate(turn))
             }

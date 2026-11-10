@@ -55,6 +55,8 @@ dependencies {
     // Lite: no descriptors, which the daemon's messages (USB "descriptor" fields) would clash with, and a smaller app.
     implementation("com.google.protobuf:protobuf-javalite:$protobuf")
     testImplementation("junit:junit:4.13.2")
+    // The screens, composed headless and clicked through.
+    testImplementation("org.jetbrains.compose.ui:ui-test-junit4:$cmp")
 }
 
 tasks.withType<Test>().configureEach {

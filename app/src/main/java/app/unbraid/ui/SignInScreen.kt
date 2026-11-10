@@ -139,7 +139,7 @@ private fun Form(ui: Ui, provider: Provider, onClose: (() -> Unit)?, back: () ->
                     error?.let { Text(it, style = Type.caption, color = if (asked != null) Ink.text else Ink.bad, modifier = Modifier.padding(horizontal = 8.dp)) }
                     link?.let { u -> Secondary("Open the ${provider.name} client area", { openUrl(u) }) }
                     Text(
-                        "${provider.help} Stored encrypted on this phone.",
+                        "${provider.help} Stored encrypted on this computer.",
                         style = Type.caption, color = Ink.dim, modifier = Modifier.padding(horizontal = 8.dp),
                     )
                 }

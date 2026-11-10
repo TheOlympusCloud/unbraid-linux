@@ -267,7 +267,7 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
                         Item("VPN behaviour", when {
                             running && !(vpn.alwaysOn && vpn.lockdown) -> "Not leak-proof: apps go online when $APP is off"
                             running -> "Always-on on · blocking on"
-                            else -> "Always-on and blocking, set in Android"
+                            else -> "Start and connect at login"
                         }, { go("behaviour") }, icon = Icons.tunnel, cta = running && !(vpn.alwaysOn && vpn.lockdown)) { Chevron() },
                         Item("Protection", filterDns?.let { d -> listOfNotNull(d.name, "VPN routes".takeIf { filter.routes }, "Direct".takeIf { filter.direct || filter.directApps || filter.apps.containsValue(true) }).joinToString(" · ") } ?: "Each provider's own blocking", { go("dns") }, icon = Icons.dns) { Chevron() },
                     ))
@@ -437,7 +437,7 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
                 notice(ui, notice)
                 // Each filter once, alphabetical, with what it blocks in its own words; none is suggested.
                 group("unbraid's filter", listOf(
-                    Item("None", "Each provider's own blocking, set on its page. Direct apps use the phone's DNS", { setFilter { it.copy(id = null) } }, selected = filter.id == null) { Radio(filter.id == null) },
+                    Item("None", "Each provider's own blocking, set on its page. Direct apps use the computer's DNS", { setFilter { it.copy(id = null) } }, selected = filter.id == null) { Radio(filter.id == null) },
                 ) + app.unbraid.data.Filters.all.map { d ->
                     val on = filter.id == d.id
                     Item(d.name, d.blocks + if (d.id == "nextdns") " · profile ${if (on) filter.value.ifBlank { "not set" } else "needed"}" else "",
@@ -452,7 +452,7 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
                         Item("Direct traffic through $APP", "Apps that follow a Direct default route", { setFilter { it.copy(direct = !it.direct) } }, checked = filter.direct) { Toggle(filter.direct) },
                     ))
                     group("Apps set to Direct", listOf(
-                        Item("Outside $APP", "They never touch the VPN and use the phone's DNS", { setFilter { it.copy(directApps = false) } }, selected = !filter.directApps) { Radio(!filter.directApps) },
+                        Item("Outside $APP", "They never touch the VPN and use the computer's DNS", { setFilter { it.copy(directApps = false) } }, selected = !filter.directApps) { Radio(!filter.directApps) },
                         Item("Through $APP", "Traffic still goes straight out; lookups use this filter",
                             { setFilter { it.copy(directApps = true) } }, selected = filter.directApps) { Radio(filter.directApps) },
                     ))
@@ -467,7 +467,7 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
             p == "stats" -> Page("Statistics", back) {
                 notice(ui, notice)
                 group(null, listOfNotNull(
-                    Item("Record usage statistics", "Only on this phone, never uploaded. Turning it off keeps what's saved.", { if (prefs.stats) ui.setStats(false) else dialog = "statsConsent" }, checked = prefs.stats, icon = Icons.stats) { Toggle(prefs.stats) },
+                    Item("Record usage statistics", "Only on this computer, never uploaded. Turning it off keeps what's saved.", { if (prefs.stats) ui.setStats(false) else dialog = "statsConsent" }, checked = prefs.stats, icon = Icons.stats) { Toggle(prefs.stats) },
                     Item("Saved history", "${"%.1f".format(statsSize / 1e6)} MB · hourly for a week, daily for about a year", null).takeIf { statsSize > 0 },
                     Item("Delete saved history", "Erase everything recorded so far", { dialog = "statsDelete" }, danger = true) { Icon(Icons.deleteForever, null, Modifier.size(24.dp), tint = Ink.bad) }.takeIf { statsSize > 0 },
                 ))
@@ -540,7 +540,7 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
             var key by remember { mutableStateOf("") }
             val ok = url.isBlank() || httpsUrl.matches(url.trim())
             Prompt("Control server", "Save", { dialog = null; ui.setTailscaleServer(url.trim().ifEmpty { null }, key.trim().ifEmpty { null }) }, { dialog = null }, enabled = ok, secure = true) {
-                Text("For a self-hosted Headscale. Changing it signs this phone out of the current tailnet.", style = Type.sub)
+                Text("For a self-hosted Headscale. Changing it signs this computer out of the current tailnet.", style = Type.sub)
                 DialogField(url, { url = it }, "Server URL", "https://headscale.example.com")
                 DialogField(key, { key = it }, "Auth key (optional)", "Signs in without a browser", secret = true)
                 if (!ok) Text("Use a full https:// address", style = Type.caption, color = Ink.bad)
@@ -549,7 +549,7 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
         "subnets" -> HomeSubnetsDialog(home.subnets, ui, { dialog = null })
         "statsConsent" -> StatsConsent({ dialog = null }) { dialog = null; ui.setStats(true) }
         "statsDelete" -> Prompt("Delete statistics?", "Delete statistics", { dialog = null; ui.deleteStats() }, { dialog = null }, danger = true) {
-            Text("All recorded data, sessions and speed tests are erased from this phone. This can't be undone." + if (prefs.stats) " Recording stays on." else "", style = Type.sub)
+            Text("All recorded data, sessions and speed tests are erased from this computer. This can't be undone." + if (prefs.stats) " Recording stays on." else "", style = Type.sub)
         }
         "add" -> ModalBottomSheet({ dialog = null }, containerColor = Ink.surface, contentColor = Ink.text) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
@@ -595,7 +595,7 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
                     }
                 }
                 d.startsWith("signout:") -> Prompt("Sign out of ${Providers.get(arg)?.name ?: arg}?", "Sign out", { dialog = null; ui.signOut(arg) }, { dialog = null }, danger = true) {
-                    Text("Routes and app choices stay on this phone. While connected, apps on its routes are blocked until you sign in again or move them to another route.", style = Type.sub)
+                    Text("Routes and app choices stay on this computer. While connected, apps on its routes are blocked until you sign in again or move them to another route.", style = Type.sub)
                 }
                 d.startsWith("guide:") -> Providers.imports.firstOrNull { it.id == arg }?.let { g ->
                     ModalBottomSheet({ dialog = null }, containerColor = Ink.surface, contentColor = Ink.text) {

@@ -1052,7 +1052,7 @@ private fun SpeedAll(v: View, exits: List<Ex>, nodes: List<Ex>, setup: app.unbra
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Go(150, Ink.text, "AGAIN", "Test all exits together again", bloom = done) { if (Unbraid.store.mlabConsent) begin() else asking = true }
                 }
-                Text(if (done) "Combined throughput on this phone. " + (if (setup.prefs.stats) "Saved: each exit as a test marked \"with ${ran(legs) - 1} others\", and one History row." else "Not saved: statistics are off.") else "",
+                Text(if (done) "Combined throughput on this computer. " + (if (setup.prefs.stats) "Saved: each exit as a test marked \"with ${ran(legs) - 1} others\", and one History row." else "Not saved: statistics are off.") else "",
                     style = Type.caption.copy(fontSize = 12.sp), color = Ink.dim, modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp), textAlign = TextAlign.Center)
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { LinkButton(Icons.history, "History", history) }
             }
@@ -1221,7 +1221,7 @@ private fun BeforeTogether(a: SpeedTest.All, ex: (String) -> Ex?, setup: app.unb
             }
             Text(
                 (if (a.metered) "On a metered connection: about ${String.format(Locale.US, "%.1f", gb(going))} GB in 20 seconds, from each exit's best test. " else "") +
-                    "Uses ${going.size} of about $left tests left today, as counted on this phone. Leaving the page stops the test.",
+                    "Uses ${going.size} of about $left tests left today, as counted on this computer. Leaving the page stops the test.",
                 style = Type.caption.copy(fontSize = 13.sp, lineHeight = 18.sp), color = Ink.dim, modifier = Modifier.padding(horizontal = 8.dp),
             )
             SheetButtons("Cancel", { SpeedTest.cancel() }, if (going.size < 2) "Needs two exits" else if (going.size > left) "Not enough tests left" else "Start ${going.size} together", { SpeedTest.go(nearest) },
@@ -1272,7 +1272,7 @@ private fun MlabConsent(dismiss: () -> Unit, accept: () -> Unit) {
             listOf(
                 Icons.speed to "Measurement Lab (M-Lab) is an open platform run by researchers. A test asks for one of its servers in the exit's country; for your own servers and Tailscale nodes M-Lab picks a nearby one. Ten seconds each way.",
                 Icons.history to "M-Lab publishes every test's results openly and keeps them, with the public IP address of the exit you test: a VPN server's, or your home's for a home or Tailscale exit.",
-                Icons.block to "Also sent: the time, the app's name and version, and the exit's country when it's known. Nothing about your phone or accounts. Up to ${SpeedTest.PER_DAY} tests a day.",
+                Icons.block to "Also sent: the time, the app's name and version, and the exit's country when it's known. Nothing about your computer or accounts. Up to ${SpeedTest.PER_DAY} tests a day.",
             ).forEach { (i, t) -> Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { Icon(i, null, Modifier.size(24.dp), tint = Ink.dim); Text(t, style = Type.sub, color = Ink.text) } }
             LinkButton(Icons.external, "M-Lab privacy policy") { openUrl("https://www.measurementlab.net/privacy/") }
             SheetButtons("Not now", dismiss, "Agree and test", accept, Modifier.padding(top = 8.dp))
@@ -1387,11 +1387,11 @@ private fun StatsOff(hasData: Boolean, turnOn: () -> Unit, view: () -> Unit) = S
             Text(if (hasData) "Stats are paused" else "See where your traffic goes", style = Type.title.copy(fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.Medium), color = Ink.text,
                 modifier = tourAnchor(TourStop.StatsIntro))
             Text(
-                if (hasData) "Nothing new is recorded. Statistics kept so far are still on this phone; delete them in Settings."
+                if (hasData) "Nothing new is recorded. Statistics kept so far are still on this computer; delete them in Settings."
                 else "Data per app and per exit, time connected and speeds. Statistics aren't uploaded, and no browsing destinations are recorded.",
                 style = Type.body.copy(fontWeight = FontWeight.Normal, lineHeight = 24.sp), color = Ink.dim,
             )
-            listOf(Icons.phone to "Kept only on this phone", Icons.block to "No browsing destinations", Icons.deleteForever to "Delete it any time in Settings").forEach { (i, t) ->
+            listOf(Icons.phone to "Kept only on this computer", Icons.block to "No browsing destinations", Icons.deleteForever to "Delete it any time in Settings").forEach { (i, t) ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) { Icon(i, null, Modifier.size(20.dp), tint = Ink.dim); Text(t, style = Type.sub, color = Ink.text) }
             }
             Row(
@@ -1410,7 +1410,7 @@ fun StatsConsent(dismiss: () -> Unit, accept: () -> Unit) = ModalBottomSheet(dis
     Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Keep statistics?", style = Type.title.copy(fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Medium))
         listOf(
-            Icons.phone to "Statistics stay on this phone. They are never uploaded.",
+            Icons.phone to "Statistics stay on this computer. They are never uploaded.",
             Icons.clock to "Kept as hourly sums for a week and daily sums for about a year, with your last 100 speed tests.",
             Icons.block to "Only apps, exits, bytes, times, speeds and speed-test exit IPs. No browsing destinations, ever.",
             Icons.deleteForever to "Turn off or delete everything in Settings at any time.",

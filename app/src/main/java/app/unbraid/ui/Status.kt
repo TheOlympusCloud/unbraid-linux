@@ -10,7 +10,7 @@ enum class Tone { Good, Warn, Bad, Idle }
  * (![listFresh]), its routes [connected].
  */
 fun providerStatus(name: String, used: Boolean, refused: Boolean, settingUp: Boolean, blocked: Boolean, listFresh: Boolean, connected: Boolean, dropping: String? = null, oldList: String? = null): Pair<Tone, String> = when {
-    refused -> Tone.Bad to "$name refused this phone. Sign in again"
+    refused -> Tone.Bad to "$name refused this computer. Sign in again"
     !used -> Tone.Idle to "Not used"
     settingUp -> Tone.Warn to "Setting up your key"
     blocked -> Tone.Warn to "Can't reach its servers right now"

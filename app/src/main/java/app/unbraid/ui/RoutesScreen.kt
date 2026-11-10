@@ -214,10 +214,10 @@ fun RoutesScreen(ui: Ui, connect: () -> Unit, openPicker: (String) -> Unit) {
                 },
                 subColor = if (vpn.error != null) Ink.bad else Ink.dim,
                 sub = switching?.let { "To $it · apps reconnect for a moment" } ?: vpn.error ?: settingUp.takeIf { it.isNotEmpty() }?.let { ps -> "${ps.joinToString(" and ") { Providers.get(it)?.name ?: it }} is setting up your key. Its routes can take a minute to work" } ?: when (vpn.phase) {
-                    Phase.On -> "Tap to pause or disconnect"
-                    Phase.Paused -> if (vpn.lockdown) "Apps are offline (Block connections without VPN) · tap to resume" else "Apps skip the VPN · tap to resume"
+                    Phase.On -> "Click to pause or disconnect"
+                    Phase.Paused -> if (vpn.lockdown) "Apps are offline (Block connections without VPN) · click to resume" else "Apps skip the VPN · click to resume"
                     Phase.Connecting -> "Setting up your routes"
-                    Phase.Off -> "Tap to connect"
+                    Phase.Off -> "Click to connect"
                 },
                 // Connected: offer pause or disconnect. Paused or off: one tap connects. The status text says "tap to …",
                 // so tapping it does the same as the button.
@@ -239,7 +239,7 @@ fun RoutesScreen(ui: Ui, connect: () -> Unit, openPicker: (String) -> Unit) {
                 }
                 item(key = "profiles") {
                     if (setup.profiles.isEmpty()) Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = Gutter - 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Save this setup to switch back to it in one tap.", style = Type.sub, color = Ink.dim, modifier = Modifier.weight(1f))
+                        Text("Save this setup to switch back to it in one click.", style = Type.sub, color = Ink.dim, modifier = Modifier.weight(1f))
                         Secondary("Save", { addProfile(false) }, color = Ink.text)
                     } else ProfileStrip(setup, switching, draft) { ui.view(it) }
                 }
@@ -278,7 +278,7 @@ fun RoutesScreen(ui: Ui, connect: () -> Unit, openPicker: (String) -> Unit) {
                 }
                 // Nothing set apart yet: say what that means instead of leaving the page empty.
                 if (shown.apps.isEmpty() && shown.defaultRoute.isNotEmpty()) item(key = "allDefault") {
-                    Text("All apps use the default route. Tap + to send some apps through another exit.", style = Type.sub, color = Ink.dim, modifier = Modifier.padding(start = 24.dp, end = Gutter, top = 12.dp))
+                    Text("All apps use the default route. Click + to send some apps through another exit.", style = Type.sub, color = Ink.dim, modifier = Modifier.padding(start = 24.dp, end = Gutter, top = 12.dp))
                 }
                 if (setup.home.tailscale || setup.home.wg != null) item(key = "home") {
                     HomeRow(setup.home, lit = on, loginUrl = vpn.tsLoginUrl.takeIf { setup.home.tailscale }) { tsLogin(it) }

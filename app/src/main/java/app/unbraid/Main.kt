@@ -221,7 +221,7 @@ private val back = MutableStateFlow<(() -> Unit)?>(null)
 
 /** The screens, as MainActivity composes them on Android. */
 @Composable
-private fun App(ui: Ui) = UnbraidTheme {
+internal fun App(ui: Ui) = UnbraidTheme {
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var connectAfter by rememberSaveable { mutableStateOf(false) }
     /** Connect. Until the VPN disclosure is accepted it comes first. */

@@ -226,7 +226,7 @@ class Ui : ViewModel() {
     private fun release(id: String, blob: String) = runCatching { Providers.get(id)?.signOut(blob) ?: true }.getOrDefault(false)
 
     private fun unreleased(names: List<String>) = names.joinToString(", ").let {
-        warn("Couldn't release this phone's device slot at $it. Remove it in your $it account${if (names.size > 1) "s" else ""}.")
+        warn("Couldn't release this computer's device slot at $it. Remove it in your $it account${if (names.size > 1) "s" else ""}.")
     }
 
     fun signOut(provider: String) = viewModelScope.launch(Dispatchers.IO) {
@@ -253,7 +253,7 @@ class Ui : ViewModel() {
         (UnbraidVpn.whileStopped(f) != null).also { if (!it) notice.value = "Couldn't stop the VPN to $what. Try again." }
 
     private fun tailscaleLeft(loggedOut: Boolean?) {
-        if (loggedOut == false) warn("Couldn't log this phone out of Tailscale. Remove it in your tailnet's admin console.")
+        if (loggedOut == false) warn("Couldn't log this computer out of Tailscale. Remove it in your tailnet's admin console.")
     }
 
     /** Nothing left to route through: back to the first-run screen, but never by stopping a running VPN (its apps stay blocked). */

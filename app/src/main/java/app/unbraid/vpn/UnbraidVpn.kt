@@ -520,7 +520,7 @@ object UnbraidVpn {
             val accounts = store.accounts.value
             val dropped = move.providers.filter { p -> accounts[p]?.let { Providers.get(p)?.revoked(it) } == true }
             if (dropped.isNotEmpty()) lock.withLock {
-                dropped.forEach { p -> refusals = refusals + (p to (accounts[p] to AuthException("${Providers.get(p)?.name ?: p} no longer has this phone (it was removed from your account). Sign in again"))) }
+                dropped.forEach { p -> refusals = refusals + (p to (accounts[p] to AuthException("${Providers.get(p)?.name ?: p} no longer has this computer (it was removed from your account). Sign in again"))) }
             }
             // The newest setup, not the running one: a change still waiting to apply must never be undone here.
             if (move.anyMovable || dropped.isNotEmpty()) reload(move.keep, move.avoid, move.generation)

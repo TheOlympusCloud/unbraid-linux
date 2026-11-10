@@ -119,11 +119,11 @@ object Onboarding {
 
 /** The tour's stops: each names its tab and the concept its anchor marks, never a position on screen. */
 enum class TourStop(val tab: Tab, val title: String, val body: String) {
-    Power(Tab.Routes, "Connect, pause, stop", "Tap to connect. Tap again to pause or disconnect. Green is protected, orange paused, red off."),
-    DefaultRoute(Tab.Routes, "The default exit", "Every app goes here unless you give it an exception. Tap it to change the location."),
+    Power(Tab.Routes, "Connect, pause, stop", "Click to connect. Click again to pause or disconnect. Green is protected, orange paused, red off."),
+    DefaultRoute(Tab.Routes, "The default exit", "Every app goes here unless you give it an exception. Click it to change the location."),
     AddRoute(Tab.Routes, "Add an exit", "The + button adds a route: your provider's countries, or your own servers and Tailscale. It saves profiles too."),
-    AppsList(Tab.Apps, "Choose per app", "Tap any app to pick its exit; Direct skips the VPN. Moved apps show on Routes as exceptions."),
-    StatsIntro(Tab.Stats, "Your numbers, if you want them", "Data per app and exit, flows and speed tests. Off until you turn it on. Statistics stay on this phone; M-Lab publishes speed test results."),
+    AppsList(Tab.Apps, "Choose per app", "Click any app to pick its exit; Direct skips the VPN. Moved apps show on Routes as exceptions."),
+    StatsIntro(Tab.Stats, "Your numbers, if you want them", "Data per app and exit, flows and speed tests. Off until you turn it on. Statistics stay on this computer; M-Lab publishes speed test results."),
     Connections(Tab.Settings, "Add connections", "Sign in to more providers, or import WireGuard, OpenVPN and Shadowsocks servers."),
     LocalHome(Tab.Settings, "Home and local", "Printers and casting stay reachable. Reach home through Tailscale or your router's WireGuard."),
     About(Tab.Settings, "You're set", "The Quick Settings tile and the widget work without opening $APP. Replay this tour here, in About & support."),
@@ -195,7 +195,7 @@ fun TourOverlay(step: Int, appsShown: Boolean, back: () -> Unit, next: () -> Uni
             }
             Text(stop.title, style = Type.title, color = Ink.text)
             Text(
-                if (stop == TourStop.AppsList && !appsShown) "Show my apps lists them here. Tap any app to pick its exit; Direct skips the VPN." else stop.body,
+                if (stop == TourStop.AppsList && !appsShown) "Show my apps lists them here. Click any app to pick its exit; Direct skips the VPN." else stop.body,
                 style = Type.sub, color = Ink.dim,
             )
             Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -281,13 +281,13 @@ fun SheetLine(icon: ImageVector, text: String) = Row(horizontalArrangement = Arr
 /** The VPN half of the old disclosure, word for word, before the first connect. */
 @Composable
 fun VpnDisclosure(agree: () -> Unit, dismiss: () -> Unit) = InfoSheet(
-    Icons.tunnel, "Before you connect", "How the VPN works", "Agree and continue", agree, dismiss, foot = "Android asks for its own VPN permission next.",
+    Icons.tunnel, "Before you connect", "How the VPN works", "Agree and continue", agree, dismiss, foot = "The tunnel itself runs in the unbraid-engine system service.",
 ) {
-    SheetLine(Icons.routes, "$APP creates a VPN on this phone to route each app through the exit you chose.")
+    SheetLine(Icons.routes, "$APP creates a VPN on this computer to route each app through the exit you chose.")
     SheetLine(Icons.dns, "Traffic goes to the exits you chose: VPN providers, your own servers or Tailscale.")
     SheetLine(Icons.direct, "Apps set to Direct and your local network use your normal connection.")
     SheetLine(Icons.block, "$APP has no servers and collects nothing.")
-    SheetLine(Icons.shield, "Until blocking is on in Android, apps use your normal connection whenever $APP is off.")
+    SheetLine(Icons.shield, "Apps use your normal connection whenever $APP is off: before you log in, while paused and if it stops.")
 }
 
 /** The installed-apps half, when the list is first asked for. */
@@ -295,48 +295,15 @@ fun VpnDisclosure(agree: () -> Unit, dismiss: () -> Unit) = InfoSheet(
 fun AppsDisclosure(agree: () -> Unit, dismiss: () -> Unit) = InfoSheet(
     Icons.apps, "Before your apps appear", "Your installed apps", "Agree and continue", agree, dismiss, foot = "Not now keeps the list closed; Apps asks again.",
 ) {
-    SheetLine(Icons.apps, "$APP reads the list of installed apps, only on this phone.")
+    SheetLine(Icons.apps, "$APP reads the list of installed apps, only on this computer.")
     SheetLine(Icons.routes, "It needs the list to let you give each app its own exit.")
-    SheetLine(Icons.phone, "The list never leaves this phone and is not uploaded.")
+    SheetLine(Icons.phone, "The list never leaves this computer and is not uploaded.")
 }
 
-/** Android's two switches, read live while the VPN runs; null = not running, so unknown. */
+/** A setting's state in a card, as Android's two switches showed: on, off, or unknown (null). */
 @Composable
 fun FlagRow(icon: ImageVector, title: String, sub: String, on: Boolean?) = Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
     Icon(if (on == true) Icons.checkCircle else icon, null, Modifier.size(22.dp), tint = if (on == true) Ink.good else Ink.dim)
     Column(Modifier.weight(1f)) { Text(title, style = Type.sub.copy(fontWeight = FontWeight.Medium), color = Ink.text); Text(sub, style = Type.sub, color = Ink.dim) }
     Text(when (on) { null -> "—"; true -> "ON"; false -> "OFF" }, style = Type.code, color = when (on) { null -> Ink.dim; true -> Ink.good; false -> Ink.accent })
 }
-
-const val LEAK_TRADEOFF = "With blocking on, every app, Direct apps included, loses internet whenever $APP is paused or off."
-
-/** Leak-proof setup: after the first connect, the way to Android's Always-on and Block switches; it says Leak-proof only once Android confirms both. */
-@Composable
-fun LeakSheet(alwaysOn: Boolean, lockdown: Boolean, open: () -> Unit, later: () -> Unit, never: () -> Unit, done: () -> Unit) {
-    if (alwaysOn && lockdown) return InfoSheet(
-        Icons.checkCircle, "All set", "Leak-proof", "Done", done, done, good = true, later = null,
-    ) {
-        Text("Nothing goes online without $APP now. To use the internet without it, turn blocking off in Android.", style = Type.sub.copy(fontSize = 15.sp, lineHeight = 22.sp), color = Ink.dim)
-        FlagRow(Icons.power, "Always-on VPN", "Starts $APP at boot and brings it back", true)
-        FlagRow(Icons.block, "Block connections without VPN", "No internet without $APP", true)
-    }
-    InfoSheet(Icons.shield, "One more step", "Stay protected when $APP is off", "Open Android settings", open, later, actionIcon = Icons.external) {
-        Text("Right now apps use your normal connection before $APP connects, while it's paused and if it stops. Android can block that.", style = Type.sub.copy(fontSize = 15.sp, lineHeight = 22.sp), color = Ink.dim)
-        listOf("In Android's VPN settings, tap the gear next to $APP.", "Turn on Always-on VPN, then Block connections without VPN.").forEachIndexed { i, t ->
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Box(Modifier.size(24.dp).border(1.5.dp, Ink.dim, CircleShape), Alignment.Center) { Text("${i + 1}", style = Type.code, color = Ink.text) }
-                Text(t, style = Type.sub.copy(fontSize = 15.sp, lineHeight = 22.sp), color = Ink.text)
-            }
-        }
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Ink.surfaceTop).padding(horizontal = 14.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(Icons.block, null, Modifier.size(20.dp), tint = Ink.accent)
-            Text("The catch: ${LEAK_TRADEOFF.replaceFirstChar { it.lowercase() }}", style = Type.sub, color = Ink.text)
-        }
-        var asking by remember { mutableStateOf(false) }
-        Secondary("Don't remind me again", { asking = true }, Modifier.padding(start = 0.dp), color = Ink.dim)
-        if (asking) Prompt("Stop the reminders?", "Stop reminders", { asking = false; never() }, { asking = false }) {
-            Text("Apps will keep using your normal connection whenever $APP is off. Settings, VPN behaviour keeps a warning and the way to turn blocking on.", style = Type.sub, color = Ink.dim)
-        }
-    }
-}
-

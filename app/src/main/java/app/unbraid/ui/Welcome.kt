@@ -127,7 +127,7 @@ private fun Braid() {
     val strands = remember { braid() }
     val colors = listOf(Ink.accent, Ink.route(1), Ink.direct)
     BoxWithConstraints(Modifier.fillMaxWidth().height(230.dp).semantics {
-        contentDescription = "Three braided strands leave the phone and part into three exits: the Netherlands for everything else, the United States for streaming, Direct for the bank."
+        contentDescription = "Three braided strands leave the computer and part into three exits: the Netherlands for everything else, the United States for streaming, Direct for the bank."
     }) {
         val s = maxWidth.value / 342f
         Canvas(Modifier.fillMaxSize()) {
