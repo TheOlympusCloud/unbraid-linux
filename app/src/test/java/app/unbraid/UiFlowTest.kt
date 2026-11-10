@@ -29,7 +29,7 @@ import androidx.compose.ui.test.rightClick
 import androidx.compose.ui.test.moveTo
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.ComposeUiTest
-import androidx.compose.ui.test.runDesktopComposeUiTest
+import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText

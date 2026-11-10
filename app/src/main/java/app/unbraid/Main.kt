@@ -33,6 +33,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.backhandler.PredictiveBackHandler
 import androidx.compose.ui.input.key.Key
@@ -227,7 +231,9 @@ private fun window() = application {
     }
     ReadSystemTheme()
     val icon = painterResource("unbraid.svg")
-    if (isTraySupported) Tray(painterResource(if (vpn.phase == VpnState.Phase.On) "unbraid.svg" else "unbraid-off.svg"),
+    // The tray shows the state: the logo in its colour while connected, greyed out otherwise.
+    val grey = remember(icon) { Grey(icon) }
+    if (isTraySupported) Tray(if (vpn.phase == VpnState.Phase.On) icon else grey,
         tooltip = listOf(APP, summary).filter { it.isNotEmpty() }.joinToString(" · "), onAction = { shown.value = true }) {
         Item(when (vpn.phase) {
             VpnState.Phase.On -> "Protected · ${setup.route(setup.defaultRoute)?.name ?: "Direct"}"
@@ -277,6 +283,12 @@ private fun window() = application {
         LaunchedEffect(focused) { if (focused) systemDark.value = withContext(Dispatchers.IO) { Desktop.systemDark() } }
         App(ui)
     }
+}
+
+/** [p] without its colour, as the tray shows the logo while disconnected. */
+private class Grey(private val p: Painter) : Painter() {
+    override val intrinsicSize get() = p.intrinsicSize
+    override fun DrawScope.onDraw() = with(p) { draw(size, colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })) }
 }
 
 /** A remembered place still on one of the screens (one may have gone since). */
