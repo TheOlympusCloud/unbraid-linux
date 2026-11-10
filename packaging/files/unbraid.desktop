@@ -1,0 +1,24 @@
+[Desktop Entry]
+Type=Application
+Name=unbraid
+GenericName=Per-app VPN
+Comment=Give every app its own VPN exit
+Exec=unbraid
+Icon=unbraid
+Terminal=false
+Categories=Network;Security;
+Keywords=VPN;WireGuard;OpenVPN;Shadowsocks;Tailscale;split tunneling;
+StartupWMClass=app-unbraid-MainKt
+Actions=Connect;Pause;Disconnect;
+
+[Desktop Action Connect]
+Name=Connect
+Exec=unbraid connect
+
+[Desktop Action Pause]
+Name=Pause for 15 minutes
+Exec=unbraid pause 15
+
+[Desktop Action Disconnect]
+Name=Disconnect
+Exec=unbraid disconnect

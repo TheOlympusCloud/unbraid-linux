@@ -1,0 +1,174 @@
+package app.unbraid
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toAwtImage
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsNodeInteractionsProvider
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.filterToOne
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
+import app.unbraid.data.DIRECT
+import app.unbraid.data.Location
+import app.unbraid.data.Profile
+import app.unbraid.data.Route
+import app.unbraid.data.VERSION
+import app.unbraid.data.WgPeer
+import app.unbraid.linux.Paths
+import app.unbraid.ui.Onboarding
+import app.unbraid.ui.Ui
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.BeforeClass
+import org.junit.FixMethodOrder
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runners.MethodSorters
+import java.io.File
+import javax.imageio.ImageIO
+
+/**
+ * The screens as a person first meets them, composed headless and clicked through: the welcome and terms, sign-in,
+ * then Routes, Apps, Stats, Settings and the location picker of a set-up app. Each step leaves a screenshot in
+ * build/screenshots, to set beside the Android app's.
+ */
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+class UiFlowTest {
+    @get:Rule val compose = createComposeRule()
+
+    companion object {
+        private val key = "5p4RkybdRU5uaDi90eu4KZPTFif0lKCg4Qp6t1c4F30="
+
+        /** One app per test JVM, as on Android: the store and onboarding are the process's. Fake desktop apps to route. */
+        @BeforeClass @JvmStatic fun app() {
+            Paths.data.listFiles()?.forEach { it.deleteRecursively() }
+            val apps = File(Paths.data.parentFile, "applications").apply { deleteRecursively(); mkdirs() }
+            // Each app its own program in its own folder (stand-ins, never run): apps on one program share its route.
+            val programs = File(Paths.data.parentFile, "programs").apply { deleteRecursively() }
+            fun program(id: String) = File(programs, "$id/$id").apply { parentFile.mkdirs(); writeBytes(byteArrayOf(0x7f, 69, 76, 70, 2, 1)); setExecutable(true) }
+            listOf("firefox" to "Firefox", "spotify" to "Spotify", "org.gnome.Terminal" to "Terminal").forEach { (id, name) ->
+                File(apps, "$id.desktop").writeText("[Desktop Entry]\nType=Application\nName=$name\nExec=${program(id).path} %u\n")
+            }
+            // Runs as Firefox: it takes Firefox's route.
+            File(apps, "firefox-private.desktop").writeText("[Desktop Entry]\nType=Application\nName=Private Browsing\nExec=${File(programs, "firefox/firefox").path} --private-window %u\n")
+            // Runs as python3, like every other Python program: the engine can't tell it apart.
+            File(apps, "org.example.Tool.desktop").writeText("[Desktop Entry]\nType=Application\nName=Tool\nExec=python3 /opt/tool/tool.py\n")
+            Unbraid.init()
+            Onboarding.init()
+        }
+    }
+
+    private fun shot(name: String) {
+        compose.waitForIdle()
+        val img = compose.onNodeWithTag("app").captureToImage().toAwtImage()
+        ImageIO.write(img, "png", File("build/screenshots").apply { mkdirs() }.resolve("$name.png"))
+    }
+
+    private fun SemanticsNodeInteractionsProvider.click(text: String) = onAllNodesWithText(text).filterToOne(hasClickAction()).performClick()
+
+    @Test fun a_welcomeTermsAndSignIn() {
+        compose.setContent { Box(Modifier.size(440.dp, 900.dp).testTag("app")) { App(Ui()) } }
+        compose.onNodeWithText("EVERY APP, ITS OWN", substring = true).assertIsDisplayed()
+        shot("1-welcome")
+        compose.onNodeWithText("Next").performClick()
+        shot("2-welcome-routes")
+        compose.onNodeWithText("Next").performClick()
+        compose.onNodeWithText("I accept the Terms of use", substring = true).performClick()
+        shot("3-terms")
+        compose.onNodeWithText("Accept and continue").performClick()
+        compose.onNodeWithText("Choose your VPN").assertIsDisplayed()
+        compose.onNodeWithText("NordVPN").assertIsDisplayed()
+        shot("4-sign-in")
+    }
+
+    /** A set-up app: provider routes, an imported WireGuard server, and desktop apps on routes and Direct. */
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun b_screensOfASetUpApp() {
+        val lab = WgPeer("Home lab", key, listOf("10.8.0.2/32"), key, endpoint = "203.0.113.7:51820", allowedIps = listOf("0.0.0.0/0"))
+        Unbraid.store.update { s ->
+            s.copy(
+                routes = listOf(Route("nl", Location("nord", 153, "NL", "Netherlands")), Route("us", Location("nord", 228, "US", "United States"), hue = 1),
+                    Route("it", Location("nord", 106, "IT", "Italy"), hue = 2), Route("lab", wg = lab, hue = 3)),
+                defaultRoute = "nl", apps = mapOf("firefox" to "us", "spotify" to "it", "org.gnome.Terminal" to DIRECT, "org.example.Tool" to "us", "firefox-private" to "it"), version = VERSION,
+                // Here Private Browsing is the one of its group with a route: it leads, and keeps it.
+                profiles = listOf(Profile("Work", "nl", mapOf("firefox-private" to "it"))),
+            )
+        }
+        Onboarding.tourSeen()
+        val ui = Ui()
+        compose.setContent { Box(Modifier.size(440.dp, 900.dp).testTag("app")) { App(ui) } }
+        compose.onNodeWithText("DEFAULT ROUTE").assertIsDisplayed()
+        compose.onNodeWithText("Netherlands").assertIsDisplayed()
+        shot("5-routes")
+        compose.click("Apps")
+        compose.onNodeWithText("Show my apps").performClick()
+        compose.onNodeWithText("Agree and continue").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Spotify").fetchSemanticsNodes().isNotEmpty() }
+        // Two of a group with routes (Firefox's own and its private window's): the first keeps its route, and the other's is said.
+        compose.waitUntil(10_000) { Unbraid.store.setup.value.apps["firefox-private"] == null }
+        assertEquals(true, ui.notice.value?.contains("Private Browsing runs as Firefox, so it takes Firefox's route now."))
+        ui.notice.value = null
+        assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.single().apps)
+        shot("6-apps")
+        // An app that runs as a script loses the route it could never take, and says it follows the default.
+        compose.waitUntil(10_000) { Unbraid.store.setup.value.apps["org.example.Tool"] == null }
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Tool"))
+        compose.onNodeWithText("Tool").performClick()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Follows the default route", substring = true))
+        compose.onNodeWithText("Follows the default route", substring = true).assertIsDisplayed()
+        // A new entry for Firefox's program, whose label sorts first, doesn't take Firefox's route: it takes the route too.
+        File(Paths.data.parentFile, "applications/alacarte-made-1.desktop").writeText("[Desktop Entry]\nType=Application\nName=Browser\nExec=${File(Paths.data.parentFile, "programs/firefox/firefox").path}\n")
+        ui.refreshApps()
+        compose.waitUntil(10_000) { ui.apps.value.any { it.pkg == "alacarte-made-1" } }
+        compose.waitForIdle()
+        assertEquals("us", Unbraid.store.setup.value.apps["firefox"])
+        assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.single().apps)
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Browser"))
+        compose.onNodeWithText("Browser").performClick()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Takes Firefox's route", substring = true))
+        compose.onNodeWithText("Takes Firefox's route", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Browser").performClick()
+        // So does one that runs as another app and has no route of its own here.
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Private Browsing"))
+        compose.onNodeWithText("Private Browsing").performClick()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Takes Firefox's route", substring = true))
+        compose.onNodeWithText("Takes Firefox's route", substring = true).assertIsDisplayed()
+        shot("6-apps-runs-as-another")
+        // A program the launcher doesn't list is added by its file (the chooser is the desktop's own), keyed by its real path.
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Add a program"))
+        compose.onNodeWithText("Add a program").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(File("/bin/true").canonicalPath, ui.addProgram(File("/bin/true")))
+            assertNull(ui.addProgram(File(Paths.data, "unbraid_ui.properties")))
+            // A script runs as its interpreter, an AppImage from a mount of its own: neither can have a route of its own.
+            val script = File(Paths.data, "tool.sh").apply { writeText("#!/bin/sh\necho hi\n"); setExecutable(true) }
+            assertNull(ui.addProgram(script))
+            val appImage = File(Paths.data, "App.AppImage").apply { writeBytes(byteArrayOf(0x7f, 69, 76, 70, 2, 1, 1, 0, 65, 73, 2, 0)); setExecutable(true) }
+            assertNull(ui.addProgram(appImage))
+            assertEquals(true, ui.notice.value?.contains("AppImage"))
+            // A program an app runs takes that app's route: it can't have one of its own.
+            assertNull(ui.addProgram(File(Paths.data.parentFile, "programs/spotify/spotify")))
+            assertEquals(true, ui.notice.value?.contains("part of Spotify"))
+            ui.notice.value = null // the refusal's notice, which would show on the next screens
+        }
+        compose.click("Stats")
+        shot("7-stats")
+        compose.click("Settings")
+        shot("8-settings")
+        compose.click("Routes")
+        compose.onNodeWithText("Netherlands").performClick()
+        shot("9-route-sheet")
+    }
+}

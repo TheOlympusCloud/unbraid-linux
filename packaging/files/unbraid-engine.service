@@ -1,0 +1,24 @@
+[Unit]
+Description=unbraid engine: routes each app through its own VPN exit
+Documentation=https://github.com/TheOlympusCloud/unbraid-linux
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# The engine is sing-box's Linux daemon: it needs root for the TUN interface, routes and per-process lookups. The app
+# talks to it over this socket; the daemon checks who connects, and polkit approves taking it over from another user.
+ExecStart=/usr/lib/unbraid/unbraid-engine run --working-directory /var/lib/unbraid-engine --socket /run/unbraid-engine/engine.sock
+RuntimeDirectory=unbraid-engine
+RuntimeDirectoryMode=0755
+StateDirectory=unbraid-engine
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
