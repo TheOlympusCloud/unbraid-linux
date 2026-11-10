@@ -327,6 +327,22 @@ class UiFlowTest {
         onNodeWithTag("picker").performKeyInput { pressKey(Key.Escape) }
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("CHOOSE A LOCATION").fetchSemanticsNodes().isEmpty() }
         runOnIdle { assertEquals(Tab.Settings, Desk.tab.value) }
+        // Add provider, from the picker: Esc in a provider's form steps back to the list and forgets what was typed; on
+        // the list, Esc closes Add provider.
+        runOnIdle { assertTrue(keys(Key.N, ctrl = true, shift = false, alt = false, ui, {}, {})) }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("CHOOSE A LOCATION").fetchSemanticsNodes().isNotEmpty() }
+        onNode(hasText("PROVIDER") and hasClickAction()).performClick()
+        onNodeWithText("Add a provider").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Mullvad").fetchSemanticsNodes().isNotEmpty() }
+        onAllNodesWithText("Mullvad").filterToOne(hasClickAction()).performClick()
+        onNode(hasSetTextAction()).performTextInput("1234")
+        waitUntil(timeoutMillis = 5_000) { ui.form.keys.any { it.startsWith("mullvad:") } }
+        onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Escape) }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Choose your VPN").fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(ui.form.keys.none { it.startsWith("mullvad:") })
+        runOnIdle { esc.press() }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Choose your VPN").fetchSemanticsNodes().isEmpty() }
+        runOnIdle { assertEquals(Tab.Settings, Desk.tab.value) }
         click("Routes")
         // Routes with the apps known: their names, and the default's share.
         waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Thunderbird", substring = true).fetchSemanticsNodes().isNotEmpty() }
