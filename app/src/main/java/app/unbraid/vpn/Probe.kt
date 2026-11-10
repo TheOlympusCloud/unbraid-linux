@@ -5,7 +5,6 @@ import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.Base64
-import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 import kotlinx.coroutines.Dispatchers
@@ -27,7 +26,7 @@ object Probe {
      * A TLS connection to [host] through the tunnel [tag]; throws if the VPN isn't on or the exit doesn't answer.
      * Closing [raw] from another thread ends a blocked attempt at once.
      */
-    fun open(tag: String, host: String, port: Int = 443, timeoutMs: Int = 10_000, raw: Socket = Socket()): Conn {
+    fun open(tag: String, host: String, port: Int = 443, timeoutMs: Int = 10_000, raw: Socket = Socket(), tls: SSLSocketFactory = SSLSocketFactory.getDefault() as SSLSocketFactory): Conn {
         val (proxyPort, password) = UnbraidVpn.probe ?: error("Connect first")
         try {
             raw.connect(InetSocketAddress("127.0.0.1", proxyPort), timeoutMs)
@@ -36,10 +35,9 @@ object Probe {
             raw.outputStream.write("CONNECT $host:$port HTTP/1.1\r\nHost: $host:$port\r\nProxy-Authorization: Basic $auth\r\n\r\n".toByteArray())
             val status = head(raw.inputStream).firstOrNull().orEmpty()
             if (status.split(' ').getOrNull(1) != "200") error("The exit didn't connect")
-            val tls = (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket(raw, host, port, true) as SSLSocket
-            tls.startHandshake()
-            if (!HttpsURLConnection.getDefaultHostnameVerifier().verify(host, tls.session)) { tls.close(); error("Certificate doesn't match $host") }
-            return Conn(tls)
+            val s = app.unbraid.data.Http.named(tls.createSocket(raw, host, port, true) as SSLSocket)
+            s.startHandshake()
+            return Conn(s)
         } catch (e: Exception) { runCatching { raw.close() }; throw e }
     }
 

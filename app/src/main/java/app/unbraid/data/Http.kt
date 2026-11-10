@@ -2,10 +2,13 @@ package app.unbraid.data
 
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.Socket
 import java.net.URL
 import java.net.URLEncoder
 import java.net.UnknownHostException
 import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
 /** Minimal blocking HTTPS client shared by providers: size-capped bodies, one retry on a transient DNS failure. */
@@ -41,6 +44,23 @@ object Http {
     fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
 
     /**
+     * [s], checking the server's certificate against the name it was made for in the handshake itself (RFC 2818, as
+     * browsers do). On the JVM that is the check to use: unlike Android's, its default HostnameVerifier accepts nothing.
+     */
+    fun named(s: SSLSocket): SSLSocket = s.apply { sslParameters = sslParameters.apply { endpointIdentificationAlgorithm = "HTTPS" } }
+
+    /** [f]'s sockets made for [name], whatever address they connect to, and checked against it ([named]). */
+    private class Named(private val f: SSLSocketFactory, private val name: String) : SSLSocketFactory() {
+        override fun createSocket(s: Socket, host: String?, port: Int, autoClose: Boolean): Socket = named(f.createSocket(s, name, port, autoClose) as SSLSocket)
+        override fun createSocket(host: String, port: Int) = createSocket(Socket(host, port), host, port, true)
+        override fun createSocket(host: String, port: Int, local: InetAddress, localPort: Int) = createSocket(Socket(host, port, local, localPort), host, port, true)
+        override fun createSocket(host: InetAddress, port: Int) = createSocket(Socket(host, port), host.hostAddress, port, true)
+        override fun createSocket(host: InetAddress, port: Int, local: InetAddress, localPort: Int) = createSocket(Socket(host, port, local, localPort), host.hostAddress, port, true)
+        override fun getDefaultCipherSuites(): Array<String> = f.defaultCipherSuites
+        override fun getSupportedCipherSuites(): Array<String> = f.supportedCipherSuites
+    }
+
+    /**
      * [tls] replaces the trust store (e.g. a provider's pinned CA); [verifyHost] checks the certificate against that
      * name instead of the URL host (needed when connecting to a server by IP).
      */
@@ -51,7 +71,7 @@ object Http {
         val c = URL(url).openConnection() as HttpURLConnection
         require(c is HttpsURLConnection) { "HTTPS only" }
         tls?.let { c.sslSocketFactory = it }
-        verifyHost?.let { h -> c.setHostnameVerifier { _, session -> javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier().verify(h, session) } }
+        verifyHost?.let { h -> c.sslSocketFactory = Named(c.sslSocketFactory, h) }
         c.requestMethod = method
         c.connectTimeout = 10_000
         c.readTimeout = 15_000
