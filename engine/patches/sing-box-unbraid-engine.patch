@@ -1,0 +1,90 @@
+diff --git a/experimental/boxdd/authorize_linux.go b/experimental/boxdd/authorize_linux.go
+index 9cdf043..f01d3ef 100644
+--- a/experimental/boxdd/authorize_linux.go
++++ b/experimental/boxdd/authorize_linux.go
+@@ -21,8 +21,8 @@ const (
+ 	policyKitService               = "org.freedesktop.PolicyKit1"
+ 	policyKitAuthorityPath         = dbus.ObjectPath("/org/freedesktop/PolicyKit1/Authority")
+ 	policyKitAuthorityInterface    = "org.freedesktop.PolicyKit1.Authority"
+-	policyKitTakeOverAction        = "io.nekohasekai.sfl.take-over-service"
+-	policyKitSetInsecureModeAction = "io.nekohasekai.sfl.set-insecure-mode"
++	policyKitTakeOverAction        = "app.unbraid.engine.take-over-service"
++	policyKitSetInsecureModeAction = "app.unbraid.engine.set-insecure-mode"
+ 	policyKitAllowUserInteraction  = uint32(1)
+ )
+ 
+diff --git a/experimental/boxdd/cmd_service_linux.go b/experimental/boxdd/cmd_service_linux.go
+index d9f4d7c..a157a14 100644
+--- a/experimental/boxdd/cmd_service_linux.go
++++ b/experimental/boxdd/cmd_service_linux.go
+@@ -15,7 +15,7 @@ import (
+ )
+ 
+ const (
+-	defaultServiceWorkingDirectory = "/var/lib/sing-box-daemon"
++	defaultServiceWorkingDirectory = "/var/lib/unbraid-engine"
+ 	serviceUnitName                = serviceName + ".service"
+ )
+ 
+diff --git a/experimental/boxdd/desktop_service.go b/experimental/boxdd/desktop_service.go
+index 1942f9f..a5c3d07 100644
+--- a/experimental/boxdd/desktop_service.go
++++ b/experimental/boxdd/desktop_service.go
+@@ -9,7 +9,6 @@ import (
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-box/experimental/locale"
+ 	E "github.com/sagernet/sing/common/exceptions"
+-	"github.com/sagernet/tailscale/atomicfile"
+ 
+ 	"google.golang.org/grpc/codes"
+ 	"google.golang.org/grpc/status"
+@@ -94,7 +93,11 @@ func (s *desktopService) StartService(ctx context.Context, request *StartService
+ 		return nil, s.daemon.cleanFailedStartLocked(identity.UserID, mergedOptions, err)
+ 	}
+ 	directory := userWorkingDirectory(identity.UserID)
+-	configError := atomicfile.WriteFile(filepath.Join(directory, serviceConfigFileName), []byte(request.ConfigContent), 0o600)
++	// Unbraid: never persist the configuration; it contains private keys. The app starts the service again after a reboot.
++	configError := os.Remove(filepath.Join(directory, serviceConfigFileName))
++	if os.IsNotExist(configError) {
++		configError = nil
++	}
+ 	optionsError := saveStartOptions(identity.UserID, mergedOptions)
+ 	if configError != nil || optionsError != nil {
+ 		return nil, s.daemon.cleanFailedStartLocked(identity.UserID, mergedOptions, E.Errors(configError, optionsError))
+diff --git a/experimental/boxdd/main.go b/experimental/boxdd/main.go
+index 40df83a..8878ed5 100644
+--- a/experimental/boxdd/main.go
++++ b/experimental/boxdd/main.go
+@@ -14,7 +14,8 @@ import (
+ 	"github.com/spf13/cobra"
+ )
+ 
+-const serviceName = "sing-box-daemon"
++// Unbraid: its own name, so it never collides with a stock sing-box daemon (socket, unit, polkit actions).
++const serviceName = "unbraid-engine"
+ 
+ var mainCommand = &cobra.Command{
+ 	Use:     serviceName,
+@@ -26,7 +27,7 @@ var commandVersion = &cobra.Command{
+ 	Short: "Print the daemon version",
+ 	Args:  cobra.NoArgs,
+ 	Run: func(command *cobra.Command, args []string) {
+-		fmt.Println("sing-box-daemon version", C.Version)
++		fmt.Println(serviceName+" version", C.Version)
+ 		fmt.Println("core api version", daemon.APIVersion)
+ 	},
+ }
+diff --git a/experimental/boxdd/server.go b/experimental/boxdd/server.go
+index ad9df8a..a6f2585 100644
+--- a/experimental/boxdd/server.go
++++ b/experimental/boxdd/server.go
+@@ -214,7 +214,8 @@ func (d *Daemon) startServiceLocked(ctx context.Context, ownerUserID string, con
+ 	if err != nil {
+ 		return err
+ 	}
+-	_ = os.WriteFile(filepath.Join(directory, configSnapshotFileName), []byte(configContent), 0o600)
++	// Unbraid: no configuration snapshot for crash reports either; it contains private keys.
++	_ = os.Remove(filepath.Join(directory, configSnapshotFileName))
+ 	libbox.ReloadSetupOptions(&libbox.SetupOptions{
+ 		OomKillerEnabled:   options.OOMKillerEnabled,
+ 		OomKillerDisabled:  options.OOMKillerDisabled,
