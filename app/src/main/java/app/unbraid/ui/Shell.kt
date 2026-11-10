@@ -185,7 +185,7 @@ private fun NavItem(label: String, icon: ImageVector, keys: String, selected: Bo
     val item = @Composable {
         Row(
             Modifier.then(if (wide) Modifier.fillMaxWidth() else Modifier.size(44.dp)).height(if (wide) 42.dp else 44.dp).clip(RoundedCornerShape(14.dp)).background(ground)
-                .hover(source).tap(onClick, label, Role.Tab).semantics { contentDescription = label }
+                .hover(source).tap(onClick, label, Role.Tab).then(if (wide) Modifier else Modifier.semantics { contentDescription = label })
                 .padding(horizontal = if (wide) 12.dp else 0.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = if (wide) Arrangement.spacedBy(12.dp) else Arrangement.Center,
