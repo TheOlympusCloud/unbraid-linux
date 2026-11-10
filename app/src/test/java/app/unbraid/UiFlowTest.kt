@@ -22,6 +22,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import app.unbraid.data.DIRECT
 import app.unbraid.data.Location
+import app.unbraid.data.Profile
 import app.unbraid.data.Route
 import app.unbraid.data.VERSION
 import app.unbraid.data.WgPeer
@@ -101,6 +102,8 @@ class UiFlowTest {
                 routes = listOf(Route("nl", Location("nord", 153, "NL", "Netherlands")), Route("us", Location("nord", 228, "US", "United States"), hue = 1),
                     Route("it", Location("nord", 106, "IT", "Italy"), hue = 2), Route("lab", wg = lab, hue = 3)),
                 defaultRoute = "nl", apps = mapOf("firefox" to "us", "spotify" to "it", "org.gnome.Terminal" to DIRECT, "org.example.Tool" to "us", "firefox-private" to "it"), version = VERSION,
+                // Here Private Browsing is the one of its group with a route: it leads, and keeps it.
+                profiles = listOf(Profile("Work", "nl", mapOf("firefox-private" to "it"))),
             )
         }
         Onboarding.tourSeen()
@@ -113,6 +116,11 @@ class UiFlowTest {
         compose.onNodeWithText("Show my apps").performClick()
         compose.onNodeWithText("Agree and continue").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Spotify").fetchSemanticsNodes().isNotEmpty() }
+        // Two of a group with routes (Firefox's own and its private window's): the first keeps its route, and the other's is said.
+        compose.waitUntil(10_000) { Unbraid.store.setup.value.apps["firefox-private"] == null }
+        assertEquals(true, ui.notice.value?.contains("Private Browsing runs as Firefox, so it takes Firefox's route now."))
+        ui.notice.value = null
+        assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.single().apps)
         shot("6-apps")
         // An app that runs as a script loses the route it could never take, and says it follows the default.
         compose.waitUntil(10_000) { Unbraid.store.setup.value.apps["org.example.Tool"] == null }
@@ -120,8 +128,19 @@ class UiFlowTest {
         compose.onNodeWithText("Tool").performClick()
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Follows the default route", substring = true))
         compose.onNodeWithText("Follows the default route", substring = true).assertIsDisplayed()
-        // One that runs as another app loses its own route too, and takes that app's.
-        compose.waitUntil(10_000) { Unbraid.store.setup.value.apps["firefox-private"] == null }
+        // A new entry for Firefox's program, whose label sorts first, doesn't take Firefox's route: it takes the route too.
+        File(Paths.data.parentFile, "applications/alacarte-made-1.desktop").writeText("[Desktop Entry]\nType=Application\nName=Browser\nExec=${File(Paths.data.parentFile, "programs/firefox/firefox").path}\n")
+        ui.refreshApps()
+        compose.waitUntil(10_000) { ui.apps.value.any { it.pkg == "alacarte-made-1" } }
+        compose.waitForIdle()
+        assertEquals("us", Unbraid.store.setup.value.apps["firefox"])
+        assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.single().apps)
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Browser"))
+        compose.onNodeWithText("Browser").performClick()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Takes Firefox's route", substring = true))
+        compose.onNodeWithText("Takes Firefox's route", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Browser").performClick()
+        // So does one that runs as another app and has no route of its own here.
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Private Browsing"))
         compose.onNodeWithText("Private Browsing").performClick()
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Takes Firefox's route", substring = true))

@@ -47,9 +47,13 @@ import kotlinx.coroutines.withContext
 
 /**
  * [routable]: the engine can tell its traffic apart (Linux: not a script, an interpreter or an AppImage, [Apps.resolve]).
- * [follows]: the app it runs as, whose route it takes (Linux: LibreOffice's Writer, a browser's web app, [Apps.shareRoutes]).
+ * [group]: the apps it runs as one program with, itself included, in the order that picks which leads (Linux: LibreOffice's
+ * Writer and Calc, a browser and its web apps, [Apps.shareRoutes]).
  */
-data class AppInfo(val pkg: String, val label: String, val system: Boolean, val routable: Boolean = true, val follows: String? = null)
+data class AppInfo(val pkg: String, val label: String, val system: Boolean, val routable: Boolean = true, val group: List<String> = emptyList()) {
+    /** The app whose route this one takes in [s]: the first of its [group] with a route there, when that isn't itself. */
+    fun follows(s: Setup): String? = group.firstOrNull { it in s.apps }?.takeIf { it != pkg }
+}
 
 /** Removed routes' apps follow the default; a removed default becomes [fallback], the first route left, or Direct. */
 private fun Setup.without(gone: Set<String>, fallback: String? = null): Setup {
@@ -348,18 +352,26 @@ class Ui : ViewModel() {
         val known = entries.mapTo(HashSet()) { it.key }
         val s0 = store.setup.value
         val programs = (s0.apps.keys + s0.profiles.flatMap { it.apps.keys }).filter { it.startsWith('/') && it !in known && File(it).exists() }.distinct()
-        // A program one of the apps runs (added before that app was installed) takes that app's route.
-        val listed = entries.map { AppInfo(it.key, it.label, it.system, routable = !it.matchers.empty, follows = it.follows) } +
-            programs.map { p -> entries.firstOrNull { Apps.matches(it.matchers, p) }?.key.let { o -> AppInfo(p, File(p).name, false, routable = o == null && Apps.unroutable(File(p)) == null, follows = o) } }
+        // A program one of the apps runs (added before that app was installed) joins that app's group, after its entries.
+        val owned = programs.mapNotNull { p -> entries.firstOrNull { Apps.matches(it.matchers, p) }?.let { o -> p to o.group.ifEmpty { listOf(o.key) } } }
+        fun group(g: List<String>) = (g + owned.filter { it.second == g }.map { it.first }).takeIf { it.size > 1 }.orEmpty()
+        val listed = entries.map { AppInfo(it.key, it.label, it.system, routable = !it.matchers.empty, group = group(it.group.ifEmpty { listOf(it.key) })) } +
+            programs.map { p -> AppInfo(p, File(p).name, false, routable = Apps.unroutable(File(p)) == null, group = owned.firstOrNull { it.first == p }?.second?.let(::group).orEmpty()) }
         _apps.value = listed.sortedBy { it.label.lowercase() }
         val installed = listed.filter { it.routable }.mapTo(HashSet()) { it.pkg }
+        val groups = listed.map { it.group }.filter { it.isNotEmpty() }.distinct()
         // An uninstalled app must not keep its route (and a tunnel) alive, nor one the engine can't tell apart (Linux: a
-        // script or an AppImage, an app that runs as another one), which would show on a route its traffic never takes.
-        // Saved profiles too: one used later must not bring an uninstalled app's exception back.
-        val gone = { s: Setup -> s.apps.keys.any { it !in installed } || s.profiles.any { p -> p.apps.keys.any { it !in installed } } }
-        if (gone(store.setup.value)) store.edit { s ->
-            s.copy(apps = s.apps.filterKeys { it in installed }, profiles = s.profiles.map { p -> p.copy(apps = p.apps.filterKeys { it in installed }) })
-        }
+        // script or an AppImage), which would show on a route its traffic never takes; nor, of apps that run as one
+        // program, a route after the group's first (it takes that one). Saved profiles too: one used later must not
+        // bring such an exception back.
+        fun keep(apps: Map<String, String>) = apps.filterKeys { k -> k in installed && groups.firstOrNull { k in it }?.first { it in apps }.let { it == null || it == k } }
+        val now = store.setup.value
+        // A route that loses to another of its group's is said, never dropped silently.
+        val label = listed.associate { it.pkg to it.label }
+        val lost = (listOf(now.apps) + now.profiles.map { it.apps }).flatMap { a -> a.keys.filter { it in installed && it !in keep(a) }.map { k -> k to groups.first { k in it }.first { it in a } } }.distinct()
+        if (lost.isNotEmpty()) warn(lost.joinToString(" ") { (k, l) -> "${label[k]} runs as ${label[l]}, so it takes ${label[l]}'s route now." })
+        val gone = { s: Setup -> s.apps != keep(s.apps) || s.profiles.any { p -> p.apps != keep(p.apps) } }
+        if (gone(now)) store.edit { s -> s.copy(apps = keep(s.apps), profiles = s.profiles.map { p -> p.copy(apps = keep(p.apps)) }) }
     } }
 
     /**
@@ -370,7 +382,7 @@ class Ui : ViewModel() {
     fun addProgram(file: File): String? {
         Apps.unroutable(file)?.let { notice.value = it; return null }
         val path = file.canonicalPath
-        Apps.keyOf(path, emptyList()).takeIf { it != path }?.let { k ->
+        Apps.keyOf(path, store.setup.value.apps.keys).takeIf { it != path }?.let { k ->
             val app = _apps.value.firstOrNull { it.pkg == k }?.label ?: k
             notice.value = "${file.name} is part of $app: it takes $app's route."; return null
         }

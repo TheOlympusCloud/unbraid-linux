@@ -49,7 +49,8 @@ The engine knows a process by its program file. A script's is the interpreter th
 Windows program's is Wine, and an Electron app on Arch may share its Electron with others: every program they run shares
 it. An AppImage runs its programs from a new folder each time. Such apps can't be told apart, so unbraid shows them
 following the default route rather than offering them one of their own. Apps that run as one program, such as
-LibreOffice's Writer and Calc, or a browser and its web apps, are one app to the engine: they take the main app's route.
+LibreOffice's Writer and Calc, or a browser and its web apps, are one app to the engine and share one route: once you
+give one of them a route, the others take it too.
 Some apps leave part of their networking to a desktop service (KDE's file workers, GNOME's calendar and online
 accounts); that part follows the default route.
 

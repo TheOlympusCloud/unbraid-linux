@@ -5,11 +5,10 @@ import app.unbraid.vpn.Matchers
 import java.io.File
 
 /**
- * An app the Apps page lists: [key] is what the setup routes (a desktop entry's id, or a program's path). An app the
- * engine can't tell from another one [follows] that app's key and takes its route ([Apps.shareRoutes]); [argc] is the
- * length of its Exec line.
+ * An app the Apps page lists: [key] is what the setup routes (a desktop entry's id, or a program's path). Apps the engine
+ * can't tell apart share one [group] of keys and their matchers ([Apps.shareRoutes]); [argc] counts its Exec line.
  */
-data class DesktopApp(val key: String, val label: String, val system: Boolean, val icon: File?, val matchers: Matchers, val follows: String? = null, val argc: Int = 0)
+data class DesktopApp(val key: String, val label: String, val system: Boolean, val icon: File?, val matchers: Matchers, val group: List<String> = emptyList(), val argc: Int = 0)
 
 /**
  * The installed apps, from their desktop entries (XDG), and how the engine knows each one's processes. A program
@@ -45,8 +44,9 @@ object Apps {
 
     /**
      * Apps the engine can't tell apart (LibreOffice's Writer and Calc, a browser and its web apps, two Firefoxes) are one
-     * app to it: the plainest launcher among them (not a system one, the shortest Exec line) takes all their matchers, and
-     * the others follow its route. Otherwise whichever rule came first would route them all, whatever their rows said.
+     * app to it, so they share one route: each gets all their matchers and the group's keys, plainest launcher first (not a
+     * system one, the shortest Exec line). The first of them with a route leads in a setup ([matchers]); with none, any of
+     * them can take one. Otherwise whichever rule came first would route them all, whatever their rows said.
      */
     internal fun shareRoutes(apps: List<DesktopApp>): List<DesktopApp> {
         val out = apps.associateByTo(LinkedHashMap()) { it.key }
@@ -56,9 +56,9 @@ object Apps {
             var i = 0
             while (i < group.size) { val g = group[i++]; left.filter { overlap(g.matchers, it.matchers) }.forEach { left.remove(it); group += it } }
             if (group.size == 1) continue
-            val head = group.minWith(compareBy({ it.system }, { it.argc }, { it.label.lowercase() }, { it.key }))
+            val keys = group.sortedWith(compareBy({ it.system }, { it.argc }, { it.label.lowercase() }, { it.key })).map { it.key }
             val all = Matchers(group.flatMap { it.matchers.paths }.distinct(), group.flatMap { it.matchers.dirs }.distinct(), group.flatMap { it.matchers.names }.distinct())
-            group.forEach { out[it.key] = if (it === head) it.copy(matchers = all) else it.copy(matchers = Matchers(), follows = head.key) }
+            group.forEach { out[it.key] = it.copy(matchers = all, group = keys) }
         }
         return out.values.toList()
     }
@@ -70,23 +70,31 @@ object Apps {
             a.names.any { it in b.names || inDirs(it, b) } || b.names.any { inDirs(it, a) }
     }
 
-    /** How the engine knows [key]: a program path is itself; an entry's processes come from its Exec line. */
-    fun matchers(key: String): Matchers {
-        // A program an app runs (one added before that app was installed) takes the app's route, never a rule of its own.
-        if (key.startsWith('/')) return if (cache.any { matches(it.matchers, key) }) Matchers() else Matchers(paths = listOf(key))
+    /**
+     * How the engine knows [key], routed in a setup whose routed keys are [routed]: a program path is itself, an entry's
+     * processes come from its Exec line. Of apps that run as one program only the first routed one is matched, so the
+     * group takes the route the user set, whichever entries come and go. A program an app runs (added before that app was
+     * installed) matches the app while none of its group is routed.
+     */
+    fun matchers(key: String, routed: Collection<String> = emptyList()): Matchers {
+        if (key.startsWith('/')) {
+            val app = cache.firstOrNull { matches(it.matchers, key) } ?: return Matchers(paths = listOf(key))
+            return if (app.group.ifEmpty { listOf(app.key) }.none { it in routed }) app.matchers else Matchers()
+        }
         // An app installed since the last scan is found by reading the entries again, at most every 10 s (an uninstalled one never is).
         val fresh = System.nanoTime() - scannedAt < 10_000_000_000L && scannedAt != 0L
-        return (cache.firstOrNull { it.key == key } ?: if (fresh) null else scan().firstOrNull { it.key == key })?.matchers ?: Matchers()
+        val app = cache.firstOrNull { it.key == key } ?: (if (fresh) null else scan().firstOrNull { it.key == key }) ?: return Matchers()
+        return if (app.group.isEmpty() || app.group.firstOrNull { it in routed } == key) app.matchers else Matchers()
     }
 
     /** [key]'s icon file, from the last scan. */
     fun iconFile(key: String): File? = cache.firstOrNull { it.key == key }?.icon
 
-    /** The app [processPath] belongs to, for statistics: one of [routed] first, then any entry, else the path itself. */
+    /** The app [processPath] belongs to, for statistics: one of [routed] first, then any entry (its group's first), else the path. */
     fun keyOf(processPath: String, routed: Collection<String>): String {
         if (processPath.isEmpty()) return "?"
-        routed.firstOrNull { matches(matchers(it), processPath) }?.let { return it }
-        return cache.firstOrNull { matches(it.matchers, processPath) }?.key ?: processPath
+        routed.firstOrNull { matches(matchers(it, routed), processPath) }?.let { return it }
+        return cache.firstOrNull { matches(it.matchers, processPath) }?.let { it.group.firstOrNull() ?: it.key } ?: processPath
     }
 
     /** What the engine does with [m] ([app.unbraid.vpn.Linux]): an exact path, a folder prefix or a program name. */

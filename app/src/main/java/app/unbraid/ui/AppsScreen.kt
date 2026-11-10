@@ -96,9 +96,9 @@ fun AppsScreen(ui: Ui, disclose: () -> Unit, openPicker: (String) -> Unit) {
     val shown = remember(apps, setup, query, filter, showSystem, open, openedAs) {
         apps.filter { a ->
             (showSystem || !a.system || a.pkg in setup.apps) &&
-                (filter == null || placeOf(a.follows ?: a.pkg) == filter) &&
+                (filter == null || placeOf(a.follows(setup) ?: a.pkg) == filter) &&
                 (query.isEmpty() || a.label.contains(query, true) || a.pkg.contains(query, true))
-        }.sortedBy { rank[placeOf(it.follows ?: it.pkg)] ?: Int.MAX_VALUE }
+        }.sortedBy { rank[placeOf(it.follows(setup) ?: it.pkg)] ?: Int.MAX_VALUE }
     }
     val direct = apps.count { it.pkg in setup.apps && setup.apps[it.pkg] == DIRECT }
     val routed = apps.count { it.pkg in setup.apps } - direct
@@ -194,7 +194,8 @@ private fun FilterChip(label: String, dot: Color?, on: Boolean, direct: Boolean 
 private fun AppRow(ui: Ui, a: AppInfo, setup: Setup, expanded: Boolean, onToggle: () -> Unit, openPicker: (String) -> Unit, draft: Boolean = false) {
     val haptic = LocalHapticFeedback.current
     val explicit = setup.apps[a.pkg]
-    val current = setup.routeOf(a.follows ?: a.pkg)
+    val follows = a.follows(setup)
+    val current = setup.routeOf(follows ?: a.pkg)
     val motion = MaterialTheme.motionScheme
     val ground by animateColorAsState(if (expanded) Ink.surface else Color.Transparent, motion.fastEffectsSpec(), label = "row")
     Column(Modifier.padding(horizontal = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(ground)) {
@@ -217,11 +218,12 @@ private fun AppRow(ui: Ui, a: AppInfo, setup: Setup, expanded: Boolean, onToggle
             enter = expandVertically(motion.defaultSpatialSpec()) + fadeIn(motion.fastEffectsSpec()),
             exit = shrinkVertically(motion.fastSpatialSpec()) + fadeOut(motion.fastEffectsSpec()),
         ) {
-            // Linux: the engine can't tell a script's or an AppImage's traffic apart, so it can only follow the default; one
-            // that runs as another app takes that app's route.
-            if (!a.routable) return@AnimatedVisibility Text(
-                a.follows?.let { o -> ui.apps.value.firstOrNull { it.pkg == o }?.label ?: o }?.let { "Takes $it's route: it runs as $it, and $APP can't tell their traffic apart." }
-                    ?: "Follows the default route: it runs as a script, on Wine or Java, or from an AppImage, and $APP can't tell its traffic from other programs'.",
+            // Linux: one that runs as another app takes the route that app has; the engine can't tell a script's or an
+            // AppImage's traffic apart, so it can only follow the default.
+            val note = follows?.let { o -> ui.apps.value.firstOrNull { it.pkg == o }?.label ?: o }?.let { "Takes $it's route: it runs as $it, and $APP can't tell their traffic apart." }
+                ?: "Follows the default route: it runs as a script, on Wine or Java, or from an AppImage, and $APP can't tell its traffic from other programs'.".takeIf { !a.routable }
+            if (note != null) return@AnimatedVisibility Text(
+                note,
                 style = Type.caption, color = Ink.dim, modifier = Modifier.padding(start = 68.dp, end = 14.dp, bottom = 14.dp),
             )
             val tiles = setup.routes.sortedByDescending { it.id == setup.defaultRoute }.map {

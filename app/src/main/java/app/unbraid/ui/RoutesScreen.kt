@@ -161,7 +161,7 @@ fun RoutesScreen(ui: Ui, connect: () -> Unit, openPicker: (String) -> Unit) {
     val exceptions = (shown.routes.map { it.id } + DIRECT).filter { it != shown.defaultRoute && it !in hidden && (it != DIRECT || DIRECT in byRoute) }
     val labels = remember(apps) { apps.associate { it.pkg to it.label } }
     // The default carries every app not sent elsewhere; its preview shows user apps, not system ones.
-    val defaultPkgs = remember(apps, shown) { apps.filter { shown.routeOf(it.follows ?: it.pkg) == shown.defaultRoute }.sortedBy { it.system }.map { it.pkg } }
+    val defaultPkgs = remember(apps, shown) { apps.filter { shown.routeOf(it.follows(shown) ?: it.pkg) == shown.defaultRoute }.sortedBy { it.system }.map { it.pkg } }
     val server = if (lit) vpn.servers[shown.defaultRoute] else null
     val exits by ui.exits.collectAsStateWithLifecycle()
     // A route's report holds only for the engine and server it was taken on.

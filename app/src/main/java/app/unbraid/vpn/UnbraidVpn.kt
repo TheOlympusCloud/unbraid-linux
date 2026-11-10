@@ -592,7 +592,7 @@ object UnbraidVpn {
     private fun input(setup: Setup, links: Map<String, Link>, blocked: Set<String>, p: Pair<Int, String>? = probe, newTable: Boolean = false) =
         Compiler.Input(setup, LinkPicker.ported(setup, links, portStep), "app.unbraid", true, "tailscale", "cache.db", store.tsSuffix, p, fakeBlock(newTable), blocked, tsLoginPending)
 
-    private fun compile(i: Compiler.Input) = Linux.config(Compiler.compile(i), Apps::matchers, self)
+    private fun compile(i: Compiler.Input) = Linux.config(Compiler.compile(i), { Apps.matchers(it, i.setup.apps.keys) }, self)
 
     /** The running table's fake-IP block, to compare a reload with what runs; a new table (an engine start) takes the next one. */
     private fun fakeBlock(newTable: Boolean = false) = Compiler.nextBlock(lastBlock ?: store.fakeBlock, synchronized(this) { tableOpen } && !newTable)

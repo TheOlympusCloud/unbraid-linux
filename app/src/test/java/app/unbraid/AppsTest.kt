@@ -167,7 +167,8 @@ class AppsTest {
 
     /**
      * Apps that run as one program (LibreOffice's Writer and Calc, a browser's web apps, a Flatpak of the same name) are one
-     * app to the engine: the plainest launcher leads with all their matchers, the others follow it, and so do statistics.
+     * app to the engine: they share their matchers, plainest launcher first, and only the first of them with a route is
+     * matched, so the group keeps the route the user set. Statistics name it, or the group's first.
      */
     @Test fun appsOnOneProgramShareARoute() {
         val office = elf(File(tmp.root, "opt/office/program/soffice"))
@@ -180,17 +181,39 @@ class AppsTest {
         add("chrome-flatpak", "Chrome Flatpak", "flatpak run --command=chrome com.google.Chrome")
         add("other", "Other", other.path); add("helper", "Office helper", "${office.path} --headless", "NoDisplay=true")
         val all = Apps.scan(listOf(File(tmp.root, "share")), path = emptyList(), installs = emptyList()).associateBy { it.key }
-        assertEquals(mapOf("writer" to "office", "calc" to "office", "helper" to "office", "chrome-yt" to "chrome", "chrome-flatpak" to "chrome"),
-            all.values.filter { it.follows != null }.associate { it.key to it.follows })
-        assertEquals(Matchers(), all.getValue("writer").matchers)
-        assertEquals(Matchers(listOf(chrome.canonicalPath), listOf(chrome.parentFile.canonicalPath + "/"), listOf("chrome")), all.getValue("chrome").matchers)
-        assertEquals(listOf(other.canonicalPath), all.getValue("other").matchers.paths)
+        assertEquals(listOf("office", "calc", "writer", "helper"), all.getValue("writer").group)
+        assertEquals(listOf("chrome", "chrome-yt", "chrome-flatpak"), all.getValue("chrome-flatpak").group)
+        assertEquals(emptyList<String>(), all.getValue("other").group)
+        val both = Matchers(listOf(chrome.canonicalPath), listOf(chrome.parentFile.canonicalPath + "/"), listOf("chrome"))
+        assertEquals(both, all.getValue("chrome-yt").matchers)
+        assertEquals(listOf(other.canonicalPath), Apps.matchers("other").paths)
+        // The first routed one is matched, the others never: the web app routed alone takes the browser with it.
+        assertEquals(both, Apps.matchers("chrome-yt", setOf("chrome-yt")))
+        assertEquals(both, Apps.matchers("chrome", setOf("chrome", "chrome-yt")))
+        assertEquals(Matchers(), Apps.matchers("chrome-yt", setOf("chrome", "chrome-yt")))
         assertEquals(Matchers(), Apps.matchers("writer"))
         assertEquals("office", Apps.keyOf(office.canonicalPath, emptyList()))
-        // A program an app runs takes that app's route, never a rule of its own.
-        assertEquals(Matchers(), Apps.matchers(chrome.canonicalPath))
+        assertEquals("writer", Apps.keyOf(office.canonicalPath, listOf("writer")))
+        // A program an app runs (added before the app was installed) is matched only while none of the app's group is routed.
+        assertEquals(both, Apps.matchers(chrome.canonicalPath, setOf(chrome.canonicalPath)))
+        assertEquals(Matchers(), Apps.matchers(chrome.canonicalPath, setOf("chrome", chrome.canonicalPath)))
         val lone = File(tmp.root, "elsewhere/tool").path
         assertEquals(listOf(lone), Apps.matchers(lone).paths)
+    }
+
+    /**
+     * A new entry for a routed app's program (a menu editor's "Browser" running firefox, whose label sorts first) leads the
+     * group only while nothing in it is routed: the app that has the route keeps it.
+     */
+    @Test fun aNewEntryDoesNotTakeTheRoute() {
+        val ff = elf(File(tmp.root, "usr/lib/firefox/firefox"))
+        val apps = File(tmp.root, "share/applications").apply { mkdirs() }
+        File(apps, "firefox.desktop").writeText(entry("${ff.path} %u").replace("Name=Thing", "Name=Firefox"))
+        File(apps, "alacarte-made-1.desktop").writeText(entry(ff.path).replace("Name=Thing", "Name=Browser"))
+        val all = Apps.scan(listOf(File(tmp.root, "share")), path = emptyList(), installs = emptyList()).associateBy { it.key }
+        assertEquals(listOf("alacarte-made-1", "firefox"), all.getValue("firefox").group)
+        assertEquals(listOf(ff.canonicalPath), Apps.matchers("firefox", setOf("firefox")).paths)
+        assertEquals(Matchers(), Apps.matchers("alacarte-made-1", setOf("firefox")))
     }
 
     /**
