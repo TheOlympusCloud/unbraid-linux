@@ -1,5 +1,5 @@
 diff --git a/experimental/boxdd/authorize_linux.go b/experimental/boxdd/authorize_linux.go
-index 9cdf043..4350991 100644
+index 9cdf043..6f5a4dc 100644
 --- a/experimental/boxdd/authorize_linux.go
 +++ b/experimental/boxdd/authorize_linux.go
 @@ -9,6 +9,7 @@ import (
@@ -22,7 +22,7 @@ index 9cdf043..4350991 100644
  	policyKitAllowUserInteraction  = uint32(1)
  )
  
-@@ -41,6 +43,48 @@ func authorizeTakeOver(ctx context.Context, identity peerIdentity) error {
+@@ -41,6 +43,62 @@ func authorizeTakeOver(ctx context.Context, identity peerIdentity) error {
  	return checkPolicyKitAuthorization(ctx, identity, policyKitTakeOverAction)
  }
  
@@ -40,7 +40,8 @@ index 9cdf043..4350991 100644
 +	if userID == uint64(os.Geteuid()) {
 +		return nil
 +	}
-+	if userID < loginUIDMin() {
++	uidMin, uidMax := loginUIDRange()
++	if userID < uidMin || userID > uidMax || userID == overflowUID {
 +		return status.Error(codes.PermissionDenied, "system accounts can't use the service")
 +	}
 +	return checkPolicyKit(ctx, identity, policyKitClaimAction)
@@ -51,21 +52,34 @@ index 9cdf043..4350991 100644
 +
 +var loginDefsPath = "/etc/login.defs"
 +
-+// Unbraid: the lowest user ID login.defs gives people; below it are system accounts.
-+func loginUIDMin() uint64 {
++// Unbraid: nobody, the kernel's overflow user ID: never a person, even where UID_MAX reaches it.
++const overflowUID = 65534
++
++// Unbraid: the user IDs login.defs gives people (1000 to 60000 unless set). Outside them are system accounts, such as
++// systemd's dynamic users (61184 to 65519).
++func loginUIDRange() (uidMin uint64, uidMax uint64) {
++	uidMin, uidMax = 1000, 60000
 +	content, err := os.ReadFile(loginDefsPath)
-+	if err == nil {
-+		for _, line := range strings.Split(string(content), "\n") {
-+			fields := strings.Fields(line)
-+			if len(fields) >= 2 && fields[0] == "UID_MIN" {
-+				value, parseErr := strconv.ParseUint(fields[1], 10, 32)
-+				if parseErr == nil {
-+					return value
-+				}
-+			}
++	if err != nil {
++		return
++	}
++	for _, line := range strings.Split(string(content), "\n") {
++		fields := strings.Fields(line)
++		if len(fields) < 2 {
++			continue
++		}
++		value, parseErr := strconv.ParseUint(fields[1], 10, 32)
++		if parseErr != nil {
++			continue
++		}
++		switch fields[0] {
++		case "UID_MIN":
++			uidMin = value
++		case "UID_MAX":
++			uidMax = value
 +		}
 +	}
-+	return 1000
++	return
 +}
 +
  func authorizeSetInsecureMode(ctx context.Context, identity peerIdentity, enabled bool) error {
@@ -286,10 +300,10 @@ index ad9df8a..a6f2585 100644
  		OomKillerDisabled:  options.OOMKillerDisabled,
 diff --git a/experimental/boxdd/unbraid_test.go b/experimental/boxdd/unbraid_test.go
 new file mode 100644
-index 0000000..74444b6
+index 0000000..431ad08
 --- /dev/null
 +++ b/experimental/boxdd/unbraid_test.go
-@@ -0,0 +1,189 @@
+@@ -0,0 +1,204 @@
 +//go:build linux
 +
 +package main
@@ -325,7 +339,7 @@ index 0000000..74444b6
 +	})
 +	workingDirectory = t.TempDir()
 +	loginDefsPath = filepath.Join(t.TempDir(), "login.defs")
-+	err = os.WriteFile(loginDefsPath, []byte("#UID_MIN 500\nUID_MIN\t\t 1000\n"), 0o644)
++	err = os.WriteFile(loginDefsPath, []byte("#UID_MIN 500\nUID_MIN\t\t 1000\nUID_MAX\t\t60000\n"), 0o644)
 +	if err != nil {
 +		t.Fatal(err)
 +	}
@@ -378,16 +392,31 @@ index 0000000..74444b6
 +
 +func TestUnbraidSystemAccountsCantClaim(t *testing.T) {
 +	s, asked := unbraidDaemon(t, nil)
-+	for _, uid := range []string{"33", "999"} { // www-data, the last system ID
++	// www-data, the last system ID below UID_MIN, the first above UID_MAX, a systemd dynamic user, nobody.
++	for _, uid := range []string{"33", "999", "60001", "61184", "65534"} {
 +		_, err := s.ClaimService(asUser(uid), nil)
 +		if status.Code(err) != codes.PermissionDenied {
 +			t.Fatalf("%s: %v", uid, err)
 +		}
 +	}
++	// Where UID_MAX reaches past it, nobody still never is a person.
++	err := os.WriteFile(loginDefsPath, []byte("UID_MIN 1000\nUID_MAX 70000\n"), 0o644)
++	if err != nil {
++		t.Fatal(err)
++	}
++	_, err = s.ClaimService(asUser("65534"), nil)
++	if status.Code(err) != codes.PermissionDenied {
++		t.Fatalf("nobody: %v", err)
++	}
 +	if *asked != 0 {
 +		t.Fatal("polkit was asked for a system account")
 +	}
 +	assertNoOwner(t)
++	// The last ID a person can have there is let through to polkit.
++	_, err = s.ClaimService(asUser("70000"), nil)
++	if err != nil || *asked != 1 {
++		t.Fatalf("70000: %v, polkit asked %d times", err, *asked)
++	}
 +}
 +
 +func TestUnbraidOwnUserNeedsNoPolkit(t *testing.T) {
