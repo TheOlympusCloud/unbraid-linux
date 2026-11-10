@@ -45,8 +45,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** [routable]: the engine can tell its traffic apart (Linux: not a script, an interpreter or an AppImage, [Apps.resolve]). */
-data class AppInfo(val pkg: String, val label: String, val system: Boolean, val routable: Boolean = true)
+/**
+ * [routable]: the engine can tell its traffic apart (Linux: not a script, an interpreter or an AppImage, [Apps.resolve]).
+ * [follows]: the app it runs as, whose route it takes (Linux: LibreOffice's Writer, a browser's web app, [Apps.shareRoutes]).
+ */
+data class AppInfo(val pkg: String, val label: String, val system: Boolean, val routable: Boolean = true, val follows: String? = null)
 
 /** Removed routes' apps follow the default; a removed default becomes [fallback], the first route left, or Direct. */
 private fun Setup.without(gone: Set<String>, fallback: String? = null): Setup {
@@ -345,12 +348,13 @@ class Ui : ViewModel() {
         val known = entries.mapTo(HashSet()) { it.key }
         val s0 = store.setup.value
         val programs = (s0.apps.keys + s0.profiles.flatMap { it.apps.keys }).filter { it.startsWith('/') && it !in known && File(it).exists() }.distinct()
-        val listed = entries.map { AppInfo(it.key, it.label, it.system, routable = !it.matchers.empty) } +
-            programs.map { AppInfo(it, File(it).name, false, routable = Apps.unroutable(File(it)) == null) }
+        // A program one of the apps runs (added before that app was installed) takes that app's route.
+        val listed = entries.map { AppInfo(it.key, it.label, it.system, routable = !it.matchers.empty, follows = it.follows) } +
+            programs.map { p -> entries.firstOrNull { Apps.matches(it.matchers, p) }?.key.let { o -> AppInfo(p, File(p).name, false, routable = o == null && Apps.unroutable(File(p)) == null, follows = o) } }
         _apps.value = listed.sortedBy { it.label.lowercase() }
         val installed = listed.filter { it.routable }.mapTo(HashSet()) { it.pkg }
         // An uninstalled app must not keep its route (and a tunnel) alive, nor one the engine can't tell apart (Linux: a
-        // script or an AppImage), which would show on a route its traffic never takes.
+        // script or an AppImage, an app that runs as another one), which would show on a route its traffic never takes.
         // Saved profiles too: one used later must not bring an uninstalled app's exception back.
         val gone = { s: Setup -> s.apps.keys.any { it !in installed } || s.profiles.any { p -> p.apps.keys.any { it !in installed } } }
         if (gone(store.setup.value)) store.edit { s ->
@@ -360,12 +364,16 @@ class Ui : ViewModel() {
 
     /**
      * A program without a desktop entry (a command-line tool, a game), picked by its file and routed by its own path,
-     * which becomes its key; null, with the reason in [notice], for one the engine can't tell apart ([Apps.unroutable]).
-     * It stays listed once it has a route.
+     * which becomes its key; null, with the reason in [notice], for one the engine can't tell apart ([Apps.unroutable])
+     * or one a listed app runs, which takes that app's route. It stays listed once it has a route.
      */
     fun addProgram(file: File): String? {
         Apps.unroutable(file)?.let { notice.value = it; return null }
         val path = file.canonicalPath
+        Apps.keyOf(path, emptyList()).takeIf { it != path }?.let { k ->
+            val app = _apps.value.firstOrNull { it.pkg == k }?.label ?: k
+            notice.value = "${file.name} is part of $app: it takes $app's route."; return null
+        }
         if (_apps.value.none { it.pkg == path }) _apps.value = (_apps.value + AppInfo(path, file.name, false)).sortedBy { it.label.lowercase() }
         return path
     }

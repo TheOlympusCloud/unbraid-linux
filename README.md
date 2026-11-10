@@ -41,12 +41,17 @@ unbraid comes in two parts:
 
 Each TCP and UDP connection is routed by the program that owns it, which the engine looks up for every connection. An app
 is a desktop entry (what your launcher lists), resolved to the programs it starts: the program itself, the folder it is
-installed in (so its helpers follow it), Flatpak apps by their command and Snaps by their folder. A program without a
-desktop entry, such as a command-line tool, can be added by its file.
+installed in (so its helpers follow it), Flatpak apps by their program's name and Snaps by their folder. A wrapper in
+front of the program (`env`, `prime-run`, `gamemoderun`, `firejail`) is looked through. A program without a desktop
+entry, such as a command-line tool, can be added by its file.
 
-The engine knows a process by its program file. A script's is the interpreter that runs it (Python, a shell), which
-other scripts share, and an AppImage runs its programs from a new folder each time. Such apps can't be told apart, so
-unbraid shows them following the default route rather than offering them one of their own.
+The engine knows a process by its program file. A script's is the interpreter that runs it (Python, Java, a shell), a
+Windows program's is Wine, and an Electron app on Arch may share its Electron with others: every program they run shares
+it. An AppImage runs its programs from a new folder each time. Such apps can't be told apart, so unbraid shows them
+following the default route rather than offering them one of their own. Apps that run as one program, such as
+LibreOffice's Writer and Calc, or a browser and its web apps, are one app to the engine: they take the main app's route.
+Some apps leave part of their networking to a desktop service (KDE's file workers, GNOME's calendar and online
+accounts); that part follows the default route.
 
 DNS is answered with fake addresses and looked up again on the exit the app really uses, so a site sees the country you
 picked for that app. Linux can't leave single apps out of a tunnel, so Direct apps, like your local network, pass
@@ -138,8 +143,9 @@ bubblewrap and an X display (an `Xvfb :99` is fine), and no root.
 
 ## Differences from the Android app
 
-- Apps are desktop entries and programs, matched by the program that runs (see above), not Android packages. Scripts and
-  AppImages follow the default route.
+- Apps are desktop entries and programs, matched by the program that runs (see above), not Android packages. Scripts,
+  AppImages and apps on a shared runtime (Wine, Java, Mono, .NET, a shared Electron) follow the default route, and apps
+  that run as one program share its route.
 - Direct apps pass through the engine and leave directly; Android leaves them out of the VPN.
 - There are no quick-settings tiles or home-screen widget: the launcher's actions, the tray and the command line do
   their jobs.

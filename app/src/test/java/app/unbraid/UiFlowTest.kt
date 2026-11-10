@@ -54,9 +54,14 @@ class UiFlowTest {
         @BeforeClass @JvmStatic fun app() {
             Paths.data.listFiles()?.forEach { it.deleteRecursively() }
             val apps = File(Paths.data.parentFile, "applications").apply { deleteRecursively(); mkdirs() }
+            // Each app its own program in its own folder (stand-ins, never run): apps on one program share its route.
+            val programs = File(Paths.data.parentFile, "programs").apply { deleteRecursively() }
+            fun program(id: String) = File(programs, "$id/$id").apply { parentFile.mkdirs(); writeBytes(byteArrayOf(0x7f, 69, 76, 70, 2, 1)); setExecutable(true) }
             listOf("firefox" to "Firefox", "spotify" to "Spotify", "org.gnome.Terminal" to "Terminal").forEach { (id, name) ->
-                File(apps, "$id.desktop").writeText("[Desktop Entry]\nType=Application\nName=$name\nExec=/bin/true %u\n")
+                File(apps, "$id.desktop").writeText("[Desktop Entry]\nType=Application\nName=$name\nExec=${program(id).path} %u\n")
             }
+            // Runs as Firefox: it takes Firefox's route.
+            File(apps, "firefox-private.desktop").writeText("[Desktop Entry]\nType=Application\nName=Private Browsing\nExec=${File(programs, "firefox/firefox").path} --private-window %u\n")
             // Runs as python3, like every other Python program: the engine can't tell it apart.
             File(apps, "org.example.Tool.desktop").writeText("[Desktop Entry]\nType=Application\nName=Tool\nExec=python3 /opt/tool/tool.py\n")
             Unbraid.init()
@@ -95,7 +100,7 @@ class UiFlowTest {
             s.copy(
                 routes = listOf(Route("nl", Location("nord", 153, "NL", "Netherlands")), Route("us", Location("nord", 228, "US", "United States"), hue = 1),
                     Route("it", Location("nord", 106, "IT", "Italy"), hue = 2), Route("lab", wg = lab, hue = 3)),
-                defaultRoute = "nl", apps = mapOf("firefox" to "us", "spotify" to "it", "org.gnome.Terminal" to DIRECT, "org.example.Tool" to "us"), version = VERSION,
+                defaultRoute = "nl", apps = mapOf("firefox" to "us", "spotify" to "it", "org.gnome.Terminal" to DIRECT, "org.example.Tool" to "us", "firefox-private" to "it"), version = VERSION,
             )
         }
         Onboarding.tourSeen()
@@ -113,7 +118,15 @@ class UiFlowTest {
         compose.waitUntil(10_000) { Unbraid.store.setup.value.apps["org.example.Tool"] == null }
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Tool"))
         compose.onNodeWithText("Tool").performClick()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Follows the default route", substring = true))
         compose.onNodeWithText("Follows the default route", substring = true).assertIsDisplayed()
+        // One that runs as another app loses its own route too, and takes that app's.
+        compose.waitUntil(10_000) { Unbraid.store.setup.value.apps["firefox-private"] == null }
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Private Browsing"))
+        compose.onNodeWithText("Private Browsing").performClick()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Takes Firefox's route", substring = true))
+        compose.onNodeWithText("Takes Firefox's route", substring = true).assertIsDisplayed()
+        shot("6-apps-runs-as-another")
         // A program the launcher doesn't list is added by its file (the chooser is the desktop's own), keyed by its real path.
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Add a program"))
         compose.onNodeWithText("Add a program").assertIsDisplayed()
@@ -126,6 +139,9 @@ class UiFlowTest {
             val appImage = File(Paths.data, "App.AppImage").apply { writeBytes(byteArrayOf(0x7f, 69, 76, 70, 2, 1, 1, 0, 65, 73, 2, 0)); setExecutable(true) }
             assertNull(ui.addProgram(appImage))
             assertEquals(true, ui.notice.value?.contains("AppImage"))
+            // A program an app runs takes that app's route: it can't have one of its own.
+            assertNull(ui.addProgram(File(Paths.data.parentFile, "programs/spotify/spotify")))
+            assertEquals(true, ui.notice.value?.contains("part of Spotify"))
             ui.notice.value = null // the refusal's notice, which would show on the next screens
         }
         compose.click("Stats")
