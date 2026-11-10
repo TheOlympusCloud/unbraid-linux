@@ -1,5 +1,8 @@
 package app.unbraid
 
+import app.unbraid.linux.Autostart
+import app.unbraid.linux.Desktop
+import app.unbraid.linux.DesktopSettings
 import app.unbraid.linux.Keyring
 import app.unbraid.linux.SQLiteDatabase
 import app.unbraid.linux.SQLiteOpenHelper
@@ -66,6 +69,71 @@ class LinuxBitsTest {
         assertTrue("took ${(System.nanoTime() - start) / 1_000_000} ms", System.nanoTime() - start < 10_000_000_000L)
         val ready = File(tmp.root, "ready-worker").apply { writeText("#!/bin/sh\necho READY\nsleep 30\n"); setExecutable(true) }
         app.unbraid.vpn.Engine.startWorker(ready.path, socket, seconds = 5).destroyForcibly()
+    }
+
+    /** The desktop's light or dark: the portal's answer (ReadOne or Read), else GNOME's setting; one that says nothing is null. */
+    @Test fun systemTheme() {
+        assertEquals(true, Desktop.portalDark("v u 1"))
+        assertEquals(false, Desktop.portalDark("v v u 2\n"))
+        listOf("v u 0", null, "Call failed: No such interface", "").forEach { assertNull(it, Desktop.portalDark(it)) }
+        assertEquals(true, Desktop.gnomeDark("'prefer-dark'\n"))
+        assertEquals(false, Desktop.gnomeDark("'prefer-light'"))
+        assertNull(Desktop.gnomeDark("'default'"))
+        // System follows the desktop; a desktop that says nothing gets the app's own dark.
+        assertEquals(false, DesktopSettings.dark(DesktopSettings.Theme.System, false))
+        assertEquals(true, DesktopSettings.dark(DesktopSettings.Theme.System, null))
+        assertEquals(false, DesktopSettings.dark(DesktopSettings.Theme.Light, true))
+        assertEquals(true, DesktopSettings.dark(DesktopSettings.Theme.Dark, false))
+    }
+
+    /** Starting at login, with or without connecting and with or without the window; a change keeps the other choice. */
+    @Test fun autostartChoices() {
+        Autostart.set(false)
+        Autostart.set(true, connect = false, minimised = true)
+        assertTrue(Autostart.enabled && !Autostart.connects && Autostart.minimised)
+        Autostart.set(true, connect = true, minimised = false)
+        assertTrue(Autostart.connects && !Autostart.minimised)
+        Autostart.set(true, minimised = true)
+        assertTrue(Autostart.connects && Autostart.minimised)
+        Autostart.set(false)
+        assertTrue(!Autostart.enabled)
+    }
+
+    /** Closing hides the window only where there's a way back to it; a hidden unbraid quits only without a tray. */
+    @Test fun windowCloseAndQuit() {
+        assertTrue(DesktopSettings.closeHides(closeToTray = true, tray = true, connected = false))
+        assertTrue(DesktopSettings.closeHides(closeToTray = true, tray = false, connected = true))
+        assertTrue(!DesktopSettings.closeHides(closeToTray = true, tray = false, connected = false))
+        assertTrue(!DesktopSettings.closeHides(closeToTray = false, tray = true, connected = true))
+        // Disconnected from the tray while hidden: with a tray it stays, whatever closing the window does; without, it ends.
+        assertTrue(!DesktopSettings.quitsWhenHidden(visible = false, wasOn = true, tray = true))
+        assertTrue(DesktopSettings.quitsWhenHidden(visible = false, wasOn = true, tray = false))
+        assertTrue(!DesktopSettings.quitsWhenHidden(visible = true, wasOn = true, tray = false))
+        assertTrue(!DesktopSettings.quitsWhenHidden(visible = false, wasOn = false, tray = false))
+    }
+
+    /** The window's place: floating as it is, maximized with the size it had, nothing before the desktop places it or full screen. */
+    @Test fun windowPlacement() {
+        val was = DesktopSettings.Placement(100, 80, 1100, 700, false)
+        assertEquals(DesktopSettings.Placement(40, 30, 1280, 800, false), DesktopSettings.toSave(was, 40, 30, 1280, 800, maximized = false, floating = true))
+        assertEquals(was.copy(maximized = true), DesktopSettings.toSave(was, 0, 0, 1920, 1080, maximized = true, floating = false))
+        assertEquals(DesktopSettings.Placement(0, 0, 1280, 800, true), DesktopSettings.toSave(null, 0, 0, 1920, 1080, maximized = true, floating = false))
+        assertNull(DesktopSettings.toSave(was, null, null, 1280, 800, maximized = false, floating = true))
+        assertNull(DesktopSettings.toSave(was, 0, 0, 1920, 1080, maximized = false, floating = false))
+        // A place on a screen that has gone isn't used: the window opens where the desktop puts it.
+        val screens = listOf(java.awt.Rectangle(0, 0, 1920, 1080))
+        assertTrue(DesktopSettings.onScreen(was, screens))
+        assertTrue(!DesktopSettings.onScreen(DesktopSettings.Placement(2500, 100, 1280, 800, false), screens))
+        assertTrue(!DesktopSettings.onScreen(was, emptyList()))
+    }
+
+    /** A start shows the window unless it's for the background or to connect; without a tray, one that won't connect does. */
+    @Test fun startShowsTheWindow() {
+        assertTrue(DesktopSettings.showsAtStart(background = false, connect = false, command = "show", tray = true))
+        assertTrue(!DesktopSettings.showsAtStart(background = false, connect = false, command = "connect", tray = true))
+        assertTrue(!DesktopSettings.showsAtStart(background = true, connect = false, command = "", tray = true))
+        assertTrue(DesktopSettings.showsAtStart(background = true, connect = false, command = "", tray = false))
+        assertTrue(!DesktopSettings.showsAtStart(background = true, connect = true, command = "", tray = false))
     }
 
     /** No keyring: a key file only this user can read. */

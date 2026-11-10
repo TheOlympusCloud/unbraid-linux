@@ -62,12 +62,17 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // The screens, composed headless and clicked through.
     testImplementation("org.jetbrains.compose.ui:ui-test-junit4:$cmp")
+    // Compose's back, as the window sends it for Esc: the version Compose itself brings.
+    testImplementation("org.jetbrains.androidx.navigationevent:navigationevent-compose:1.1.0")
 }
 
 tasks.withType<Test>().configureEach {
     // Never the user's own folders; the runtime folder stays short, as unix socket paths must.
     val run = File(System.getProperty("java.io.tmpdir"), "unbraid-test-${System.getProperty("user.name")}")
     environment("XDG_DATA_HOME", layout.buildDirectory.dir("test-home").get().asFile.path)
+    environment("XDG_CONFIG_HOME", layout.buildDirectory.dir("test-config").get().asFile.path)
+    // The tests' own apps only, never this computer's (the screenshots show them).
+    environment("XDG_DATA_DIRS", layout.buildDirectory.dir("test-share").get().asFile.path)
     environment("XDG_RUNTIME_DIR", run.path)
     rootProject.file("engine/out/unbraid-engine").takeIf { it.exists() }?.let { environment("UNBRAID_ENGINE_BIN", it.path) }
     // Upstream's KeyProvidersTest checks its configs with this CLI (engine/build.sh test builds it); skipped without.

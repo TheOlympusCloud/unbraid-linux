@@ -4,9 +4,11 @@ unbraid is a split tunneling VPN client that lets every app take its own exit. Y
 a streaming app leaves from the US, a second app from Italy and everything else from the Netherlands, all at the same
 time. If you use Tailscale, your home network stays reachable too.
 
-This is the Linux version of [unbraid for Android](https://github.com/Quiet-Crafts/unbraid) 2.8.2: the same features,
-the same look, and the same code where Linux allows it. It runs on Debian 13 and later, Ubuntu 24.04 and later, Arch
-Linux, and the distributions built on them, on x86-64.
+This is the Linux version of [unbraid for Android](https://github.com/Quiet-Crafts/unbraid) 2.8.2, made by Quiet
+Crafts: the same features, the same look laid out for a computer, and the same code where Linux allows it. It runs on
+Debian 13 and later, Ubuntu 24.04 and later, Arch Linux, and the distributions built on them, on x86-64.
+
+![Routes: the connection, the default route and the exceptions, and the exits in use](docs/screenshots/routes.png)
 
 ## What it works with
 
@@ -93,6 +95,39 @@ back by itself): apps use your normal connection until you connect again.
 Open unbraid from your launcher. The first start walks you through the terms and signing in. Then give apps their exits
 on the Apps page, and connect on Routes.
 
+The window is laid out for a computer. The sidebar keeps the connection and its power button in view, with the pages:
+Routes, Apps, Stats and Settings; in a narrow window it folds to icons. Apps is a table to search and sort, with the
+selected app's route choices in a panel beside it, and a right click on an app or a route offers its choices at once.
+Choosing a location opens a dialog: the countries on the left, a country's cities and servers on the right.
+
+| | |
+|---|---|
+| ![Apps: the table, the selected app's routes and a right-click menu](docs/screenshots/apps.png) | ![Stats: the week's data by exit, and the apps and exits that carried it](docs/screenshots/stats.png) |
+| ![Choosing a location: countries, then a country's cities and servers](docs/screenshots/location-picker.png) | ![Settings, Desktop: login, the tray, the window and the theme](docs/screenshots/settings-desktop.png) |
+| ![The light theme](docs/screenshots/apps-light.png) | ![The smallest window, its sidebar folded to icons](docs/screenshots/smallest-window.png) |
+
+Ctrl+/ lists every keyboard shortcut. The main ones:
+
+| Keys | Does |
+|---|---|
+| Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+, | Routes, Apps, Stats, Settings |
+| Ctrl+F | Search apps |
+| Ctrl+N | New route |
+| Ctrl+Shift+C | Connect or disconnect |
+| Ctrl+Shift+P | Pause 15 minutes |
+| Esc | Close the open page or dialog |
+| Ctrl+W, Ctrl+Q | Close the window, quit |
+
+Settings, Desktop holds what a desktop app needs:
+- start unbraid when you log in, connecting or not, with the window or with only the tray icon;
+- keep it in the tray when the window closes (off, closing quits and ends the connection);
+- remember the window's size and place;
+- the theme: System follows your desktop's light or dark setting, or choose Dark or Light.
+
+The tray icon shows whether you're connected, and its menu connects, disconnects, pauses, switches profiles and opens
+the window. GNOME has no tray of its own: the AppIndicator extension adds one, and without it the launcher's menu and the
+command line below do its job.
+
 The launcher's menu for unbraid can connect, pause and disconnect. The same works from a terminal:
 
 ```bash
@@ -104,7 +139,7 @@ unbraid profile Work        # open Routes on a saved profile; Use there switches
 unbraid quit
 ```
 
-Settings, VPN behaviour can start and connect unbraid when you log in, the Linux counterpart of Android's Always-on.
+Starting and connecting at login (Settings, Desktop) is the Linux counterpart of Android's Always-on.
 Before you log in, while paused and if unbraid stops, apps use your normal connection.
 
 ## Build
@@ -139,11 +174,14 @@ DISPLAY=:99 packaging/test.sh   # installs, runs and removes the packages in cle
                                 #   and checks that Debian 12 refuses the package
 ```
 
-`./gradlew test` saves a screenshot of each screen it visits in `app/build/screenshots`. `packaging/test.sh` needs
+`./gradlew test` saves a screenshot of each screen it visits in `app/build/screenshots`, in a 1280 x 800 window, the
+light theme and the smallest window too; the ones in `docs/screenshots` come from there. `packaging/test.sh` needs
 bubblewrap and an X display (an `Xvfb :99` is fine), and no root.
 
 ## Differences from the Android app
 
+- The window is laid out for a computer: a sidebar, a table of apps, panels beside lists, right-click menus, keyboard
+  shortcuts, a tray icon and a light theme.
 - Apps are desktop entries and programs, matched by the program that runs (see above), not Android packages. Scripts,
   AppImages and apps on a shared runtime (Wine, Java, Mono, .NET, a shared Electron) follow the default route, and apps
   that run as one program share its route.
@@ -166,6 +204,15 @@ Tailscale's own Linux daemon. The list of installed apps is read on your compute
 leaves it. The privacy policy, with every service the app talks to, is at [unbraid.app/privacy](https://unbraid.app/privacy).
 
 To report a security problem, see [SECURITY.md](SECURITY.md).
+
+## Credits
+
+unbraid was created by [Quiet Crafts](https://unbraid.app). This Linux version is based on their
+[Android app](https://github.com/Quiet-Crafts/unbraid): its design, its features and most of its code are theirs. If you
+find it useful, you can support its creator at [unbraid.app/donate](https://unbraid.app/donate/).
+
+It is a modified version of [unbraid](https://github.com/Quiet-Crafts/unbraid) 2.8.2, changed in November 2026 to run
+on Linux, and keeps the original's licence and its notice below: the GNU General Public License, version 3 or later.
 
 ## Licence
 

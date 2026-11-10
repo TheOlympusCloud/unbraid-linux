@@ -109,6 +109,10 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle as DayStyle
 import java.util.Locale
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.text.style.TextOverflow
 
 // The Stats tab: a hub of five tiles, each opening its section; the speed test and its history hang off
 // Live and Tunnels. Everything is read from the local stats file; nothing exists while stats are off.
@@ -154,9 +158,9 @@ private fun View.fastestDown(e: String) = tests[e]?.down ?: 0
 private fun View.byProvider(): List<Pair<String, Long>> =
     byExit.groupBy({ providerOf(it.first, exits[it.first]) }, { it.second.total }).mapValues { it.value.sum() }.entries.sortedByDescending { it.value }.map { it.key to it.value }
 
-private fun bytesText(b: Long) = bytes(b).let { "${it.first} ${it.second}" }
+internal fun bytesText(b: Long) = bytes(b).let { "${it.first} ${it.second}" }
 /** A live speed: kbps under 1 Mbps so small transfers don't read as zero. */
-private fun rate(bps: Long): Pair<String, String> = when {
+internal fun rate(bps: Long): Pair<String, String> = when {
     bps >= 1_000_000 -> mbps(bps) to "Mbps"
     bps >= 100 -> String.format(Locale.US, "%.0f", bps / 1e3).let { if (it == "0") "0.1" else it } to "kbps"
     else -> "0" to "kbps"
@@ -259,9 +263,9 @@ fun StatsScreen(ui: Ui) {
             val p = Period.entries[period]
             val go = { to: String? -> section = to }
             // Pinned under the header while the section scrolls, on the page's ground so nothing shows through.
-            val periodPicker: LazyListScope.() -> Unit = { stickyHeader(key = "period") { Box(Modifier.background(Ink.ground).padding(bottom = 4.dp)) { PeriodPicker(p) { period = it.ordinal } } } }
+            val periodPicker: LazyListScope.() -> Unit = { stickyHeader(key = "period") { Box(Modifier.background(Ink.ground).padding(bottom = 4.dp)) { PeriodPicker(p, { period = it.ordinal }) } } }
             when {
-                s == null -> Hub(ui, v, p, recording = setup.prefs.stats, periodPicker, go)
+                s == null -> Hub(ui, v, p, recording = setup.prefs.stats, { period = it.ordinal }, go)
                 v == null -> Unit
                 s == "usage" -> Usage(v, p, periodPicker, go)
                 s == "live" -> Live(v, go)
@@ -286,8 +290,8 @@ private fun locale(): Locale = Locale.getDefault()
 private fun Back(onClick: () -> Unit) = IconTap(Icons.back, "Back", onClick)
 
 @Composable
-private fun PeriodPicker(p: Period, pick: (Period) -> Unit) = Row(
-    Modifier.padding(horizontal = Gutter, vertical = 4.dp).fillMaxWidth().selectableGroup(),
+private fun PeriodPicker(p: Period, pick: (Period) -> Unit, modifier: Modifier = Modifier.padding(horizontal = Gutter, vertical = 4.dp).fillMaxWidth()) = Row(
+    modifier.selectableGroup(),
     horizontalArrangement = Arrangement.spacedBy(2.dp),
 ) {
     Period.entries.forEachIndexed { i, x ->
@@ -354,90 +358,125 @@ private fun Empty(text: String) = Text(text, style = Type.sub, color = Ink.dim, 
 
 // ---- hub -------------------------------------------------------------------------------------------------------
 
+/**
+ * The overview, as a desktop dashboard: the four subjects' tiles in a row (each opens its section), the period's data
+ * by exit across the window, then the apps and the exits that carried it, side by side.
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun Hub(ui: Ui, v: View?, p: Period, recording: Boolean, periodPicker: LazyListScope.() -> Unit, go: (String?) -> Unit) {
+private fun Hub(ui: Ui, v: View?, p: Period, recording: Boolean, pick: (Period) -> Unit, go: (String?) -> Unit) {
     val live by Stats.live.collectAsStateWithLifecycle()
     val vpn by ui.vpn.collectAsStateWithLifecycle()
+    val apps by ui.apps.collectAsStateWithLifecycle()
     val play = firstShow("stats")
-    val list = rememberLazyListState()
-    OnReselect(Tab.Stats) { list.animateScrollToItem(0) }
-    Screen(
-        state = list,
-        overline = if (recording) rangeLabel(p, LocalDate.now()) else "Recording off · saved statistics", title = "Stats", sub = "",
-    ) {
-        periodPicker()
-        item(key = "usage") {
-            Rise("stats", 0, play) {
-                Tile("usage", "Usage", Icons.usage, hero = true, onOpen = go) {
-                    val t = v?.total?.total ?: 0
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            bytes(t).let { Num(it.first, it.second, 40) }
-                            Text("↓ ${bytesText(v?.total?.down ?: 0)} · ↑ ${bytesText(v?.total?.up ?: 0)}", style = Type.sub, color = Ink.dim)
+    val scroll = rememberScrollState()
+    OnReselect(Tab.Stats) { scroll.animateScrollTo(0) }
+    Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 30.dp, top = 26.dp, end = 30.dp, bottom = 24.dp)) {
+        PageHeader(if (recording) rangeLabel(p, LocalDate.now()) else "Recording off · saved statistics", "Stats") {
+            PeriodPicker(p, pick, Modifier.width(330.dp))
+            PillButton("Speed test", { go("speed") }, Icons.speed, Pill.Primary)
+        }
+        // Tiles in a row share the tallest one's height.
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            HubTile("usage", "Usage", Icons.usage, 0, play, go) {
+                val t = v?.total?.total ?: 0
+                bytes(t).let { Num(it.first, it.second, 28) }
+                Text("↓ ${bytesText(v?.total?.down ?: 0)} · ↑ ${bytesText(v?.total?.up ?: 0)}", style = Type.caption.copy(fontSize = 12.sp), color = Ink.dim, maxLines = 1)
+                // Who carried it, by provider: neutral meters (exits and their colours are App flows' subject).
+                v?.byProvider()?.take(2)?.forEach { (name, b) -> ProviderMeter(name, b, t) }
+            }
+            HubTile("live", "Live", Icons.speed, 1, play, go) {
+                if (vpn.phase == Phase.On) {
+                    Num(listOf(rate(live.downNow)), 28)
+                    Text("download now", style = Type.caption.copy(fontSize = 12.sp), color = Ink.dim)
+                    val total = remember(live) { FloatArray(60) { i -> live.down.values.sumOf { it[i].toDouble() }.toFloat() } }
+                    Spark(total, Ink.text, Modifier.fillMaxWidth())
+                } else Text("Not connected", style = Type.sub, color = Ink.dim)
+            }
+            HubTile("journal", "Journal", Icons.calendar, 2, play, go) {
+                Num(hmParts(v?.weekMs ?: 0), 28)
+                Text("connected this week", style = Type.caption.copy(fontSize = 12.sp), color = Ink.dim)
+                if (v != null) WeekMarks(v.week.map { it.coerceAtLeast(0f) }, DayOfWeek.entries.map { it.getDisplayName(DayStyle.NARROW, locale()) }, LocalDate.now().dayOfWeek.ordinal)
+            }
+            HubTile("tunnels", "Tunnels", Icons.tunnel, 3, play, go) {
+                // Each exit's fastest download test.
+                val fastest = v?.let { it.tests.keys.associateWith(it::fastestDown).filterValues { b -> b > 0 } }.orEmpty()
+                val best = fastest.maxByOrNull { it.value }
+                if (v == null || best == null) Text("No speed tests yet", style = Type.sub, color = Ink.dim) else {
+                    Num(mbps(best.value), "Mbps", 28)
+                    Text("best test · ${v.exits[best.key]?.name}", style = Type.caption.copy(fontSize = 12.sp), color = Ink.dim, maxLines = 1)
+                    fastest.entries.sortedByDescending { it.value }.take(2).forEach { (id, b) ->
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(v.exits[id]?.code ?: "?", style = Type.code.copy(fontSize = 12.sp), color = Ink.dim, modifier = Modifier.width(28.dp))
+                            Meter(b.toFloat() / best.value, v.exits[id]?.color ?: Ink.faint, Modifier.weight(1f))
                         }
                     }
-                    // Who carried it, by provider: neutral meters (exits and their colours are App flows' subject).
-                    v?.byProvider()?.take(3)?.forEach { (name, b) -> ProviderMeter(name, b, t) }
                 }
             }
         }
-        item(key = "pairs") {
-            Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Tiles in a row share the taller one's height.
-                Row(Modifier.padding(horizontal = Gutter).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    HubTile("live", "Live", Icons.speed, 1, play, go) {
-                        if (vpn.phase == Phase.On) {
-                            Num(listOf(rate(live.downNow)), 28)
-                            Text("download now", style = Type.caption.copy(fontSize = 12.sp), color = Ink.dim)
-                            val total = remember(live) { FloatArray(60) { i -> live.down.values.sumOf { it[i].toDouble() }.toFloat() } }
-                            Spark(total, Ink.text, Modifier.fillMaxWidth())
-                        } else Text("Not connected", style = Type.sub, color = Ink.dim)
-                    }
-                    HubTile("flows", "App flows", Icons.flows, 2, play, go) {
-                        // Where the data went: the share by exit as a ring, in the exits' colours, and how many apps.
-                        val exits = v?.byExit?.filter { it.first != DIRECT }.orEmpty()
-                        if (v == null || exits.isEmpty()) Text("No data yet", style = Type.sub, color = Ink.dim) else {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Ring(exits.map { (id, b) -> b.total.toFloat() to (v.exits[id]?.color ?: Ink.faint) }, "Share by exit: " + exits.joinToString { (id, b) -> "${v.exits[id]?.name} ${bytesText(b.total)}" }, size = 56.dp, stroke = 8.dp)
-                                Column {
-                                    Num(v.apps.filter { it.second != DIRECT }.map { it.first }.distinct().size.toString(), "apps", 26)
-                                    Text("into ${exits.size} ${if (exits.size == 1) "exit" else "exits"}", style = Type.caption.copy(fontSize = 12.sp), color = Ink.dim, maxLines = 1)
-                                }
-                            }
-                            exits.take(2).forEach { (id, b) -> Legend(v.exits[id], (100 * b.total / exits.sumOf { it.second.total }.coerceAtLeast(1)).toInt()) }
-                        }
+        Gap(14.dp)
+        // When, and through which exit: the period's data per hour or day, each bar in its exits' colours.
+        Card("Data · by exit", { go("flows") }) {
+            if (v == null || v.total.total == 0L) Text("No data in this period yet.", style = Type.sub, color = Ink.dim) else {
+                val max = v.columns.maxOfOrNull { c -> c.values.sumOf { it.total } } ?: 0L
+                val (div, unit) = unitFor(max)
+                val cap = niceCeil(max / div)
+                val order = v.byExit.map { it.first }
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    order.take(5).forEach { id -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(v.exits[id]?.color ?: Ink.faint))
+                        Text(v.exits[id]?.name ?: id, style = Type.caption, color = Ink.dim, maxLines = 1)
+                    } }
+                }
+                StackedBars(
+                    v.columns.map { c -> order.mapNotNull { id -> c[id]?.let { (it.total / div).toFloat() to (v.exits[id]?.color ?: Ink.faint) } } },
+                    v.labels, cap.toFloat(), "${scaleText(cap.toFloat())} $unit", "Data per ${if (p == Period.Day) "hour" else "day"}, by exit", v.selected, height = 170.dp,
+                )
+            }
+        }
+        Gap(14.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            val labels = remember(apps) { apps.associate { it.pkg to it.label } }
+            Card("Apps · by data", { go("flows") }, Modifier.weight(1.2f)) {
+                val byApp = v?.apps.orEmpty().groupBy { it.first }.map { (app, rows) -> Triple(app, rows.maxBy { it.third }.second, rows.sumOf { it.third }) }.sortedByDescending { it.third }.take(8)
+                if (byApp.isEmpty()) Text("No data in this period yet.", style = Type.sub, color = Ink.dim)
+                val most = byApp.firstOrNull()?.third?.coerceAtLeast(1) ?: 1
+                byApp.forEach { (app, exit, b) ->
+                    Row(Modifier.height(34.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(labels[app] ?: if (app == "?") "Other" else java.io.File(app).name, style = Type.sub, color = Ink.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(150.dp))
+                        Chip(v?.exits?.get(exit))
+                        Meter(b.toFloat() / most, v?.exits?.get(exit)?.color ?: Ink.faint, Modifier.weight(1f))
+                        Text(bytesText(b), style = Type.small, color = Ink.text, textAlign = TextAlign.End, modifier = Modifier.width(72.dp))
                     }
                 }
-                // Tiles in a row share the taller one's height.
-                Row(Modifier.padding(horizontal = Gutter).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    HubTile("journal", "Journal", Icons.calendar, 3, play, go) {
-                        Num(hmParts(v?.weekMs ?: 0), 28)
-                        Text("connected this week", style = Type.caption.copy(fontSize = 12.sp), color = Ink.dim)
-                        if (v != null) WeekMarks(v.week.map { it.coerceAtLeast(0f) }, DayOfWeek.entries.map { it.getDisplayName(DayStyle.NARROW, locale()) }, LocalDate.now().dayOfWeek.ordinal)
-                    }
-                    HubTile("tunnels", "Tunnels", Icons.tunnel, 3, play, go) {
-                        // Each exit's fastest download test.
-                        val fastest = v?.let { it.tests.keys.associateWith(it::fastestDown).filterValues { b -> b > 0 } }.orEmpty()
-                        val best = fastest.maxByOrNull { it.value }
-                        if (v == null || best == null) Text("No speed tests yet", style = Type.sub, color = Ink.dim) else {
-                            Num(mbps(best.value), "Mbps", 28)
-                            Text("best test · ${v.exits[best.key]?.name}", style = Type.caption.copy(fontSize = 12.sp), color = Ink.dim, maxLines = 1)
-                            // The two fastest, like App flows' legend: the hub fits one Pixel screen without scrolling.
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                fastest.entries.sortedByDescending { it.value }.take(2).forEach { (id, b) ->
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text(v.exits[id]?.code ?: "?", style = Type.code.copy(fontSize = 12.sp), color = Ink.dim, modifier = Modifier.width(28.dp))
-                                        Meter(b.toFloat() / best.value, v.exits[id]?.color ?: Ink.faint, Modifier.weight(1f))
-                                    }
-                                }
-                            }
-                        }
+            }
+            Card("Exits", { go("tunnels") }, Modifier.weight(1f)) {
+                if (v == null || v.byExit.isEmpty()) Text("No data in this period yet.", style = Type.sub, color = Ink.dim)
+                v?.byExit?.take(8)?.forEach { (id, b) ->
+                    val n = v.apps.filter { it.second == id }.map { it.first }.distinct().size
+                    Row(Modifier.height(34.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Chip(v.exits[id])
+                        Text(v.exits[id]?.name ?: id, style = Type.sub, color = Ink.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text(if (n == 1) "1 app" else "$n apps", style = Type.small, color = Ink.dim)
+                        Text(bytesText(b.total), style = Type.small, color = Ink.text, textAlign = TextAlign.End, modifier = Modifier.width(72.dp))
                     }
                 }
             }
         }
     }
+}
+
+/** A dashboard card: its subject's name, opening the section it summarises. */
+@Composable
+private fun Card(title: String, open: () -> Unit, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) = Column(
+    modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Ink.surface).padding(horizontal = 20.dp, vertical = 16.dp),
+    verticalArrangement = Arrangement.spacedBy(10.dp),
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(title.uppercase(), style = Type.overline, color = Ink.dim, modifier = Modifier.weight(1f))
+        Text("More", style = Type.caption, color = Ink.accent, modifier = Modifier.clip(RoundedCornerShape(8.dp)).tap(open, "More: $title").pointerHoverIcon(PointerIcon.Hand).padding(horizontal = 6.dp, vertical = 2.dp))
+    }
+    content()
 }
 
 /** A provider's share: its name, a neutral meter and the percentage. */
@@ -488,7 +527,9 @@ private fun Tile(key: String, title: String, icon: ImageVector, hero: Boolean = 
 @Composable
 private fun Section(key: String, over: String, title: String, sub: String = "", back: () -> Unit, content: LazyListScope.() -> Unit) =
     Box(Modifier.fillMaxSize().then(sharedRoute("stats:$key", RoundedCornerShape(28.dp))).background(Ink.ground)) {
-        Screen(overline = over, title = title, sub = sub, navigation = { Back(back) }, content = { content(); item { Gap(24.dp) } })
+        Box(Modifier.widthIn(max = 900.dp).padding(start = 14.dp)) {
+            Screen(overline = over, title = title, sub = sub, navigation = { Back(back) }, content = { content(); item { Gap(24.dp) } })
+        }
     }
 
 // ---- sections --------------------------------------------------------------------------------------------------

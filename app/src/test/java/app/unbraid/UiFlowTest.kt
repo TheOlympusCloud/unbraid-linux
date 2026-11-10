@@ -2,7 +2,25 @@ package app.unbraid
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.onNodeWithContentDescription
+import app.unbraid.stats.Stats
+import org.junit.Assert.assertTrue
+import app.unbraid.ui.Ink
+import app.unbraid.ui.Tab
+import app.unbraid.ui.Desk
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.navigationevent.NavigationEventInput
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -13,14 +31,32 @@ import androidx.compose.ui.test.filterToOne
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.withKeyDown
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.isFocused
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.isPopup
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.rightClick
+import androidx.compose.ui.test.moveTo
+import androidx.compose.ui.test.performMouseInput
+import androidx.compose.ui.test.ComposeUiTest
+import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import app.unbraid.data.DIRECT
+import app.unbraid.data.LIMIT_OPT
+import app.unbraid.data.City
+import app.unbraid.data.Country
 import app.unbraid.data.Location
 import app.unbraid.data.Profile
 import app.unbraid.data.Route
@@ -31,9 +67,9 @@ import app.unbraid.ui.Onboarding
 import app.unbraid.ui.Ui
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.BeforeClass
 import org.junit.FixMethodOrder
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runners.MethodSorters
 import java.io.File
@@ -46,21 +82,29 @@ import javax.imageio.ImageIO
  */
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class UiFlowTest {
-    @get:Rule val compose = createComposeRule()
 
     companion object {
         private val key = "5p4RkybdRU5uaDi90eu4KZPTFif0lKCg4Qp6t1c4F30="
 
         /** One app per test JVM, as on Android: the store and onboarding are the process's. Fake desktop apps to route. */
+        /** The apps' stand-in programs: an /opt of their own, which the screenshots show (never this computer's paths). */
+        val programs = File(System.getProperty("java.io.tmpdir"), "unbraid-ui-test/opt")
+
         @BeforeClass @JvmStatic fun app() {
             Paths.data.listFiles()?.forEach { it.deleteRecursively() }
             val apps = File(Paths.data.parentFile, "applications").apply { deleteRecursively(); mkdirs() }
             // Each app its own program in its own folder (stand-ins, never run): apps on one program share its route.
-            val programs = File(Paths.data.parentFile, "programs").apply { deleteRecursively() }
+            programs.deleteRecursively()
             fun program(id: String) = File(programs, "$id/$id").apply { parentFile.mkdirs(); writeBytes(byteArrayOf(0x7f, 69, 76, 70, 2, 1)); setExecutable(true) }
-            listOf("firefox" to "Firefox", "spotify" to "Spotify", "org.gnome.Terminal" to "Terminal").forEach { (id, name) ->
+            listOf("firefox" to "Firefox", "spotify" to "Spotify", "org.gnome.Terminal" to "Terminal", "chromium" to "Chromium", "thunderbird" to "Thunderbird",
+                "signal-desktop" to "Signal", "discord" to "Discord", "code" to "Visual Studio Code", "libreoffice-startcenter" to "LibreOffice", "org.gimp.GIMP" to "GIMP").forEach { (id, name) ->
                 File(apps, "$id.desktop").writeText("[Desktop Entry]\nType=Application\nName=$name\nExec=${program(id).path} %u\n")
             }
+            // Runs as LibreOffice: Writer is the same program.
+            File(apps, "libreoffice-writer.desktop").writeText("[Desktop Entry]\nType=Application\nName=LibreOffice Writer\nExec=${File(programs, "libreoffice-startcenter/libreoffice-startcenter").path} --writer %U\n")
+            // A launcher script that starts its program through a variable it can't see into: the default route only.
+            val steam = File(programs, "steam/steam").apply { parentFile.mkdirs(); writeText("#!/bin/sh\nexec \"\$HOME/.steam/steam.sh\" \"\$@\"\n"); setExecutable(true) }
+            File(apps, "steam.desktop").writeText("[Desktop Entry]\nType=Application\nName=Steam\nExec=${steam.path} %U\n")
             // Runs as Firefox: it takes Firefox's route.
             File(apps, "firefox-private.desktop").writeText("[Desktop Entry]\nType=Application\nName=Private Browsing\nExec=${File(programs, "firefox/firefox").path} --private-window %u\n")
             // Runs as python3, like every other Python program: the engine can't tell it apart.
@@ -70,86 +114,158 @@ class UiFlowTest {
         }
     }
 
-    private fun shot(name: String) {
-        compose.waitForIdle()
-        val img = compose.onNodeWithTag("app").captureToImage().toAwtImage()
+    private fun ComposeUiTest.shot(name: String) {
+        waitForIdle()
+        val img = onNodeWithTag("app").captureToImage().toAwtImage()
         ImageIO.write(img, "png", File("build/screenshots").apply { mkdirs() }.resolve("$name.png"))
+    }
+
+    /** A desktop window's size, as a person first sees the app: the sidebar, wide. */
+    @OptIn(ExperimentalTestApi::class)
+    private fun desktop(block: ComposeUiTest.() -> Unit) = runDesktopComposeUiTest(1280, 800) { block() }
+
+    /** What a window does with a key nothing in it took (Compose's own input is internal): Esc becomes back, for the innermost handler. */
+    private class Esc : NavigationEventInput() {
+        fun press() = dispatchOnBackCompleted()
+        fun onKeyEvent(e: KeyEvent) = (e.type == KeyEventType.KeyDown && e.key == Key.Escape).also { if (it) press() }
+    }
+    private val esc = Esc()
+
+    /** The app as in its window: the window's keys first, then the focused node's; Esc that nobody took goes back. */
+    @Composable private fun TestWindow(ui: Ui, width: Int = 1280, height: Int = 800) {
+        val back = LocalNavigationEventDispatcherOwner.current!!.navigationEventDispatcher
+        DisposableEffect(back) { back.addInput(esc); onDispose { back.removeInput(esc) } }
+        Box(Modifier.size(width.dp, height.dp).testTag("app").onPreviewKeyEvent { windowKey(it, ui, {}, {}) }.onKeyEvent { esc.onKeyEvent(it) }) { App(ui) }
     }
 
     private fun SemanticsNodeInteractionsProvider.click(text: String) = onAllNodesWithText(text).filterToOne(hasClickAction()).performClick()
 
-    @Test fun a_welcomeTermsAndSignIn() {
-        compose.setContent { Box(Modifier.size(440.dp, 900.dp).testTag("app")) { App(Ui()) } }
-        compose.onNodeWithText("EVERY APP, ITS OWN", substring = true).assertIsDisplayed()
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun a_welcomeTermsAndSignIn() = desktop {
+        val ui = Ui()
+        setContent { TestWindow(ui) }
+        onNodeWithText("EVERY APP, ITS OWN", substring = true).assertIsDisplayed()
         shot("1-welcome")
-        compose.onNodeWithText("Next").performClick()
+        onNodeWithText("Next").performClick()
         shot("2-welcome-routes")
-        compose.onNodeWithText("Next").performClick()
-        compose.onNodeWithText("I accept the Terms of use", substring = true).performClick()
+        onNodeWithText("Next").performClick()
+        onNodeWithText("I accept the Terms of use", substring = true).performClick()
         shot("3-terms")
-        compose.onNodeWithText("Accept and continue").performClick()
-        compose.onNodeWithText("Choose your VPN").assertIsDisplayed()
-        compose.onNodeWithText("NordVPN").assertIsDisplayed()
+        onNodeWithText("Accept and continue").performClick()
+        onNodeWithText("Choose your VPN").assertIsDisplayed()
+        onNodeWithText("NordVPN").assertIsDisplayed()
         shot("4-sign-in")
+        // Esc in a provider's form, typed in its field: the field leaves it, and the form's Back takes it and forgets what was typed.
+        onNodeWithText("NordVPN").performClick()
+        onNode(hasSetTextAction()).performTextInput("half a token")
+        waitUntil(timeoutMillis = 5_000) { ui.form.keys.any { it.startsWith("nord:") } }
+        onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Escape) }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Choose your VPN").fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(ui.form.keys.none { it.startsWith("nord:") })
     }
 
     /** A set-up app: provider routes, an imported WireGuard server, and desktop apps on routes and Direct. */
     @OptIn(ExperimentalTestApi::class)
-    @Test fun b_screensOfASetUpApp() {
+    @Test fun b_screensOfASetUpApp() = desktop {
         val lab = WgPeer("Home lab", key, listOf("10.8.0.2/32"), key, endpoint = "203.0.113.7:51820", allowedIps = listOf("0.0.0.0/0"))
         Unbraid.store.update { s ->
             s.copy(
                 routes = listOf(Route("nl", Location("nord", 153, "NL", "Netherlands")), Route("us", Location("nord", 228, "US", "United States"), hue = 1),
                     Route("it", Location("nord", 106, "IT", "Italy"), hue = 2), Route("lab", wg = lab, hue = 3)),
-                defaultRoute = "nl", apps = mapOf("firefox" to "us", "spotify" to "it", "org.gnome.Terminal" to DIRECT, "org.example.Tool" to "us", "firefox-private" to "it"), version = VERSION,
+                defaultRoute = "nl", apps = mapOf("firefox" to "us", "spotify" to "it", "org.gnome.Terminal" to DIRECT, "org.example.Tool" to "us", "firefox-private" to "it",
+                    "thunderbird" to "us", "discord" to "it", "code" to DIRECT), version = VERSION,
                 // Here Private Browsing is the one of its group with a route: it leads, and keeps it.
-                profiles = listOf(Profile("Work", "nl", mapOf("firefox-private" to "it"))),
+                // In Home both have one: the first keeps it, and the notice names the profile.
+                profiles = listOf(Profile("Work", "nl", mapOf("firefox-private" to "it")), Profile("Home", "nl", mapOf("firefox" to "us", "firefox-private" to "it"))),
             )
         }
         Onboarding.tourSeen()
+        // A week of recorded traffic, so Stats and the Apps table's Today column have something to show.
+        Unbraid.store.update { it.copy(prefs = it.prefs.copy(stats = true)) }
+        val routes = Unbraid.store.setup.value.routes.associateBy { it.id }
+        val exit = { id: String -> Stats.idOf(routes.getValue(id)) }
+        val written = java.util.concurrent.CountDownLatch(1)
+        Stats.post {
+            val hour = 3_600_000L
+            val now = System.currentTimeMillis()
+            for (h in 0 until 24 * 7) {
+                val at = now - h * hour
+                val w = 0.4 + 0.6 * kotlin.math.sin(h / 4.0).let { it * it } * if ((at / hour) % 24 in 1..6) 0.1 else 1.0
+                Stats.add(at, "firefox", exit("us"), null, (3e6 * w).toLong(), (60e6 * w).toLong())
+                Stats.add(at, "spotify", exit("it"), null, (1e6 * w).toLong(), (24e6 * w).toLong())
+                Stats.add(at, "chromium", exit("nl"), null, (2e6 * w).toLong(), (38e6 * w).toLong())
+                Stats.add(at, "thunderbird", exit("us"), null, (1e6 * w).toLong(), (6e6 * w).toLong())
+                Stats.add(at, "discord", exit("it"), null, (2e6 * w).toLong(), (9e6 * w).toLong())
+                Stats.add(at, "signal-desktop", exit("nl"), null, (1e6 * w).toLong(), (3e6 * w).toLong())
+            }
+            Stats.flushNow(force = true)
+            written.countDown()
+        }
+        written.await(10, java.util.concurrent.TimeUnit.SECONDS)
+        // Signed in to NordVPN, with its countries, so the location picker lists them (nothing is fetched: the list is new).
+        Unbraid.store.account("nord", "test")
+        Unbraid.store.countries("nord", listOf(
+            Country(81, "Germany", "DE", 322, listOf(City(2, "Frankfurt"), City(3, "Berlin"), City(4, "Hamburg"))),
+            Country(74, "France", "FR", 176, listOf(City(5, "Paris"), City(6, "Marseille"))),
+            Country(106, "Italy", "IT", 120, listOf(City(15, "Milan"), City(16, "Rome"))),
+            Country(108, "Japan", "JP", 113, listOf(City(14, "Tokyo"))),
+            Country(153, "Netherlands", "NL", 214, listOf(City(1, "Amsterdam"))),
+            Country(208, "Sweden", "SE", 98, listOf(City(8, "Stockholm"))),
+            Country(209, "Switzerland", "CH", 131, listOf(City(7, "Zurich"))),
+            Country(227, "United Kingdom", "GB", 440, listOf(City(9, "London"), City(10, "Manchester"))),
+            Country(228, "United States", "US", 1960, listOf(City(11, "New York"), City(12, "Los Angeles"), City(13, "Chicago"))),
+        ))
         val ui = Ui()
-        compose.setContent { Box(Modifier.size(440.dp, 900.dp).testTag("app")) { App(ui) } }
-        compose.onNodeWithText("DEFAULT ROUTE").assertIsDisplayed()
-        compose.onNodeWithText("Netherlands").assertIsDisplayed()
+        setContent { TestWindow(ui) }
+        onNodeWithText("DEFAULT ROUTE").assertIsDisplayed()
+        // The default route's card (the exits list names it too).
+        onAllNodesWithText("Netherlands").filterToOne(hasClickAction()).assertIsDisplayed()
         shot("5-routes")
-        compose.click("Apps")
-        compose.onNodeWithText("Show my apps").performClick()
-        compose.onNodeWithText("Agree and continue").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("Spotify").fetchSemanticsNodes().isNotEmpty() }
+        click("Apps")
+        onNodeWithText("Show my apps").performClick()
+        onNodeWithText("Agree and continue").performClick()
+        waitUntil(timeoutMillis = 10_000) { ui.apps.value.any { it.pkg == "spotify" } }
         // Two of a group with routes (Firefox's own and its private window's): the first keeps its route, and the other's is said.
-        compose.waitUntil(10_000) { Unbraid.store.setup.value.apps["firefox-private"] == null }
+        waitUntil(timeoutMillis = 10_000) { Unbraid.store.setup.value.apps["firefox-private"] == null }
         assertEquals(true, ui.notice.value?.contains("Private Browsing runs as Firefox, so it takes Firefox's route now."))
+        assertEquals(true, ui.notice.value?.contains("Private Browsing runs as Firefox, so it takes Firefox's route now in Home."))
         ui.notice.value = null
-        assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.single().apps)
+        assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.first { it.name == "Work" }.apps)
+        assertEquals(mapOf("firefox" to "us"), Unbraid.store.setup.value.profiles.first { it.name == "Home" }.apps)
         shot("6-apps")
-        // An app that runs as a script loses the route it could never take, and says it follows the default.
-        compose.waitUntil(10_000) { Unbraid.store.setup.value.apps["org.example.Tool"] == null }
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Tool"))
-        compose.onNodeWithText("Tool").performClick()
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Follows the default route", substring = true))
-        compose.onNodeWithText("Follows the default route", substring = true).assertIsDisplayed()
+        // An app that runs as a script loses the route it could never take, and its panel says it follows the default.
+        waitUntil(timeoutMillis = 10_000) { Unbraid.store.setup.value.apps["org.example.Tool"] == null }
+        onNodeWithTag("apps").performScrollToNode(hasText("Tool"))
+        onNodeWithText("Tool").performClick()
+        onNodeWithText("Follows the default route", substring = true).assertIsDisplayed()
         // A new entry for Firefox's program, whose label sorts first, doesn't take Firefox's route: it takes the route too.
-        File(Paths.data.parentFile, "applications/alacarte-made-1.desktop").writeText("[Desktop Entry]\nType=Application\nName=Browser\nExec=${File(Paths.data.parentFile, "programs/firefox/firefox").path}\n")
+        File(Paths.data.parentFile, "applications/alacarte-made-1.desktop").writeText("[Desktop Entry]\nType=Application\nName=Browser\nExec=${File(programs, "firefox/firefox").path}\n")
         ui.refreshApps()
-        compose.waitUntil(10_000) { ui.apps.value.any { it.pkg == "alacarte-made-1" } }
-        compose.waitForIdle()
+        waitUntil(timeoutMillis = 10_000) { ui.apps.value.any { it.pkg == "alacarte-made-1" } }
+        waitForIdle()
         assertEquals("us", Unbraid.store.setup.value.apps["firefox"])
-        assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.single().apps)
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Browser"))
-        compose.onNodeWithText("Browser").performClick()
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Takes Firefox's route", substring = true))
-        compose.onNodeWithText("Takes Firefox's route", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("Browser").performClick()
+        assertEquals(mapOf("firefox-private" to "it"), Unbraid.store.setup.value.profiles.first { it.name == "Work" }.apps)
+        onNodeWithTag("apps").performScrollToNode(hasText("Browser"))
+        onNodeWithText("Browser").performClick()
+        onNodeWithText("Takes Firefox's route", substring = true).assertIsDisplayed()
         // So does one that runs as another app and has no route of its own here.
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Private Browsing"))
-        compose.onNodeWithText("Private Browsing").performClick()
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Takes Firefox's route", substring = true))
-        compose.onNodeWithText("Takes Firefox's route", substring = true).assertIsDisplayed()
+        onNodeWithTag("apps").performScrollToNode(hasText("Private Browsing"))
+        onNodeWithText("Private Browsing").performClick()
+        onNodeWithText("Takes Firefox's route", substring = true).assertIsDisplayed()
         shot("6-apps-runs-as-another")
+        // A right click offers the routes at once.
+        onNodeWithTag("apps").performScrollToNode(hasText("Spotify"))
+        onAllNodesWithText("Spotify").filterToOne(hasClickAction()).performMouseInput { rightClick() }
+        onAllNodesWithText("Italy").filterToOne(hasAnyAncestor(isPopup())).assertIsDisplayed()
+        shot("6-apps-menu")
+        onAllNodesWithText("United States").filterToOne(hasAnyAncestor(isPopup())).performClick()
+        waitUntil(timeoutMillis = 5_000) { Unbraid.store.setup.value.apps["spotify"] == "us" }
+        onAllNodesWithText("Spotify").filterToOne(hasClickAction()).performMouseInput { rightClick() }
+        onAllNodesWithText("Italy").filterToOne(hasAnyAncestor(isPopup())).performClick()
+        waitUntil(timeoutMillis = 5_000) { Unbraid.store.setup.value.apps["spotify"] == "it" }
         // A program the launcher doesn't list is added by its file (the chooser is the desktop's own), keyed by its real path.
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Add a program"))
-        compose.onNodeWithText("Add a program").assertIsDisplayed()
-        compose.runOnIdle {
+        onNodeWithText("Add a program").assertIsDisplayed()
+        runOnIdle {
             assertEquals(File("/bin/true").canonicalPath, ui.addProgram(File("/bin/true")))
             assertNull(ui.addProgram(File(Paths.data, "unbraid_ui.properties")))
             // A script runs as its interpreter, an AppImage from a mount of its own: neither can have a route of its own.
@@ -159,16 +275,134 @@ class UiFlowTest {
             assertNull(ui.addProgram(appImage))
             assertEquals(true, ui.notice.value?.contains("AppImage"))
             // A program an app runs takes that app's route: it can't have one of its own.
-            assertNull(ui.addProgram(File(Paths.data.parentFile, "programs/spotify/spotify")))
+            assertNull(ui.addProgram(File(programs, "spotify/spotify")))
             assertEquals(true, ui.notice.value?.contains("part of Spotify"))
             ui.notice.value = null // the refusal's notice, which would show on the next screens
         }
-        compose.click("Stats")
+        click("Stats")
+        waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("APPS · BY DATA").fetchSemanticsNodes().isNotEmpty() }
         shot("7-stats")
-        compose.click("Settings")
+        // A tile opens its section, at a reading width; Back returns to the overview.
+        onNodeWithText("Usage").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("by provider", substring = true, ignoreCase = true).fetchSemanticsNodes().isNotEmpty() }
+        shot("7-stats-usage")
+        onNodeWithContentDescription("Back").performClick()
+        click("Settings")
         shot("8-settings")
-        compose.click("Routes")
-        compose.onNodeWithText("Netherlands").performClick()
+        // Settings › Desktop: login, the tray, the window and the theme. Light turns the whole window at once.
+        onNodeWithText("Desktop").performClick()
+        onNodeWithText("Start minimised to the tray").assertIsDisplayed()
+        shot("8-settings-desktop")
+        onNodeWithText("Light").performClick()
+        runOnIdle { assertEquals(app.unbraid.linux.DesktopSettings.Theme.Light, app.unbraid.linux.DesktopSettings.theme.value) }
+        waitUntil(timeoutMillis = 5_000) { Ink.light }
+        shot("8-settings-desktop-light")
+        click("Apps")
+        shot("6-apps-light")
+        click("Routes")
+        shot("5-routes-light")
+        click("Settings")
+        onNodeWithText("Dark").performClick()
+        waitUntil(timeoutMillis = 5_000) { !Ink.light }
+        // The window's keys: the pages, search, and the list of every shortcut (Esc closes it).
+        fun key(k: Key, ctrl: Boolean = true) = keys(k, ctrl, shift = false, alt = false, ui, {}, {})
+        runOnIdle { assertTrue(key(Key.Two)); assertEquals(Tab.Apps, Desk.tab.value) }
+        runOnIdle { assertTrue(key(Key.Comma)); assertEquals(Tab.Settings, Desk.tab.value) }
+        runOnIdle { assertTrue(key(Key.F)); assertEquals(Tab.Apps, Desk.tab.value) }
+        waitUntil(timeoutMillis = 5_000) { Desk.pending.value == null } // the Apps page took the search
+        runOnIdle { assertTrue(key(Key.Slash)) }
+        onNodeWithText("KEYBOARD SHORTCUTS").assertIsDisplayed()
+        shot("shortcuts")
+        // Esc: the window's keys leave it, so it goes back, to the list on top (a dialog takes back, not keys).
+        runOnIdle { assertTrue(!key(Key.Escape, ctrl = false)); esc.press() }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("KEYBOARD SHORTCUTS").fetchSemanticsNodes().isEmpty() }
+        runOnIdle { assertTrue(!key(Key.Z)); Desk.tab.value = Tab.Settings }
+        // A new route (Ctrl+N): the location picker, a dialog over the page; a country's cities open beside the list.
+        runOnIdle { assertTrue(keys(Key.N, ctrl = true, shift = false, alt = false, ui, {}, {})) }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("CHOOSE A LOCATION").fetchSemanticsNodes().isNotEmpty() }
+        shot("10-picker")
+        // A dialog for the keyboard too: focus starts inside it, and Shift+Tab from there doesn't leave it for the page.
+        val inPicker = isFocused() and hasAnyAncestor(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, "Choose a location"))
+        waitUntil(timeoutMillis = 5_000) { onAllNodes(inPicker).fetchSemanticsNodes().isNotEmpty() }
+        onNode(inPicker).performKeyInput { withKeyDown(Key.ShiftLeft) { pressKey(Key.Tab) } }
+        waitForIdle()
+        onNode(inPicker).assertExists()
+        onNodeWithTag("picker").performScrollToNode(hasText("All countries"))
+        onNodeWithText("All countries").performClick()
+        onNodeWithTag("picker").performScrollToNode(hasContentDescription("Cities and servers in Germany"))
+        onNodeWithContentDescription("Cities and servers in Germany").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("in Germany", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        shot("10-picker-country")
+        // Esc in the picker, where its focus stays: it closes the dialog, never the Settings page behind it.
+        onNodeWithTag("picker").performKeyInput { pressKey(Key.Escape) }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("CHOOSE A LOCATION").fetchSemanticsNodes().isEmpty() }
+        runOnIdle { assertEquals(Tab.Settings, Desk.tab.value) }
+        // Add provider, from the picker: Esc in a provider's form steps back to the list and forgets what was typed; on
+        // the list, Esc closes Add provider.
+        runOnIdle { assertTrue(keys(Key.N, ctrl = true, shift = false, alt = false, ui, {}, {})) }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("CHOOSE A LOCATION").fetchSemanticsNodes().isNotEmpty() }
+        onNode(hasText("PROVIDER") and hasClickAction()).performClick()
+        onNodeWithText("Add a provider").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Mullvad").fetchSemanticsNodes().isNotEmpty() }
+        onAllNodesWithText("Mullvad").filterToOne(hasClickAction()).performClick()
+        onNode(hasSetTextAction()).performTextInput("1234")
+        waitUntil(timeoutMillis = 5_000) { ui.form.keys.any { it.startsWith("mullvad:") } }
+        onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Escape) }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Choose your VPN").fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(ui.form.keys.none { it.startsWith("mullvad:") })
+        runOnIdle { esc.press() }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Choose your VPN").fetchSemanticsNodes().isEmpty() }
+        runOnIdle { assertEquals(Tab.Settings, Desk.tab.value) }
+        click("Routes")
+        // Routes with the apps known: their names, and the default's share.
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Thunderbird", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        shot("5-routes-set-up")
+        // A right click on a route offers what its sheet does.
+        onAllNodesWithText("Netherlands").filterToOne(hasClickAction()).performMouseInput { rightClick() }
+        onNodeWithText("Change location…").assertIsDisplayed()
+        shot("9-route-menu")
+        runOnIdle { esc.press() } // Esc closes the menu
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Change location…").fetchSemanticsNodes().isEmpty() }
+        onAllNodesWithText("Netherlands").filterToOne(hasClickAction()).performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Change location").fetchSemanticsNodes().isNotEmpty() }
         shot("9-route-sheet")
+        runOnIdle { esc.press() }
+        // Removing a route takes it from the saved profiles that list it too: the menu says which, as the sheet does.
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Change location").fetchSemanticsNodes().isEmpty() }
+        onAllNodesWithText("United States").filterToOne(hasClickAction()).performMouseInput { rightClick() }
+        onNodeWithText("Remove route, also from Home").assertIsDisplayed()
+        runOnIdle { esc.press() }
+    }
+
+    /** The smallest window: the sidebar folds to a rail of icons whose names show on hover; the pages keep their layout. */
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun c_smallestWindow() = runDesktopComposeUiTest(880, 600) {
+        Desk.tab.value = Tab.Routes
+        setContent { TestWindow(Ui(), 880, 600) }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("DEFAULT ROUTE").fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithContentDescription("Apps").assertIsDisplayed()
+        assertTrue(onAllNodesWithText("Ctrl+2").fetchSemanticsNodes().isEmpty()) // no names, no keys: only icons
+        shot("11-smallest-window")
+    }
+
+    /**
+     * The tray's profile switch (the set-up app's profiles): one that waits on the window opens it, an empty profile to be
+     * given a default route and a provider's limit, whose question only the window shows. One that completes doesn't.
+     */
+    @Test fun d_trayProfileSwitch() = desktop {
+        val ui = Ui()
+        setContent { TestWindow(ui) }
+        Unbraid.store.update { s -> s.copy(profiles = s.profiles + Profile("Travel", "") + Profile("Solo", "nl"), opts = s.opts + ("nord" to mapOf(LIMIT_OPT to "1"))) }
+        runOnIdle {
+            assertTrue(ui.useProfileOutside("Travel")); assertEquals("Travel", ui.viewing.value); ui.view(null)
+            ui.useProfile("Solo") // NordVPN: the Netherlands only, within 1
+            assertEquals("Solo", Unbraid.store.setup.value.profile)
+            assertTrue(ui.useProfileOutside("Home")); assertNotNull(ui.limitAsk.value) // and the United States: over 1
+        }
+        Unbraid.store.update { s -> s.copy(opts = s.opts + ("nord" to mapOf(LIMIT_OPT to "10"))) }
+        runOnIdle {
+            assertTrue(!ui.useProfileOutside("Home")); assertNull(ui.limitAsk.value)
+            assertEquals("Home", Unbraid.store.setup.value.profile)
+        }
     }
 }

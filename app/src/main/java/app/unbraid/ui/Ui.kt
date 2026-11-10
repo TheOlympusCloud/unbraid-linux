@@ -50,7 +50,7 @@ import kotlinx.coroutines.withContext
  * [group]: the apps it runs as one program with, itself included, in the order that picks which leads (Linux: LibreOffice's
  * Writer and Calc, a browser and its web apps, [Apps.shareRoutes]).
  */
-data class AppInfo(val pkg: String, val label: String, val system: Boolean, val routable: Boolean = true, val group: List<String> = emptyList()) {
+data class AppInfo(val pkg: String, val label: String, val system: Boolean, val routable: Boolean = true, val group: List<String> = emptyList(), val kind: String = "App") {
     /** The app whose route this one takes in [s]: the first of its [group] with a route there, when that isn't itself. */
     fun follows(s: Setup): String? = group.firstOrNull { it in s.apps }?.takeIf { it != pkg }
 }
@@ -355,8 +355,8 @@ class Ui : ViewModel() {
         // A program one of the apps runs (added before that app was installed) joins that app's group, after its entries.
         val owned = programs.mapNotNull { p -> entries.firstOrNull { Apps.matches(it.matchers, p) }?.let { o -> p to o.group.ifEmpty { listOf(o.key) } } }
         fun group(g: List<String>) = (g + owned.filter { it.second == g }.map { it.first }).takeIf { it.size > 1 }.orEmpty()
-        val listed = entries.map { AppInfo(it.key, it.label, it.system, routable = !it.matchers.empty, group = group(it.group.ifEmpty { listOf(it.key) })) } +
-            programs.map { p -> AppInfo(p, File(p).name, false, routable = Apps.unroutable(File(p)) == null, group = owned.firstOrNull { it.first == p }?.second?.let(::group).orEmpty()) }
+        val listed = entries.map { AppInfo(it.key, it.label, it.system, routable = !it.matchers.empty, group = group(it.group.ifEmpty { listOf(it.key) }), kind = it.kind) } +
+            programs.map { p -> AppInfo(p, File(p).name, false, routable = Apps.unroutable(File(p)) == null, group = owned.firstOrNull { it.first == p }?.second?.let(::group).orEmpty(), kind = "Program") }
         _apps.value = listed.sortedBy { it.label.lowercase() }
         val installed = listed.filter { it.routable }.mapTo(HashSet()) { it.pkg }
         val groups = listed.map { it.group }.filter { it.isNotEmpty() }.distinct()
@@ -368,8 +368,10 @@ class Ui : ViewModel() {
         val now = store.setup.value
         // A route that loses to another of its group's is said, never dropped silently.
         val label = listed.associate { it.pkg to it.label }
-        val lost = (listOf(now.apps) + now.profiles.map { it.apps }).flatMap { a -> a.keys.filter { it in installed && it !in keep(a) }.map { k -> k to groups.first { k in it }.first { it in a } } }.distinct()
-        if (lost.isNotEmpty()) warn(lost.joinToString(" ") { (k, l) -> "${label[k]} runs as ${label[l]}, so it takes ${label[l]}'s route now." })
+        val lost = (listOf(null to now.apps) + now.profiles.map { it.name to it.apps }).flatMap { (profile, a) ->
+            a.keys.filter { it in installed && it !in keep(a) }.map { k -> Triple(k, groups.first { k in it }.first { it in a }, profile) }
+        }
+        if (lost.isNotEmpty()) warn(lost.joinToString(" ") { (k, l, profile) -> "${label[k]} runs as ${label[l]}, so it takes ${label[l]}'s route now${profile?.let { " in $it" }.orEmpty()}." })
         val gone = { s: Setup -> s.apps != keep(s.apps) || s.profiles.any { p -> p.apps != keep(p.apps) } }
         if (gone(now)) store.edit { s -> s.copy(apps = keep(s.apps), profiles = s.profiles.map { p -> p.copy(apps = keep(p.apps)) }) }
     } }
@@ -386,7 +388,7 @@ class Ui : ViewModel() {
             val app = _apps.value.firstOrNull { it.pkg == k }?.label ?: k
             notice.value = "${file.name} is part of $app: it takes $app's route."; return null
         }
-        if (_apps.value.none { it.pkg == path }) _apps.value = (_apps.value + AppInfo(path, file.name, false)).sortedBy { it.label.lowercase() }
+        if (_apps.value.none { it.pkg == path }) _apps.value = (_apps.value + AppInfo(path, file.name, false, kind = "Program")).sortedBy { it.label.lowercase() }
         return path
     }
 
@@ -703,6 +705,16 @@ class Ui : ViewModel() {
     val routesWanted = MutableStateFlow(false)
     val switching = Profiles.switching
     val switchFailed = Profiles.refused
+
+    /**
+     * Switches to profile [name] from outside the window (the tray). True when the switch waits on the window: an empty
+     * profile, shown to be given a default route, or a provider's limit to answer ([limitAsk], which only it shows).
+     */
+    fun useProfileOutside(name: String): Boolean {
+        limitAsk.value = null // a question left from an earlier switch: this one replaces it
+        useProfile(name)
+        return limitAsk.value != null || viewing.value == name
+    }
 
     /** Switches to profile [name]; [then] runs once it is saved (at once, or after the user's yes to a provider's limit). */
     fun useProfile(name: String, then: () -> Unit = {}) {

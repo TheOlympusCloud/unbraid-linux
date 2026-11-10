@@ -8,6 +8,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -25,13 +28,21 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.backhandler.BackHandler
-import androidx.compose.ui.backhandler.PredictiveBackHandler
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -56,7 +67,6 @@ import app.unbraid.ui.Ink
 import app.unbraid.ui.LimitSheet
 import app.unbraid.ui.LocalScreen
 import app.unbraid.ui.LocalShared
-import app.unbraid.ui.NavBar
 import app.unbraid.ui.Onboarding
 import app.unbraid.ui.PickerScreen
 import app.unbraid.ui.RoutesScreen
@@ -84,10 +94,32 @@ import java.nio.channels.Channels
 import java.nio.channels.ServerSocketChannel
 import java.nio.channels.SocketChannel
 import kotlin.concurrent.thread
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.system.exitProcess
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.isSpecified
+import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.WindowPosition
+import app.unbraid.linux.DesktopSettings
+import app.unbraid.ui.Desk
+import app.unbraid.ui.ShortcutsDialog
+import app.unbraid.ui.Sidebar
+import app.unbraid.ui.WIDE
+import java.awt.GraphicsEnvironment
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.withContext
 
 private const val USAGE = """Usage: unbraid [command]
 
@@ -155,9 +187,12 @@ fun main(args: Array<String>) {
     if (!Instance.serve(::handle)) return // lost a race with another start
     // The engine's worker and statistics end with the app; the tunnels end with it too, as with the Android app.
     Runtime.getRuntime().addShutdownHook(Thread { UnbraidVpn.quit() })
-    // Shown unless started for the background; a connect that can't happen yet (setup unfinished) shows it too.
-    if ("--background" !in a && command != "connect") shown.value = true
+    // A connect that can't happen yet (setup unfinished) shows the window too.
+    if (DesktopSettings.showsAtStart("--background" in a, "--connect" in a, command, isTraySupported)) shown.value = true
     if ("--connect" in a || command == "connect") handle("connect")
+    // The theme before the first frame, so the window doesn't open in the other one.
+    systemDark.value = Desktop.systemDark()
+    Ink.light = !DesktopSettings.dark(DesktopSettings.theme.value, systemDark.value)
     window()
 }
 
@@ -183,66 +218,151 @@ private fun window() = application {
     // Out here, around the window, there is no lifecycle (only windows have one): plain collection.
     val visible by shown.collectAsState()
     val vpn by ui.vpn.collectAsState()
+    val setup by ui.setup.collectAsState()
     val summary by UnbraidVpn.summary.collectAsState()
+    val closeToTray by DesktopSettings.closeToTray.collectAsState()
     val quit = { thread { UnbraidVpn.quit(); exitProcess(0) }; Unit }
-    // Hidden with nothing running (disconnected from the tray or the command line): nothing left to do.
+    val close = { if (DesktopSettings.closeHides(closeToTray, isTraySupported, UnbraidVpn.state.value.phase != VpnState.Phase.Off)) shown.value = false else quit() }
+    // Hidden with nothing running and no tray to come back from (disconnected from the command line): nothing left to do.
     var wasOn by remember { mutableStateOf(false) }
     LaunchedEffect(vpn.phase, visible) {
         if (vpn.phase != VpnState.Phase.Off) wasOn = true
-        else if (!visible && wasOn) quit()
+        else if (DesktopSettings.quitsWhenHidden(visible, wasOn, isTraySupported)) quit()
     }
+    ReadSystemTheme(visible)
     val icon = painterResource("unbraid.svg")
-    if (isTraySupported) Tray(icon, tooltip = listOf(APP, summary).filter { it.isNotEmpty() }.joinToString(" · "), onAction = { shown.value = true }) {
-        Item("Open $APP", onClick = { shown.value = true })
-        if (vpn.phase == VpnState.Phase.Off) Item("Connect", onClick = { handle("connect") })
-        else {
-            if (vpn.phase == VpnState.Phase.On) Item("Pause 15 minutes", onClick = { ui.pause(15) })
-            if (vpn.phase == VpnState.Phase.Paused) Item("Resume", onClick = { ui.connect() })
-            Item("Disconnect", onClick = { ui.disconnect() })
+    // The tray shows the state: the logo in its colour while connected, greyed out otherwise.
+    val grey = remember(icon) { Grey(icon) }
+    if (isTraySupported) Tray(if (vpn.phase == VpnState.Phase.On) icon else grey,
+        tooltip = listOf(APP, summary).filter { it.isNotEmpty() }.joinToString(" · "), onAction = { shown.value = true }) {
+        Item(when (vpn.phase) {
+            VpnState.Phase.On -> "Protected · ${setup.route(setup.defaultRoute)?.name ?: "Direct"}"
+            VpnState.Phase.Paused -> summary.ifEmpty { "Paused" }; VpnState.Phase.Connecting -> "Connecting…"; VpnState.Phase.Off -> "Not connected"
+        }, enabled = false, onClick = {})
+        Separator()
+        if (vpn.phase == VpnState.Phase.Off) Item("Connect", onClick = { handle("connect") }) else Item("Disconnect", onClick = { ui.disconnect() })
+        if (vpn.phase == VpnState.Phase.On) Item("Pause 15 minutes", onClick = { ui.pause(15) })
+        if (vpn.phase == VpnState.Phase.Paused) Item("Resume", onClick = { ui.connect() })
+        if (setup.profiles.isNotEmpty()) Menu("Profile") {
+            // A switch that waits on the window (an empty profile, a provider's limit to answer) opens it on Routes.
+            setup.profiles.forEach { p -> RadioButtonItem(p.name, selected = p.name == setup.profile, onClick = {
+                if (p.name != setup.profile && ui.useProfileOutside(p.name)) { Desk.tab.value = Tab.Routes; shown.value = true }
+            }) }
         }
         Separator()
+        Item("Open $APP", onClick = { shown.value = true })
         Item("Quit", onClick = quit)
     }
-    val state = rememberWindowState(size = DpSize(440.dp, 860.dp))
+    val placement = remember { DesktopSettings.placement()?.takeIf { p -> DesktopSettings.onScreen(p, screens()) } }
+    val state = rememberWindowState(
+        placement = if (placement?.maximized == true) WindowPlacement.Maximized else WindowPlacement.Floating,
+        position = placement?.let { WindowPosition(it.x.dp, it.y.dp) } ?: WindowPosition.PlatformDefault,
+        size = placement?.let { DpSize(it.width.dp, it.height.dp) } ?: DpSize(1280.dp, 800.dp),
+    )
+    // Noted as it changes, so a logout or a crash keeps it too; maximized keeps the size to come back to.
+    LaunchedEffect(state) {
+        snapshotFlow { Triple(state.position, state.size, state.placement) }.collectLatest { (pos, size, how) ->
+            delay(800)
+            if (!DesktopSettings.rememberWindow.value) return@collectLatest
+            DesktopSettings.toSave(DesktopSettings.placement(), pos.x.value.toInt().takeIf { pos.isSpecified }, pos.y.value.toInt().takeIf { pos.isSpecified },
+                size.width.value.toInt(), size.height.value.toInt(), how == WindowPlacement.Maximized, how == WindowPlacement.Floating)?.let(DesktopSettings::save)
+        }
+    }
     // A hidden window leaves the composition: in the background only the connection and the tray keep running.
     if (visible) Window(
-        // Closing the window keeps a connection running, as leaving the Android app keeps its VPN: the tray, the launcher or
-        // `unbraid` brings it back. With nothing running, closing quits.
-        onCloseRequest = { if (UnbraidVpn.state.value.phase == VpnState.Phase.Off) quit() else shown.value = false },
-        state = state, title = APP, icon = icon,
-        onPreviewKeyEvent = { e -> e.key == Key.Escape && e.type == KeyEventType.KeyDown && run { back.value?.invoke(); back.value != null } },
+        onCloseRequest = close, state = state, title = APP, icon = icon,
+        onPreviewKeyEvent = { windowKey(it, ui, close, quit) },
     ) {
         // Android's onResume: the installed apps can change while unbraid is in the background.
         DisposableEffect(Unit) {
-            Desktop.window = window; window.minimumSize = java.awt.Dimension(360, 560); window.toFront()
+            Desktop.window = window; window.minimumSize = java.awt.Dimension(880, 600); window.toFront()
             ui.refreshApps(); Stats.maintain()
             onDispose { Desktop.window = null }
         }
+        // The desktop's light or dark again whenever the window comes to the front: it may have changed meanwhile.
+        val focused = LocalWindowInfo.current.isWindowFocused
+        LaunchedEffect(focused) { if (focused) systemDark.value = withContext(Dispatchers.IO) { Desktop.systemDark() } }
         App(ui)
     }
 }
 
-/** What Escape does: Android's back, for the screen on top. */
-private val back = MutableStateFlow<(() -> Unit)?>(null)
+/** [p] without its colour, as the tray shows the logo while disconnected. */
+private class Grey(private val p: Painter) : Painter() {
+    override val intrinsicSize get() = p.intrinsicSize
+    override fun DrawScope.onDraw() = with(p) { draw(size, colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })) }
+}
 
-/** The screens, as MainActivity composes them on Android. */
+/** The screens' bounds, to check a remembered place against. */
+private fun screens() = runCatching { GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.map { it.defaultConfiguration.bounds } }.getOrDefault(emptyList())
+
+/** The desktop's own light or dark, while the theme follows it: read at start, every 30 s and when the window comes to the front. */
+private val systemDark = MutableStateFlow<Boolean?>(null)
+
+@Composable
+private fun ReadSystemTheme(visible: Boolean) {
+    val theme by DesktopSettings.theme.collectAsState()
+    // Only while the window shows: in the tray nothing needs it, and coming back to the front reads it anyway.
+    LaunchedEffect(theme, visible) { while (visible && theme == DesktopSettings.Theme.System) { systemDark.value = withContext(Dispatchers.IO) { Desktop.systemDark() }; delay(30_000) } }
+}
+
+/** The theme in force: Settings › Desktop's choice, or the desktop's own. */
+@Composable
+private fun FollowTheme() {
+    val theme by DesktopSettings.theme.collectAsState()
+    val dark by systemDark.collectAsState()
+    // Read here, in composition, so a change composes again; the effect only hands it on.
+    val light = !DesktopSettings.dark(theme, dark)
+    SideEffect { Ink.light = light }
+}
+
+/** The window's keys, before anything in it sees them. */
+internal fun windowKey(e: KeyEvent, ui: Ui, close: () -> Unit, quit: () -> Unit) =
+    e.type == KeyEventType.KeyDown && keys(e.key, e.isCtrlPressed, e.isShiftPressed, e.isAltPressed, ui, close, quit)
+
+/** The window's keyboard shortcuts ([Desk.shortcuts]); true for a key it used. */
+internal fun keys(key: Key, ctrl: Boolean, shift: Boolean, alt: Boolean, ui: Ui, close: () -> Unit, quit: () -> Unit): Boolean {
+    // Esc isn't handled here: Compose sends it as back, to the innermost back handler (a form's Back, then the page's).
+    if (key == Key.F1) return Desk.asks.tryEmit(Desk.Ask.Shortcuts)
+    if (!ctrl || alt) return false
+    if (shift) return when (key) {
+        Key.C -> Desk.asks.tryEmit(Desk.Ask.Connect)
+        Key.P -> { when (ui.vpn.value.phase) { VpnState.Phase.On -> ui.pause(15); VpnState.Phase.Paused -> ui.connect(); else -> Unit }; true }
+        else -> false
+    }
+    when (key) {
+        Key.One -> Desk.tab.value = Tab.Routes
+        Key.Two -> Desk.tab.value = Tab.Apps
+        Key.Three -> Desk.tab.value = Tab.Stats
+        Key.Comma -> Desk.tab.value = Tab.Settings
+        Key.F -> { Desk.tab.value = Tab.Apps; Desk.pending.value = Desk.Ask.Search }
+        Key.N -> Desk.asks.tryEmit(Desk.Ask.NewRoute)
+        Key.W -> close()
+        Key.Q -> quit()
+        Key.Slash -> Desk.asks.tryEmit(Desk.Ask.Shortcuts)
+        else -> return false
+    }
+    return true
+}
+
+/** The screens, as MainActivity composes them on Android, around the desktop's sidebar ([Sidebar]). */
 @Composable
 internal fun App(ui: Ui) = UnbraidTheme {
+    FollowTheme()
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var connectAfter by rememberSaveable { mutableStateOf(false) }
+    var shortcuts by remember { mutableStateOf(false) }
     /** Connect. Until the VPN disclosure is accepted it comes first. */
     fun connect() { if (!Onboarding.vpnOk) { connectAfter = true; sheet = "vpn" } else ui.connect() }
 
-    // Wide windows keep the phone's column, centred.
-    Box(Modifier.fillMaxSize().background(Ink.ground), contentAlignment = Alignment.TopCenter) {
-      Box(Modifier.widthIn(max = 640.dp).fillMaxHeight()) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Ink.ground)) {
+      val wide = maxWidth >= WIDE
         if (!Onboarding.termsOk) {
             // A new install gets the whole welcome; someone updating from before the terms only the terms.
             val fresh = remember { !ui.signedIn.value && !ui.disclosed.value }
-            Welcome(fresh) { Onboarding.acceptTerms(fresh) }
+            Card { Welcome(fresh) { Onboarding.acceptTerms(fresh) } }
         } else {
             val signedIn by ui.signedIn.collectAsStateWithLifecycle()
-            var tab by rememberSaveable { mutableStateOf(Tab.Routes) }
+            val tab by Desk.tab.collectAsStateWithLifecycle()
             // Picker target: null = closed, "" = new route, otherwise a route id. Prefixed "app:" = new route for that app.
             var picker by rememberSaveable { mutableStateOf<String?>(null) }
             var adding by rememberSaveable { mutableStateOf(false) }
@@ -252,13 +372,27 @@ internal fun App(ui: Ui) = UnbraidTheme {
             LaunchedEffect(routesWanted) {
                 if (!routesWanted) return@LaunchedEffect
                 ui.routesWanted.value = false
-                picker = null; adding = false; tab = Tab.Routes
+                picker = null; adding = false; Desk.tab.value = Tab.Routes
             }
+            // Another page from the sidebar or the keys closes what was open over the last one.
+            LaunchedEffect(tab) { picker = null; adding = false }
             // A profile asked for from the command line opens Routes on it: it switches only on Use, as Android's shortcuts.
             LaunchedEffect(asked) {
                 val name = asked?.removePrefix("profile:")?.takeIf { asked?.startsWith("profile:") == true } ?: return@LaunchedEffect
                 wanted.value = null
                 if (ui.setup.value.profiles.any { it.name == name }) { ui.view(name); ui.routesWanted.value = true }
+            }
+            // What the keys and the tray ask for that the window itself answers.
+            LaunchedEffect(signedIn) {
+                Desk.asks.collect { a ->
+                    when (a) {
+                        Desk.Ask.Shortcuts -> shortcuts = true
+                        // A dialog: it opens over whichever page is shown.
+                        Desk.Ask.NewRoute -> if (signedIn) picker = ""
+                        Desk.Ask.Connect -> if (signedIn) when (ui.vpn.value.phase) { VpnState.Phase.Off, VpnState.Phase.Paused -> connect(); else -> ui.disconnect() }
+                        else -> Unit
+                    }
+                }
             }
 
             // The tour: a stop index, -1 = off. A new install gets it once it is set up; Settings replays it.
@@ -267,70 +401,71 @@ internal fun App(ui: Ui) = UnbraidTheme {
             LaunchedEffect(tour) {
                 if (tour < 0) return@LaunchedEffect
                 picker = null; adding = false
-                TourStop.entries[tour].tab.let { if (it == Tab.Settings && tab != Tab.Settings) settingsHub(); tab = it }
+                TourStop.entries[tour].tab.let { if (it == Tab.Settings && tab != Tab.Settings) settingsHub(); Desk.tab.value = it }
             }
-            val endTour = { tour = -1; Onboarding.tourSeen(); tab = Tab.Routes }
+            val endTour = { tour = -1; Onboarding.tourSeen(); Desk.tab.value = Tab.Routes }
 
-            // The screen shown; the picker's carries its route, so a closing picker keeps its identity while it leaves.
+            // The screen shown; the location picker is a dialog over it.
             val screenNow = when {
                 !signedIn -> "signin"
                 adding -> "add"
-                picker != null -> "picker:$picker"
                 else -> tab.name
             }
-            // Seekable, so a back gesture can drive the real transition (the picker shrinking back into its route).
             val screens = remember { SeekableTransitionState(screenNow) }
             LaunchedEffect(screenNow) { screens.animateTo(screenNow) }
-            val scope = rememberCoroutineScope()
             val motion = MaterialTheme.motionScheme
-            PredictiveBackHandler(adding || picker != null) { events ->
-                try {
-                    events.collect { screens.seekTo(it.progress, targetState = tab.name) }
-                    if (adding) adding = false else picker = null
-                } catch (e: CancellationException) {
-                    scope.launch { screens.animateTo(screens.currentState) }
-                    throw e
-                }
-            }
-            BackHandler(picker == null && !adding && tab != Tab.Routes) { tab = Tab.Routes }
-            // Escape closes what Android's back closes; the screens' own handlers (pages, sheets) come first.
-            back.value = when { adding -> { { adding = false } }; picker != null -> { { picker = null } }; else -> null }
+            // Esc (back) closes Add provider; a provider's form inside it steps back to the list first, by its own handler.
+            BackHandler(adding) { adding = false }
 
             Box(Modifier.fillMaxSize()) {
                 // While touring the app is looked at, not used: screen readers read the tour's note only.
-                Column(Modifier.fillMaxSize().background(Ink.ground).then(if (tour >= 0) Modifier.clearAndSetSemantics {} else Modifier)) {
-                    SharedTransitionLayout(Modifier.weight(1f)) {
-                        CompositionLocalProvider(LocalShared provides this) {
-                            rememberTransition(screens, label = "screen").AnimatedContent(
-                                transitionSpec = { fadeIn(motion.fastEffectsSpec()) togetherWith fadeOut(motion.fastEffectsSpec()) },
-                            ) { screen ->
-                                CompositionLocalProvider(LocalScreen provides this) {
-                                    when {
-                                        screen == "signin" -> SignInScreen(ui)
-                                        screen == "add" -> SignInScreen(ui) { adding = false }
-                                        // The route that was clicked grows into its picker (container transform).
-                                        screen.startsWith("picker:") -> screen.removePrefix("picker:").let { target ->
-                                            Box(Modifier.fillMaxSize().then(sharedRoute(target, RoundedCornerShape(28.dp)))) {
-                                                PickerScreen(
-                                                    ui, target, close = { picker = null },
-                                                    settings = { picker = null; tab = Tab.Settings }, addProvider = { picker = null; adding = true },
-                                                )
-                                            }
+                Row(Modifier.fillMaxSize().background(Ink.ground).then(if (tour >= 0) Modifier.clearAndSetSemantics {} else Modifier)) {
+                    if (signedIn) Sidebar(ui, tab, wide, onTab = { if (it == tab && picker == null && !adding) reselected.tryEmit(it) else Desk.tab.value = it; picker = null; adding = false }, connect = ::connect)
+                    Column(Modifier.weight(1f).fillMaxHeight()) {
+                        SharedTransitionLayout(Modifier.weight(1f)) {
+                            CompositionLocalProvider(LocalShared provides this) {
+                                rememberTransition(screens, label = "screen").AnimatedContent(
+                                    transitionSpec = { fadeIn(motion.fastEffectsSpec()) togetherWith fadeOut(motion.fastEffectsSpec()) },
+                                ) { screen ->
+                                    CompositionLocalProvider(LocalScreen provides this) {
+                                        when {
+                                            screen == "signin" -> Card { SignInScreen(ui) }
+                                            screen == "add" -> Card { SignInScreen(ui) { adding = false } }
+                                            screen == Tab.Routes.name -> RoutesScreen(ui, ::connect) { picker = it }
+                                            screen == Tab.Apps.name -> AppsScreen(ui, disclose = { sheet = "apps" }) { picker = it }
+                                            screen == Tab.Stats.name -> StatsScreen(ui)
+                                            else -> SettingsScreen(ui, addProvider = { adding = true }, tour = { tour = 0 })
                                         }
-                                        screen == Tab.Routes.name -> RoutesScreen(ui, ::connect) { picker = it }
-                                        screen == Tab.Apps.name -> AppsScreen(ui, disclose = { sheet = "apps" }) { picker = it }
-                                        screen == Tab.Stats.name -> StatsScreen(ui)
-                                        else -> SettingsScreen(ui, addProvider = { adding = true }, tour = { tour = 0 })
                                     }
                                 }
                             }
                         }
+                        // A change that applied but couldn't be written, wherever it was made: it would be gone after a restart.
+                        val unsaved by Unbraid.store.unsaved.collectAsStateWithLifecycle()
+                        if (unsaved) Caption("Some of your changes couldn't be saved and would be lost when $APP restarts. Click to try saving again.",
+                            Modifier.fillMaxWidth().tap({ thread { Unbraid.store.saveAgain() } }).padding(horizontal = 24.dp, vertical = 12.dp), color = Ink.bad)
                     }
-                    // A change that applied but couldn't be written, wherever it was made: it would be gone after a restart.
-                    val unsaved by Unbraid.store.unsaved.collectAsStateWithLifecycle()
-                    if (unsaved) Caption("Some of your changes couldn't be saved and would be lost when $APP restarts. Click to try saving again.",
-                        Modifier.fillMaxWidth().tap({ thread { Unbraid.store.saveAgain() } }).padding(horizontal = 24.dp, vertical = 12.dp), color = Ink.bad)
-                    if (signedIn && picker == null && !adding) NavBar(tab) { if (it == tab) reselected.tryEmit(it) else tab = it }
+                }
+                // The location picker: a dialog over the page it came from; a click beside it closes it, as Esc does.
+                picker?.let { target ->
+                    // Composed after the page, so Esc (back) closes the dialog before anything behind it.
+                    BackHandler { picker = null }
+                    val inside = remember { FocusRequester() }
+                    LaunchedEffect(Unit) { runCatching { inside.requestFocus() } }
+                    // Taps, not clicks: a clickable would merge the whole dialog into one node for screen readers.
+                    Box(Modifier.fillMaxSize().background(Ink.scrim).pointerInput(Unit) { detectTapGestures { picker = null } }, contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier.padding(24.dp).widthIn(max = 1040.dp).heightIn(max = 720.dp).fillMaxSize().clip(RoundedCornerShape(28.dp)).background(Ink.ground)
+                                .border(1.dp, Ink.line, RoundedCornerShape(28.dp)).pointerInput(Unit) { detectTapGestures { } }
+                                // A dialog: named for screen readers, and Tab stays inside it, never on the page behind.
+                                .semantics { paneTitle = "Choose a location" }.focusRequester(inside).focusProperties { onExit = { cancelFocusChange() } }.focusGroup(),
+                        ) {
+                            PickerScreen(
+                                ui, target, close = { picker = null },
+                                settings = { picker = null; Desk.tab.value = Tab.Settings }, addProvider = { picker = null; adding = true },
+                            )
+                        }
+                    }
                 }
                 if (tour >= 0) TourOverlay(
                     tour, disclosed, back = { tour-- }, close = endTour,
@@ -346,7 +481,13 @@ internal fun App(ui: Ui) = UnbraidTheme {
                 )
                 "apps" -> AppsDisclosure(agree = { ui.acceptDisclosure(); sheet = null }, dismiss = { sheet = null })
             }
+            if (shortcuts) ShortcutsDialog { shortcuts = false }
         }
-      }
     }
+}
+
+/** A step before the app proper (the welcome, signing in): a card in the middle of the window, as wide as reading wants. */
+@Composable
+private fun Card(content: @Composable () -> Unit) = Box(Modifier.fillMaxSize().background(Ink.ground).padding(24.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.widthIn(max = 600.dp).fillMaxHeight().clip(RoundedCornerShape(28.dp)).background(Ink.ground).border(1.dp, Ink.surfaceHigh, RoundedCornerShape(28.dp))) { content() }
 }

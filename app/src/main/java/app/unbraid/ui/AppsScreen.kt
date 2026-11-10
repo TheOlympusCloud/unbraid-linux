@@ -3,12 +3,7 @@ package app.unbraid.ui
 import androidx.compose.foundation.background
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import app.unbraid.APP
@@ -21,7 +16,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,14 +24,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ButtonGroupDefaults
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
-import androidx.compose.material3.ToggleButton
-import androidx.compose.material3.ToggleButtonDefaults
-import androidx.compose.material3.ToggleButtonShapes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,9 +36,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,14 +44,52 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.unbraid.data.DIRECT
 import app.unbraid.data.Setup
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
+import app.unbraid.linux.Apps
+import app.unbraid.linux.Desktop
+import app.unbraid.stats.Stats
+import java.time.LocalDate
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private fun Setup.codeOf(id: String) = route(id)?.code ?: "··"
 private fun Setup.colorOf(id: String) = route(id)?.let { Ink.route(it.hue) } ?: Ink.direct
 
+private enum class Sort(val label: String) { Name("Name"), Kind("Kind"), Route("Route"), Today("Today") }
+
+/**
+ * The installed apps as a table: search, filter by exit, sort by any column. A selected app opens its route choices
+ * in the panel on the right; a right click on any app offers them at once.
+ */
 @Composable
 fun AppsScreen(ui: Ui, disclose: () -> Unit, openPicker: (String) -> Unit) {
     val disclosed by ui.disclosed.collectAsStateWithLifecycle()
-    val reveal = firstShow("apps")
     // The setup as the viewed profile routes it; its route list and prefs are the live ones.
     val setup by ui.shown.collectAsStateWithLifecycle()
     val viewing by ui.viewing.collectAsStateWithLifecycle()
@@ -75,47 +98,60 @@ fun AppsScreen(ui: Ui, disclose: () -> Unit, openPicker: (String) -> Unit) {
     // What points at one profile's exits starts over when another is viewed; the search stays.
     var filter by rememberSaveable(viewing) { mutableStateOf<String?>(null) }
     var showSystem by rememberSaveable { mutableStateOf(false) }
-    var open by rememberSaveable(viewing) { mutableStateOf<String?>(null) }
-    // The exit the open app had when it was opened: it keeps its place (and filter) until closed, then regroups.
-    var openedAs by rememberSaveable(viewing) { mutableStateOf<String?>(null) }
-    fun placeOf(pkg: String) = openedAs?.takeIf { pkg == open } ?: setup.routeOf(pkg)
-    // A closed row that changed exit lands in its new group; follow it there if that is off-screen.
+    var sort by rememberSaveable { mutableStateOf(Sort.Name) }
+    var down by rememberSaveable { mutableStateOf(false) }
+    var selected by rememberSaveable { mutableStateOf<String?>(null) }
+    val draft = viewing != null && viewing != setup.profile
     val list = rememberLazyListState()
-    var land by remember(viewing) { mutableStateOf<String?>(null) }
-    // Tapping Apps again closes the open app and the exit filter; the search stays. With neither, it scrolls to the top.
-    OnReselect(Tab.Apps) { if (open != null || filter != null) { open = null; openedAs = null; filter = null } else list.animateScrollToItem(0) }
-
-    val query = q.trim()
-    val motion = MaterialTheme.motionScheme
-    // Grouped by exit: the other exits A to Z by name (Albania, Bulgaria, United States), then Direct, then the default.
-    val rank = remember(setup) {
-        (setup.routes.sortedBy { it.name.lowercase() }.map { it.id } + DIRECT).filter { it != setup.defaultRoute }
-            .withIndex().associate { (i, id) -> id to i }
+    val scope = rememberCoroutineScope()
+    val search = remember { FocusRequester() }
+    val table = remember { FocusRequester() }
+    // Ctrl+F, also from another page: the search box, once this page shows.
+    val pending by Desk.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(pending, disclosed) { if (pending == Desk.Ask.Search) { Desk.pending.value = null; if (disclosed) runCatching { search.requestFocus() } } }
+    OnReselect(Tab.Apps) { if (selected != null || filter != null) { selected = null; filter = null } else list.animateScrollToItem(0) }
+    // Today's data per app, while statistics are recorded: read again each minute.
+    val stats = setup.prefs.stats
+    val today by produceState(emptyMap<String, Long>(), stats) {
+        while (stats) {
+            val d = LocalDate.now().toEpochDay()
+            value = withContext(Dispatchers.IO) { runCatching { Stats.apps(d, d).groupBy({ it.first }, { it.third }).mapValues { it.value.sum() } }.getOrDefault(emptyMap()) }
+            delay(60_000)
+        }
+        value = emptyMap()
     }
-    // `apps` is already sorted by label, and sortedBy is stable, so each group stays in label order.
-    val shown = remember(apps, setup, query, filter, showSystem, open, openedAs) {
+    val placeOf = { a: AppInfo -> setup.routeOf(a.follows(setup) ?: a.pkg) }
+    val nameOf = { id: String -> setup.route(id)?.name ?: if (id == DIRECT) "Direct" else "" }
+    val query = q.trim()
+    val shown = remember(apps, setup, query, filter, showSystem, sort, down, today) {
+        val by: Comparator<AppInfo> = when (sort) {
+            Sort.Name -> compareBy { it.label.lowercase() }
+            Sort.Kind -> compareBy<AppInfo> { it.kind }.thenBy { it.label.lowercase() }
+            Sort.Route -> compareBy<AppInfo> { nameOf(placeOf(it)).lowercase() }.thenBy { it.label.lowercase() }
+            Sort.Today -> compareByDescending<AppInfo> { today[it.pkg] ?: 0L }.thenBy { it.label.lowercase() }
+        }
         apps.filter { a ->
             (showSystem || !a.system || a.pkg in setup.apps) &&
-                (filter == null || placeOf(a.follows(setup) ?: a.pkg) == filter) &&
+                (filter == null || placeOf(a) == filter) &&
                 (query.isEmpty() || a.label.contains(query, true) || a.pkg.contains(query, true))
-        }.sortedBy { rank[placeOf(it.follows(setup) ?: it.pkg)] ?: Int.MAX_VALUE }
+        }.sortedWith(if (down) by.reversed() else by)
     }
-    val direct = apps.count { it.pkg in setup.apps && setup.apps[it.pkg] == DIRECT }
+    val direct = apps.count { setup.apps[it.pkg] == DIRECT }
     val routed = apps.count { it.pkg in setup.apps } - direct
-
-    LaunchedEffect(shown, land) {
-        val key = land ?: return@LaunchedEffect
-        val at = shown.indexOfFirst { it.pkg == key }
-        if (at >= 0 && list.layoutInfo.visibleItemsInfo.none { it.key == key }) list.animateScrollToItem(at)
-        // Cleared only now: clearing first would recompose with a new key and cancel the scroll on its way.
-        if (land == key) land = null
+    val pick = rememberFilePicker("Choose a program") { f -> f?.let(ui::addProgram)?.let { p -> q = ""; filter = null; selected = p } }
+    val select = { pkg: String -> selected = pkg; shown.indexOfFirst { it.pkg == pkg }.takeIf { it >= 0 }?.let { scope.launch { list.animateScrollToItem(it) } }; Unit }
+    // The arrow keys walk the table, as in any desktop list.
+    val step = { by: Int ->
+        val at = shown.indexOfFirst { it.pkg == selected }
+        shown.getOrNull(if (at < 0) 0 else (at + by).coerceIn(0, shown.lastIndex))?.let { select(it.pkg) }
     }
 
-    Screen(
-        state = list,
-        overline = "${apps.size} installed", title = "Apps", sub = "$routed routed · $direct direct",
-        search = {
-            if (viewing != null && viewing != setup.profile) Column(Modifier.padding(start = 24.dp, end = Gutter, bottom = 4.dp)) {
+    Row(Modifier.fillMaxSize()) {
+        Column(Modifier.weight(1f).fillMaxHeight().padding(start = 30.dp, top = 26.dp, end = 22.dp)) {
+            PageHeader("${apps.size} installed · $routed routed · $direct direct", "Apps") {
+                if (disclosed) PillButton("Add a program", pick, Icons.add)
+            }
+            if (draft) Column(Modifier.padding(bottom = 10.dp)) {
                 Text("Editing $viewing · not in use. ${setup.profile?.let { "$it is in use." } ?: "No profile is in use."}", style = Type.caption, color = Ink.dim)
                 if (setup.defaultRoute.isEmpty()) Text("Choose a default route on Routes", style = Type.caption, color = Ink.dim, modifier = Modifier.padding(top = 4.dp))
                 Row {
@@ -123,10 +159,18 @@ fun AppsScreen(ui: Ui, disclose: () -> Unit, openPicker: (String) -> Unit) {
                     if (setup.defaultRoute.isNotEmpty()) Secondary("Use $viewing", { ui.useProfile(viewing.orEmpty()) })
                 }
             }
-            SearchField(q, { q = it }, "Search apps")
-        },
-        belowSearch = {
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = Gutter, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!disclosed) {
+                Column(Modifier.padding(top = 12.dp).then(tourAnchor(TourStop.AppsList)), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("$APP needs the list of installed apps to route each one. It stays on this computer.", style = Type.sub, color = Ink.dim)
+                    Secondary("Show my apps", disclose)
+                }
+                return@Column
+            }
+            SearchField(q, { q = it }, "Search apps", compact = true, trailing = { Keys("Ctrl+F") },
+                field = Modifier.focusRequester(search).onPreviewKeyEvent { e ->
+                    (e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown && shown.isNotEmpty()).also { if (it) { step(if (selected == null) 0 else 1); runCatching { table.requestFocus() } } }
+                })
+            Row(Modifier.padding(vertical = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip("All", Ink.text, filter == null) { filter = null }
                 // Two routes with one country code (NordVPN NL, Mullvad NL) are told apart by provider.
                 setup.routes.forEach { r ->
@@ -137,34 +181,218 @@ fun AppsScreen(ui: Ui, disclose: () -> Unit, openPicker: (String) -> Unit) {
                 FilterChip("Direct", Ink.direct, filter == DIRECT, direct = true) { filter = DIRECT }
                 FilterChip("System", null, showSystem, independent = true) { showSystem = !showSystem }
             }
-        },
-    ) {
-        if (!disclosed) item("disclose") {
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 12.dp).then(tourAnchor(TourStop.AppsList)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("$APP needs the list of installed apps to route each one. It stays on this computer.", style = Type.sub, color = Ink.dim)
-                Secondary("Show my apps", disclose)
+            // The column heads sort; again, the other way.
+            Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Spacer(Modifier.width(32.dp))
+                Column(Sort.Name, sort, down, Modifier.weight(1.7f)) { if (it == sort) down = !down else { sort = it; down = false } }
+                Column(Sort.Kind, sort, down, Modifier.weight(1f)) { if (it == sort) down = !down else { sort = it; down = false } }
+                Column(Sort.Route, sort, down, Modifier.weight(1.25f)) { if (it == sort) down = !down else { sort = it; down = false } }
+                if (stats) Column(Sort.Today, sort, down, Modifier.width(76.dp), end = true) { if (it == sort) down = !down else { sort = it; down = false } }
             }
-        } else if (shown.isEmpty()) item("empty") {
-            Text("No apps match", style = Type.sub, color = Ink.dim, modifier = Modifier.padding(24.dp))
-        }
-        itemsIndexed(shown, key = { _, a -> a.pkg }) { i, a ->
-            // Regrouping slides rows to their new place instead of jumping.
-            Box(Modifier.animateItem(fadeInSpec = null, placementSpec = motion.defaultSpatialSpec(), fadeOutSpec = null).then(if (i == 0) tourAnchor(TourStop.AppsList) else Modifier)) {
-                Rise("apps", i, reveal) {
-                    AppRow(ui, a, setup, expanded = open == a.pkg, onToggle = {
-                        if (open == a.pkg) { if (openedAs != setup.routeOf(a.pkg)) land = a.pkg; open = null; openedAs = null }
-                        else { open = a.pkg; openedAs = setup.routeOf(a.pkg) }
-                    }, openPicker, draft = viewing != null && viewing != setup.profile)
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.surfaceHigh))
+            LazyColumn(
+                state = list,
+                modifier = Modifier.weight(1f).testTag("apps").focusRequester(table).focusable().onPreviewKeyEvent { e ->
+                    if (e.type != KeyEventType.KeyDown) false
+                    else when (e.key) {
+                        Key.DirectionDown -> { step(1); true }
+                        Key.DirectionUp -> { step(-1); true }
+                        else -> false
+                    }
+                },
+                contentPadding = PaddingValues(top = 6.dp, bottom = 24.dp),
+            ) {
+                if (shown.isEmpty()) item("empty") { Text("No apps match", style = Type.sub, color = Ink.dim, modifier = Modifier.padding(vertical = 16.dp, horizontal = 14.dp)) }
+                itemsIndexed(shown, key = { _, a -> a.pkg }) { i, a ->
+                    Box(Modifier.then(if (i == 0) tourAnchor(TourStop.AppsList) else Modifier)) {
+                        AppTableRow(ui, a, apps, setup, selected == a.pkg, today[a.pkg], stats, onClick = { selected = a.pkg; runCatching { table.requestFocus() } }, select = select, openPicker = openPicker)
+                    }
+                }
+                item("addNote") {
+                    Text("Add a program for one your launcher doesn't list, such as a command-line tool or a game. Scripts, AppImages and Windows programs can only follow the default route.",
+                        style = Type.caption, color = Ink.faint, modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp))
                 }
             }
         }
-        // Linux: a program the launcher doesn't list (a command-line tool, an AppImage) is added by its file, then routed as any app.
-        if (disclosed) item("add") {
-            val pick = rememberFilePicker("Choose a program") { f -> f?.let(ui::addProgram)?.let { p -> q = ""; filter = null; open = p; openedAs = setup.routeOf(p); land = p } }
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 12.dp).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Secondary("Add a program", pick)
-                Text("For programs your launcher doesn't list, such as command-line tools and games. Scripts, AppImages and Windows programs can only follow the default route.", style = Type.caption, color = Ink.dim)
+        Detail(ui, apps.firstOrNull { it.pkg == selected }, apps, setup, today[selected], stats, draft, select, openPicker)
+    }
+}
+
+/** A column head that sorts the table, with the arrow of the order. */
+@Composable
+private fun Column(s: Sort, sort: Sort, down: Boolean, modifier: Modifier, end: Boolean = false, onClick: (Sort) -> Unit) = Text(
+    s.label.uppercase() + if (s == sort) (if (down) " ▼" else " ▲") else "", style = Type.overline, color = if (s == sort) Ink.text else Ink.dim, maxLines = 1,
+    textAlign = if (end) TextAlign.End else TextAlign.Start,
+    modifier = modifier.clip(RoundedCornerShape(6.dp)).tap({ onClick(s) }, "Sort by ${s.label}", Role.Button).pointerHoverIcon(PointerIcon.Hand),
+)
+
+/** What a row says beside its route: an app that runs as another takes that one's; one that can't be told apart only the default. */
+private fun noteOf(a: AppInfo, setup: Setup, apps: List<AppInfo>) = a.follows(setup)?.let { o -> "Runs as ${apps.firstOrNull { it.pkg == o }?.label ?: o}" }
+    ?: "Default only".takeIf { !a.routable }
+
+@Composable
+private fun AppTableRow(ui: Ui, a: AppInfo, apps: List<AppInfo>, setup: Setup, selected: Boolean, today: Long?, stats: Boolean, onClick: () -> Unit, select: (String) -> Unit, openPicker: (String) -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    var menu by remember { mutableStateOf<Offset?>(null) }
+    var height by remember { mutableIntStateOf(0) }
+    val follows = a.follows(setup)
+    val explicit = setup.apps[a.pkg]
+    val current = setup.routeOf(follows ?: a.pkg)
+    Box {
+        Row(
+            Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(12.dp))
+                .background(when { selected -> Ink.accentContainer; hovered -> Ink.surfaceHigh; else -> Color.Transparent })
+                .onSizeChanged { height = it.height }.onRightClick { menu = it; onClick() }.hover(source).tap(onClick, a.label).padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            AppIcon(ui, a.pkg, a.label, 32.dp)
+            Column(Modifier.weight(1.7f)) {
+                Text(a.label, style = Type.body.copy(fontSize = Type.sub.fontSize), color = Ink.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(a.pkg, style = Type.small, color = Ink.faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            Text(a.kind, style = Type.caption, color = Ink.dim, maxLines = 1, modifier = Modifier.weight(1f))
+            Row(Modifier.weight(1.25f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // An empty profile has no default route yet: its unassigned apps have no exit.
+                if (current.isEmpty()) Text("Not set", style = Type.caption, color = Ink.dim)
+                else RouteMark(setup.codeOf(current), setup.colorOf(current), filled = explicit != null, direct = current == DIRECT)
+                noteOf(a, setup, apps)?.let { Text(it, style = Type.caption, color = Ink.dim, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            }
+            if (stats) Text(today?.let(::bytesText) ?: "—", style = Type.small, color = Ink.dim, textAlign = TextAlign.End, maxLines = 1, modifier = Modifier.width(76.dp))
+        }
+        ClickMenu(menu, height, { menu = null }) {
+            val done = { menu = null }
+            when {
+                follows != null -> {
+                    val o = apps.firstOrNull { it.pkg == follows }?.label ?: follows
+                    MenuItem("Takes $o's route", {}, enabled = false)
+                    MenuItem("Show $o", { done(); select(follows) }, icon = Icons.back)
+                }
+                !a.routable -> MenuItem("Follows the default route", {}, enabled = false)
+                else -> {
+                    MenuLabel("Route")
+                    setup.routes.sortedByDescending { it.id == setup.defaultRoute }.forEach { r ->
+                        MenuItem(r.name + if (r.id == setup.defaultRoute) " (default)" else "", { done(); ui.assign(a.pkg, r.id) },
+                            lead = { RouteMark(r.code, Ink.route(r.hue)) }, checked = current == r.id)
+                    }
+                    MenuItem("Direct", { done(); ui.assign(a.pkg, DIRECT) }, lead = { RouteMark(null, Ink.direct, direct = true) }, checked = current == DIRECT, keys = null)
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp), color = Ink.line)
+                    if (explicit != null) MenuItem("Use the default route", { done(); ui.assign(a.pkg, null) }, icon = Icons.back)
+                    MenuItem("New route for this app…", { done(); openPicker("app:${a.pkg}") }, icon = Icons.add)
+                }
+            }
+            Apps.programOf(a.pkg)?.let { path ->
+                HorizontalDivider(Modifier.padding(vertical = 4.dp), color = Ink.line)
+                MenuItem("Copy program path", { done(); Desktop.copy(path) }, icon = Icons.file)
+            }
+        }
+    }
+}
+
+
+/** The selected app: what it runs as, its route choices, the apps that take its route, today's data. */
+@Composable
+private fun Detail(ui: Ui, a: AppInfo?, apps: List<AppInfo>, setup: Setup, today: Long?, stats: Boolean, draft: Boolean, select: (String) -> Unit, openPicker: (String) -> Unit) = Row(Modifier.fillMaxHeight()) {
+    Box(Modifier.fillMaxHeight().width(1.dp).background(Ink.surfaceHigh))
+    Column(
+        Modifier.width(340.dp).fillMaxHeight().background(Ink.surface).verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 26.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        if (a == null) {
+            Text("Select an app to choose its route.", style = Type.sub, color = Ink.dim)
+            Text("A right click offers the routes at once; the arrow keys move through the list.", style = Type.caption, color = Ink.faint)
+            return@Column
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AppIcon(ui, a.pkg, a.label, 46.dp)
+            Column {
+                Text(a.label, style = Type.title, color = Ink.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(Apps.programOf(a.pkg) ?: a.pkg, style = Type.small, color = Ink.faint, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        val follows = a.follows(setup)
+        val explicit = setup.apps[a.pkg]
+        val current = setup.routeOf(follows ?: a.pkg)
+        when {
+            follows != null -> {
+                val o = apps.firstOrNull { it.pkg == follows }?.label ?: follows
+                Text("Takes $o's route: it runs as $o, and $APP can't tell their traffic apart.", style = Type.sub, color = Ink.dim)
+                PillButton("Show $o", { select(follows) }, Icons.back, Pill.Outline)
+            }
+            // Linux: the engine can't tell a script's or an AppImage's traffic apart, so it can only follow the default.
+            !a.routable -> Text("Follows the default route: it runs as a script, on Wine or Java, or from an AppImage, and $APP can't tell its traffic from other programs'.",
+                style = Type.sub, color = Ink.dim)
+            else -> {
+                Text("ROUTE", style = Type.overline, color = Ink.dim, modifier = Modifier.padding(top = 6.dp))
+                val tiles = setup.routes.sortedByDescending { it.id == setup.defaultRoute }
+                val cells = tiles.map { it.id } + DIRECT + ""
+                cells.chunked(2).forEach { pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        pair.forEach { id ->
+                            val r = setup.route(id)
+                            RouteTile(
+                                when { r != null -> r.name; id == DIRECT -> "Direct"; else -> "New route" },
+                                when { r != null -> if (id == setup.defaultRoute) "Default · ${r.source}" else r.loc.city ?: r.source; id == DIRECT -> "No VPN"; else -> "Pick a place" },
+                                mark = { if (r != null) RouteMark(r.code, Ink.route(r.hue)) else if (id == DIRECT) RouteMark(null, Ink.direct, direct = true) else Icon(Icons.add, null, Modifier.size(20.dp), tint = Ink.dim) },
+                                selected = id.isNotEmpty() && id == current, dashed = id.isEmpty(), modifier = Modifier.weight(1f),
+                            ) { if (id.isEmpty()) openPicker("app:${a.pkg}") else ui.assign(a.pkg, id) }
+                        }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+                val also = apps.filter { it.follows(setup) == a.pkg }
+                if (also.isNotEmpty()) {
+                    Text("TAKES THIS ROUTE TOO", style = Type.overline, color = Ink.dim, modifier = Modifier.padding(top = 6.dp))
+                    also.forEach { f ->
+                        Row(Modifier.clip(RoundedCornerShape(10.dp)).tap({ select(f.pkg) }, "Show ${f.label}").pointerHoverIcon(PointerIcon.Hand).padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            AppIcon(ui, f.pkg, f.label, 26.dp)
+                            Text(f.label, style = Type.sub, color = Ink.text, maxLines = 1)
+                            Text("runs as ${a.label}", style = Type.caption, color = Ink.dim, maxLines = 1)
+                        }
+                    }
+                }
+                // A Direct app's lookups: outside unbraid (the computer's DNS) or through it, with unbraid's filter.
+                val f = setup.prefs.filter
+                // A setting of every profile: not offered while editing a profile not in use.
+                if (explicit == DIRECT && f.server() != null && !draft) {
+                    val on = f.through(a.pkg)
+                    GroupRow(0, 1, "Filter its lookups", if (on) "Through $APP, with ${f.server()?.name}. The app can see a VPN is on" else "Outside $APP, with the computer's DNS",
+                        onClick = { ui.setPrefs { p -> p.copy(filter = p.filter.copy(apps = if (!on == p.filter.directApps) p.filter.apps - a.pkg else p.filter.apps + (a.pkg to !on))) } },
+                        checked = on, trailing = { Toggle(on) })
+                }
+                if (explicit != null) PillButton("Use the default route", { ui.assign(a.pkg, null) }, kind = Pill.Outline, modifier = Modifier.fillMaxWidth())
+            }
+        }
+        if (stats) {
+            Text("TODAY", style = Type.overline, color = Ink.dim, modifier = Modifier.padding(top = 6.dp))
+            Text(today?.let { "${bytesText(it)} through ${setup.route(current)?.name ?: if (current == DIRECT) "your own connection" else "the default route"}" } ?: "No traffic yet today",
+                style = Type.sub, color = Ink.dim)
+        }
+    }
+}
+
+/** One route to choose for the selected app: its mark and name, filled and outlined in the accent once chosen. */
+@Composable
+private fun RouteTile(name: String, sub: String, mark: @Composable () -> Unit, selected: Boolean, dashed: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(16.dp)
+    Column(
+        modifier.clip(shape)
+            .background(when { selected -> Ink.accentContainer; dashed -> Color.Transparent; hovered -> Ink.surfaceTop; else -> Ink.surfaceHigh })
+            .border(if (selected) 2.dp else 1.dp, when { selected -> Ink.accent; dashed -> Ink.line; else -> Color.Transparent }, shape)
+            .hover(source).selectable(selected, role = Role.RadioButton, onClick = onClick).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            mark()
+            Spacer(Modifier.weight(1f))
+            if (selected) Icon(Icons.check, null, Modifier.size(18.dp), tint = Ink.accent)
+        }
+        Column {
+            Text(name, style = Type.body.copy(fontSize = Type.sub.fontSize), color = if (dashed) Ink.dim else Ink.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(sub, style = Type.caption, color = Ink.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -188,99 +416,3 @@ private fun FilterChip(label: String, dot: Color?, on: Boolean, direct: Boolean 
         Text(label, style = Type.sub.copy(fontWeight = FontWeight.Medium), color = if (on) Ink.text else Ink.dim, maxLines = 1)
     }
 }
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun AppRow(ui: Ui, a: AppInfo, setup: Setup, expanded: Boolean, onToggle: () -> Unit, openPicker: (String) -> Unit, draft: Boolean = false) {
-    val haptic = LocalHapticFeedback.current
-    val explicit = setup.apps[a.pkg]
-    val follows = a.follows(setup)
-    val current = setup.routeOf(follows ?: a.pkg)
-    val motion = MaterialTheme.motionScheme
-    val ground by animateColorAsState(if (expanded) Ink.surface else Color.Transparent, motion.fastEffectsSpec(), label = "row")
-    Column(Modifier.padding(horizontal = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(ground)) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 60.dp).tap(onToggle).padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            AppIcon(ui, a.pkg, a.label)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(a.label, style = Type.body, color = Ink.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(a.pkg, style = Type.small, color = Ink.faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            // An empty profile has no default route yet: its unassigned apps have no exit.
-            if (current.isEmpty()) Text("Not set", style = Type.caption, color = Ink.dim)
-            else RouteMark(setup.codeOf(current), setup.colorOf(current), filled = explicit != null, direct = current == DIRECT)
-        }
-        // The exits spring open under the row and fade in; closing reverses it.
-        AnimatedVisibility(
-            expanded,
-            enter = expandVertically(motion.defaultSpatialSpec()) + fadeIn(motion.fastEffectsSpec()),
-            exit = shrinkVertically(motion.fastSpatialSpec()) + fadeOut(motion.fastEffectsSpec()),
-        ) {
-            // Linux: one that runs as another app takes the route that app has; the engine can't tell a script's or an
-            // AppImage's traffic apart, so it can only follow the default.
-            val note = follows?.let { o -> ui.apps.value.firstOrNull { it.pkg == o }?.label ?: o }?.let { "Takes $it's route: it runs as $it, and $APP can't tell their traffic apart." }
-                ?: "Follows the default route: it runs as a script, on Wine or Java, or from an AppImage, and $APP can't tell its traffic from other programs'.".takeIf { !a.routable }
-            if (note != null) return@AnimatedVisibility Text(
-                note,
-                style = Type.caption, color = Ink.dim, modifier = Modifier.padding(start = 68.dp, end = 14.dp, bottom = 14.dp),
-            )
-            val tiles = setup.routes.sortedByDescending { it.id == setup.defaultRoute }.map {
-                Tile(it.id, if (it.imported) it.name else it.loc.city ?: it.name, if (it.tsExit != null) Icons.home else Icons.tunnel, Ink.route(it.hue), sub = it.source.takeIf { s -> s != it.name })
-            } + Tile(DIRECT, "Direct", Icons.direct, Ink.direct, tinted = false) + Tile("", "More", Icons.more, Ink.dim, tinted = false)
-            Row(
-                Modifier.padding(start = 68.dp, end = 14.dp, bottom = 14.dp).horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
-            ) {
-                tiles.forEachIndexed { i, t ->
-                    val on = t.id.isNotEmpty() && t.id == current
-                    ToggleButton(
-                        checked = on,
-                        onCheckedChange = {
-                            haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                            if (t.id.isEmpty()) openPicker("app:${a.pkg}") else ui.assign(a.pkg, t.id)
-                        },
-                        modifier = Modifier.width(96.dp).height(72.dp), // one size for every route, whatever its name
-                        // Selection changes the colour only; a press squishes and springs back.
-                        shapes = when (i) {
-                            0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                            tiles.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                            else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                        }.let { ToggleButtonShapes(it.shape, it.pressedShape, it.shape) },
-                        colors = ToggleButtonDefaults.colors(
-                            containerColor = Ink.surfaceTop, contentColor = Ink.dim,
-                            checkedContainerColor = t.color.takeIf { t.id.isNotEmpty() } ?: Ink.surfaceTop, checkedContentColor = Ink.ground,
-                        ),
-                        contentPadding = PaddingValues(horizontal = 8.dp),
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(t.icon, null, Modifier.size(16.dp), tint = if (!on && t.tinted) t.color else LocalContentColor.current)
-                            Text(
-                                t.label, style = Type.caption.copy(fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.Medium),
-                                color = if (!on && t.tinted) Ink.text else LocalContentColor.current, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
-                            t.sub?.let {
-                                Text(
-                                    it, style = Type.caption.copy(fontSize = 10.sp, lineHeight = 12.sp),
-                                    color = if (!on) Ink.dim else LocalContentColor.current, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        // A Direct app's lookups: outside unbraid (the phone's DNS) or through it, with unbraid's filter.
-        val f = setup.prefs.filter
-        // A setting of every profile: not offered while editing a profile not in use.
-        if (expanded && explicit == DIRECT && f.server() != null && !draft) {
-            val on = f.through(a.pkg)
-            GroupRow(0, 1, "Filter its lookups", if (on) "Through $APP, with ${f.server()?.name}. The app can see a VPN is on" else "Outside $APP, with the computer's DNS",
-                onClick = { ui.setPrefs { p -> p.copy(filter = p.filter.copy(apps = if (!on == p.filter.directApps) p.filter.apps - a.pkg else p.filter.apps + (a.pkg to !on))) } },
-                checked = on, trailing = { Toggle(on) }, modifier = Modifier.padding(start = 60.dp, end = 6.dp, bottom = 12.dp))
-        }
-    }
-}
-
-private class Tile(val id: String, val label: String, val icon: ImageVector, val color: Color, val tinted: Boolean = true, val sub: String? = null)

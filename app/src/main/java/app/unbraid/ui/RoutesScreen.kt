@@ -98,10 +98,22 @@ import app.unbraid.data.Server
 import app.unbraid.vpn.ExitReport
 import app.unbraid.vpn.UnbraidVpn
 import app.unbraid.vpn.VpnState
+import app.unbraid.data.Setup
 import app.unbraid.vpn.VpnState.Phase
 import app.unbraid.vpn.vpnOn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.PointerIcon
 
 private fun count(n: Int) = if (n == 1) "1 app" else "$n apps"
 
@@ -198,50 +210,82 @@ fun RoutesScreen(ui: Ui, connect: () -> Unit, openPicker: (String) -> Unit) {
     val scroll = rememberLazyListState()
     OnReselect(Tab.Routes) { if (managing) managing = false else scroll.animateScrollToItem(0) }
     BackHandler(managing) { managing = false }
+    // The sidebar's Manage (Save, with no profile yet) lands here, also from another page.
+    val pendingAsk by Desk.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingAsk) { if (pendingAsk == Desk.Ask.ManageProfiles) { Desk.pending.value = null; if (setup.profiles.isEmpty()) addProfile(false) else managing = true } }
+    /** What a route's right click offers: what its sheet does, at once. */
+    @Composable
+    fun ColumnScope.RouteActions(id: String, done: () -> Unit) {
+        if (id == DIRECT) {
+            if (shown.defaultRoute != DIRECT) MenuItem("Make default", { done(); ui.setDefault(DIRECT) }, Icons.star)
+            else MenuItem("Assign apps to Direct in Apps", { done(); Desk.tab.value = Tab.Apps }, Icons.apps)
+            return
+        }
+        // In a profile not in use, a route the live setup uses too is copied first: nothing live changes.
+        MenuItem("Change location…", { done(); openPicker(ui.ownRoute(id)) }, Icons.edit)
+        if (id == shown.defaultRoute) MenuItem("Make Direct the default", { done(); ui.setDefault(DIRECT) }, Icons.direct)
+        // Editing a profile not in use never reaches what is shared: no rename, no removal of the route itself.
+        if (draft != null) {
+            if (id != shown.defaultRoute) {
+                MenuItem("Make default", { done(); ui.setDefault(id) }, Icons.star)
+                HorizontalDivider(Modifier.padding(vertical = 4.dp), color = Ink.line)
+                MenuItem("Remove from $draft", { done(); ui.dropRoute(id) }, Icons.close, color = Ink.bad)
+            }
+        } else {
+            setup.route(id)?.takeIf { it.imported }?.let { r -> MenuItem("Rename…", { done(); newName = r.name; renaming = id }, Icons.edit) }
+            if (id != setup.defaultRoute) {
+                MenuItem("Make default", { done(); ui.setDefault(id) }, Icons.star)
+                HorizontalDivider(Modifier.padding(vertical = 4.dp), color = Ink.line)
+                // As the sheet says: removing it takes it from the saved profiles that list it too.
+                val others = setup.saved.filter { p -> p.name != setup.profile && id in p.own }.map { it.name }
+                MenuItem(if (others.isEmpty()) "Remove route" else "Remove route, also from ${others.joinToString()}", { done(); ui.removeRoute(id) }, Icons.close, color = Ink.bad)
+            }
+        }
+    }
+    /** A route's card, with its right-click menu. */
+    @Composable
+    fun Menued(id: String, content: @Composable () -> Unit) {
+        var at by remember { mutableStateOf<Offset?>(null) }
+        var height by remember { mutableIntStateOf(0) }
+        Box(Modifier.onSizeChanged { height = it.height }.onRightClick { at = it }) {
+            content()
+            ClickMenu(at, height, { at = null }) { RouteActions(id) { at = null } }
+        }
+    }
     if (managing) {
         ProfilesPage(ui, setup, onBack = { managing = false }, onAdd = { addProfile(it) }, onEdit = { profileSheet = it })
-    } else Box(Modifier.fillMaxSize()) {
-        var adding by rememberSaveable { mutableStateOf(false) }
-        BackHandler(adding) { adding = false }
-        Box(if (adding) Modifier.clearAndSetSemantics {} else Modifier) {
-            Screen(
-                state = scroll,
-                overline = "",
-                overlineContent = { Status(vpn, switching != null) },
-                title = if (switching != null) "Switching" else when (vpn.phase) {
-                    Phase.On -> if (setup.directOnly) "Connected" else "Protected"
-                    Phase.Paused -> "Paused"; Phase.Connecting -> "Connecting"; Phase.Off -> "Unprotected"
-                },
-                subColor = if (vpn.error != null) Ink.bad else Ink.dim,
-                sub = switching?.let { "To $it · apps reconnect for a moment" } ?: vpn.error ?: settingUp.takeIf { it.isNotEmpty() }?.let { ps -> "${ps.joinToString(" and ") { Providers.get(it)?.name ?: it }} is setting up your key. Its routes can take a minute to work" } ?: when (vpn.phase) {
-                    Phase.On -> "Click to pause or disconnect"
-                    Phase.Paused -> if (vpn.lockdown) "Apps are offline (Block connections without VPN) · click to resume" else "Apps skip the VPN · click to resume"
-                    Phase.Connecting -> "Setting up your routes"
-                    Phase.Off -> "Click to connect"
-                },
-                // Connected: offer pause or disconnect. Paused or off: one tap connects. The status text says "tap to …",
-                // so tapping it does the same as the button.
-                action = { PowerButton(vpn, busy = switching != null) { power() } },
-                onHeader = { power() },
-                headerLabel = when (vpn.phase) { Phase.On, Phase.Connecting -> "Pause or disconnect"; Phase.Paused -> "Resume"; Phase.Off -> "Connect" },
-            ) {
+    } else Column(Modifier.fillMaxSize().padding(start = 30.dp, top = 26.dp, end = 30.dp)) {
+        PageHeader(
+            draft?.let { "Profile $it · not in use" } ?: setup.profile?.let { "Profile $it · in use" } ?: "Every app, its own exit",
+            "Routes",
+        ) {
+            if (vpn.phase == Phase.On) PillButton("Pause 15 min", { ui.pause(15) }, Icons.pause)
+            if (vpn.phase == Phase.On || vpn.phase == Phase.Connecting) PillButton("Disconnect", { ui.disconnect() }, kind = Pill.Outline)
+            PillButton("New route", { openPicker("") }, Icons.add, Pill.Primary)
+        }
+        StatusBand(
+            vpn, switching != null, setup.prefs.stats,
+            title = if (switching != null) "Switching" else when (vpn.phase) {
+                Phase.On -> if (setup.directOnly) "Connected" else "Protected"
+                Phase.Paused -> "Paused"; Phase.Connecting -> "Connecting"; Phase.Off -> "Unprotected"
+            },
+            subColor = if (vpn.error != null) Ink.bad else Ink.dim,
+            sub = switching?.let { "To $it · apps reconnect for a moment" } ?: vpn.error ?: settingUp.takeIf { it.isNotEmpty() }?.let { ps -> "${ps.joinToString(" and ") { Providers.get(it)?.name ?: it }} is setting up your key. Its routes can take a minute to work" } ?: when (vpn.phase) {
+                Phase.On -> "Every app leaves through its own exit. Click to pause or disconnect."
+                Phase.Paused -> if (vpn.lockdown) "Apps are offline (Block connections without VPN) · click to resume" else "Apps skip the VPN · click to resume"
+                Phase.Connecting -> "Setting up your routes"
+                Phase.Off -> "Click to connect"
+            },
+            label = when (vpn.phase) { Phase.On, Phase.Connecting -> "Pause or disconnect"; Phase.Paused -> "Resume"; Phase.Off -> "Connect" },
+            power = power,
+        )
+        Row(Modifier.weight(1f).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            LazyColumn(Modifier.weight(1.55f), state = scroll, contentPadding = PaddingValues(bottom = 24.dp)) {
                 // A switch the engine couldn't run: the last profile is back, said once, with Try again.
                 failed?.let { f ->
                     item(key = "switchFailed") {
                         Notice(Icons.error, Ink.bad, "Couldn't switch to ${f.to}.${f.kept?.let { " $it is still in use." }.orEmpty()}", "Try again", dismiss = { ui.switchFailed.value = null }, live = true) { ui.useProfile(f.to) }
                     }
-                }
-                item(key = "profileLabel") {
-                    SectionLabel("Profile", tall = true) {
-                        if (setup.profiles.size >= MAX_PROFILES) Text("$MAX_PROFILES of $MAX_PROFILES", style = Type.caption, color = Ink.dim, modifier = Modifier.padding(end = 4.dp))
-                        if (setup.profiles.isNotEmpty()) Manage { managing = true }
-                    }
-                }
-                item(key = "profiles") {
-                    if (setup.profiles.isEmpty()) Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = Gutter - 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Save this setup to switch back to it in one click.", style = Type.sub, color = Ink.dim, modifier = Modifier.weight(1f))
-                        Secondary("Save", { addProfile(false) }, color = Ink.text)
-                    } else ProfileStrip(setup, switching, draft) { ui.view(it) }
                 }
                 // Shown, not in use: nothing reconnects until Use.
                 draft?.let { d ->
@@ -252,36 +296,31 @@ fun RoutesScreen(ui: Ui, connect: () -> Unit, openPicker: (String) -> Unit) {
                 if (full && setup.profiles.size >= MAX_PROFILES) item(key = "full") {
                     Notice(Icons.layers, Ink.dim, "$MAX_PROFILES profiles is the most. Delete one to add another.", "Manage", dismiss = { full = false }, live = true) { full = false; managing = true }
                 }
-                item(key = "label") {
-                    SectionLabel("Default route", tall = true)
-                }
+                item(key = "label") { SectionLabel("Default route", tall = true) }
                 item(key = "default") {
                     val route = setup.route(shown.defaultRoute)
                     // An empty profile has no default route yet: one to choose, never Direct by accident.
                     if (shown.defaultRoute.isEmpty()) NotSet { openPicker("default") }
-                    else Rise("routes", 0, reveal) { DefaultTile(
+                    else Menued(shown.defaultRoute) { Rise("routes", 0, reveal) { DefaultTile(
                         key = shown.defaultRoute,
                         apps = defaultPkgs.size, code = route?.code, chip = if (lit && route != null) Ink.route(route.hue) else Ink.faint, direct = route == null,
                         title = route?.name ?: "Direct", meta = route?.let { place(it, live) } ?: "No VPN for these apps",
                         extra = if (route != null && server != null) serverId(route, server) else null,
                         border = (route?.let { Ink.route(it.hue) } ?: Ink.line).copy(alpha = if (lit) 0.45f else 0.25f),
                         exit = exitOf(shown.defaultRoute)?.let { it to pendingOf(it) },
-                    ) { sheet = shown.defaultRoute } }
+                    ) { sheet = shown.defaultRoute } } }
                 }
                 if (exceptions.isNotEmpty()) item(key = "exLabel") { SectionLabel("Exceptions", tall = true) }
                 itemsIndexed(exceptions, key = { _, id -> id }) { i, id ->
                     val route = shown.route(id)
-                    Rise("routes", i + 1, reveal) { RouteRow(
+                    Menued(id) { Rise("routes", i + 1, reveal) { RouteRow(
                         ui, route, live, byRoute[id].orEmpty(), labels, lit, groupShape(i, exceptions.size),
                         exit = if (route == null) null else exitOf(id)?.let { it to pendingOf(it) },
-                    ) { sheet = id } }
+                    ) { sheet = id } } }
                 }
                 // Nothing set apart yet: say what that means instead of leaving the page empty.
                 if (shown.apps.isEmpty() && shown.defaultRoute.isNotEmpty()) item(key = "allDefault") {
-                    Text("All apps use the default route. Click + to send some apps through another exit.", style = Type.sub, color = Ink.dim, modifier = Modifier.padding(start = 24.dp, end = Gutter, top = 12.dp))
-                }
-                if (setup.home.tailscale || setup.home.wg != null) item(key = "home") {
-                    HomeRow(setup.home, lit = on, loginUrl = vpn.tsLoginUrl.takeIf { setup.home.tailscale }) { tsLogin(it) }
+                    Text("All apps use the default route. Send some through another exit with New route, or from Apps.", style = Type.sub, color = Ink.dim, modifier = Modifier.padding(start = 24.dp, end = Gutter, top = 12.dp))
                 }
                 if (setup.activeRoutes.count { !it.imported && it.loc.provider == "nord" } > 6) item(key = "note") {
                     Text(
@@ -289,11 +328,12 @@ fun RoutesScreen(ui: Ui, connect: () -> Unit, openPicker: (String) -> Unit) {
                         style = Type.caption, color = Ink.faint, modifier = Modifier.padding(start = 24.dp, end = Gutter, top = 12.dp),
                     )
                 }
-                item(key = "fabSpace") { Spacer(Modifier.height(88.dp)) }
+            }
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                Exits(shown, listOf(shown.defaultRoute) + exceptions, lit, live, setup.prefs.stats && on, exitOf, pendingOf)
+                if (setup.home.tailscale || setup.home.wg != null) HomeRow(setup.home, lit = on, loginUrl = vpn.tsLoginUrl.takeIf { setup.home.tailscale }) { tsLogin(it) }
             }
         }
-        if (adding) Box(Modifier.matchParentSize().background(Ink.ground.copy(alpha = 0.72f)).semantics { contentDescription = "Close add menu" }.clickable { adding = false })
-        AddMenu(adding, { adding = it }, { adding = false; openPicker("") }, { adding = false; addProfile(false) }, Modifier.align(Alignment.BottomEnd))
     }
 
     sheet?.let { id ->
@@ -350,6 +390,58 @@ fun RoutesScreen(ui: Ui, connect: () -> Unit, openPicker: (String) -> Unit) {
     }
 }
 
+/** The connection, large: its state in the display face, what it means, live speeds while recorded, and the power button. */
+@Composable
+private fun StatusBand(vpn: VpnState, switching: Boolean, stats: Boolean, title: String, sub: String, subColor: Color, label: String, power: () -> Unit) = Row(
+    Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Ink.surface).padding(start = 28.dp, end = 20.dp, top = 18.dp, bottom = 18.dp),
+    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(28.dp),
+) {
+    // The status says "click to …": clicking it does what the button does.
+    Column(Modifier.weight(1f).tap(power, label, Role.Button).pointerHoverIcon(PointerIcon.Hand), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Status(vpn, switching)
+        Text(title.uppercase(), style = Type.headline.copy(fontSize = 60.sp, lineHeight = 58.sp), maxLines = 1,
+            color = if (switching || vpn.phase == Phase.Connecting) Ink.text else stateColor(vpn.phase))
+        Text(sub, style = Type.sub, color = subColor, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+    if (stats && vpn.phase == Phase.On) {
+        val live by app.unbraid.stats.Stats.live.collectAsStateWithLifecycle()
+        listOf("Download" to live.downNow, "Upload" to live.upNow).forEach { (what, bps) ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(what.uppercase(), style = Type.overline, color = Ink.dim)
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    rate(bps).let { (v, u) -> Text(v, style = Type.headline.copy(fontSize = 34.sp, lineHeight = 36.sp), color = Ink.text); Text(u, style = Type.caption, color = Ink.dim, modifier = Modifier.padding(bottom = 4.dp)) }
+                }
+            }
+        }
+    }
+    PowerButton(vpn, busy = switching, onClick = power)
+}
+
+/** Every exit this setup uses, with the address it reported and, while statistics are recorded, its download now. */
+@Composable
+private fun Exits(shown: Setup, ids: List<String>, lit: Boolean, live: Map<String, Server>, speeds: Boolean, exitOf: (String) -> ExitReport?, pendingOf: (ExitReport?) -> Boolean) = Column(
+    Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Ink.surface).padding(horizontal = 20.dp, vertical = 16.dp),
+    verticalArrangement = Arrangement.spacedBy(12.dp),
+) {
+    Text(if (lit) "EXITS NOW" else "EXITS", style = Type.overline, color = Ink.dim)
+    val routes = ids.distinct().mapNotNull { shown.route(it) }
+    if (routes.isEmpty()) Text("No exit yet: add a route.", style = Type.sub, color = Ink.dim)
+    val now by app.unbraid.stats.Stats.live.collectAsStateWithLifecycle()
+    routes.forEach { r ->
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            RouteMark(r.code, if (lit) Ink.route(r.hue) else Ink.faint)
+            Column(Modifier.weight(1f)) {
+                Text(r.name, style = Type.body.copy(fontSize = Type.sub.fontSize), color = Ink.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(place(r, live), style = Type.caption, color = Ink.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                if (speeds) now.down[app.unbraid.stats.Stats.idOf(r)]?.lastOrNull()?.let { Text(rate(it.toLong()).let { (v, u) -> "$v $u" }, style = Type.small, color = Ink.text) }
+                exitOf(r.id)?.let { ExitLine(it, pendingOf(it)) }
+            }
+        }
+    }
+}
+
 /** A card on Routes that asks for one thing: [action] does it, [dismiss] (when given) puts it away. */
 @Composable
 private fun Notice(
@@ -398,7 +490,7 @@ private fun Status(vpn: VpnState, switching: Boolean = false) {
 }
 
 /** Green protected, orange paused, red unprotected: the button and the status line say the same thing. */
-private fun stateColor(phase: Phase) = when (phase) { Phase.On -> Ink.good; Phase.Paused -> Ink.accent; Phase.Off -> Ink.bad; Phase.Connecting -> Ink.dim }
+internal fun stateColor(phase: Phase) = when (phase) { Phase.On -> Ink.good; Phase.Paused -> Ink.accent; Phase.Off -> Ink.bad; Phase.Connecting -> Ink.dim }
 
 /**
  * The expressive power button. A cookie that turns slowly while protected; while connecting it relaxes
@@ -459,32 +551,6 @@ private fun PowerButton(vpn: VpnState, busy: Boolean = false, onClick: () -> Uni
         Box(Modifier.size(if (phase == Phase.Paused && vpn.pausedUntil > 0) 88.dp else 96.dp).graphicsLayer { rotationZ = turn?.value ?: 0f }.background(fill, MorphShape(morph, round)))
         if (phase == Phase.Connecting) LoadingIndicator(Modifier.size(52.dp), color = Ink.good)
         else Icon(Icons.power, null, tint = Ink.ground, modifier = Modifier.size(32.dp))
-    }
-}
-
-/** The page's add actions, with Route nearest the toggle. */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun AddMenu(expanded: Boolean, onExpanded: (Boolean) -> Unit, onRoute: () -> Unit, onProfile: () -> Unit, modifier: Modifier = Modifier) {
-    FloatingActionButtonMenu(
-        expanded = expanded, modifier = modifier,
-        button = {
-            ToggleFloatingActionButton(
-                checked = expanded, onCheckedChange = onExpanded,
-                modifier = Modifier.then(sharedRoute("", RoundedCornerShape(16.dp))).then(tourAnchor(TourStop.AddRoute))
-                    .semantics { contentDescription = "Add route or profile" },
-                containerColor = { Ink.accent }, containerSize = { 56.dp }, containerCornerRadius = { 16.dp },
-            ) { Icon(if (checkedProgress > 0.5f) Icons.close else Icons.add, null, Modifier.size(24.dp), tint = Ink.onAccent) }
-        },
-    ) {
-        FloatingActionButtonMenuItem(
-            onClick = onProfile, text = { Text("Profile", style = Type.title) }, icon = { Icon(Icons.layers, null) },
-            containerColor = Ink.accentContainer, contentColor = Ink.accent,
-        )
-        FloatingActionButtonMenuItem(
-            onClick = onRoute, text = { Text("Route", style = Type.title) }, icon = { Icon(Icons.routes, null) },
-            containerColor = Ink.accentContainer, contentColor = Ink.accent,
-        )
     }
 }
 

@@ -62,6 +62,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -106,6 +107,8 @@ fun Screen(
     /** The title block's own tap, when its text says "tap to …" (Routes): the same action as [action]. */
     onHeader: (() -> Unit)? = null,
     headerLabel: String? = null,
+    /** The list's test tag, for a screen whose list a test scrolls. */
+    tag: String? = null,
     content: LazyListScope.() -> Unit,
 ) = Column(Modifier.fillMaxSize().background(Ink.ground).windowInsetsPadding(WindowInsets.statusBars)) {
     navigation?.let { Box(Modifier.padding(start = 4.dp, top = 4.dp).height(56.dp), contentAlignment = Alignment.CenterStart) { it() } }
@@ -131,25 +134,32 @@ fun Screen(
     }
     search?.invoke()
     belowSearch?.invoke()
-    LazyColumn(Modifier.weight(1f), state = state, contentPadding = PaddingValues(bottom = 24.dp), content = content)
+    LazyColumn(Modifier.weight(1f).then(tag?.let { Modifier.testTag(it) } ?: Modifier), state = state, contentPadding = PaddingValues(bottom = 24.dp), content = content)
     bottom?.invoke()
 }
 
+/**
+ * A search box. [compact] for a desktop page's toolbar, without the phone's gutter; [field] reaches the text field
+ * itself (focus for Ctrl+F, keys), and [trailing] sits at its end (the shortcut).
+ */
 @Composable
-fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String) = Row(
-    Modifier.padding(horizontal = Gutter).fillMaxWidth().height(56.dp).clip(RoundedCornerShape(28.dp)).background(Ink.surfaceHigh).padding(horizontal = 20.dp),
+fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, compact: Boolean = false, field: Modifier = Modifier, trailing: (@Composable () -> Unit)? = null) = Row(
+    (if (compact) Modifier else Modifier.padding(horizontal = Gutter)).fillMaxWidth().height(if (compact) 44.dp else 56.dp)
+        .clip(RoundedCornerShape(28.dp)).background(Ink.surfaceHigh).padding(horizontal = if (compact) 16.dp else 20.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(12.dp),
 ) {
-    Icon(Icons.search, null, tint = Ink.dim, modifier = Modifier.size(24.dp))
+    Icon(Icons.search, null, tint = Ink.dim, modifier = Modifier.size(if (compact) 20.dp else 24.dp))
+    val style = if (compact) Type.sub else Type.body
     Box(Modifier.weight(1f)) {
-        if (value.isEmpty()) Text(placeholder, style = Type.body.copy(color = Ink.dim)) // faint fails 4.5:1 on this surface
+        if (value.isEmpty()) Text(placeholder, style = style.copy(color = Ink.dim)) // faint fails 4.5:1 on this surface
         BasicTextField(
-            value, onChange, singleLine = true, textStyle = Type.body.copy(color = Ink.text), cursorBrush = SolidColor(Ink.accent),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), modifier = Modifier.fillMaxWidth(),
+            value, onChange, singleLine = true, textStyle = style.copy(color = Ink.text), cursorBrush = SolidColor(Ink.accent),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), modifier = Modifier.fillMaxWidth().then(field),
         )
     }
-    if (value.isNotEmpty()) IconTap(Icons.close, "Clear search", { onChange("") }, size = 40.dp)
+    if (value.isNotEmpty()) IconTap(Icons.close, "Clear search", { onChange("") }, size = if (compact) 32.dp else 40.dp)
+    else trailing?.invoke()
 }
 
 // ---------------------------------------------------------------------------------------------
