@@ -68,12 +68,15 @@ private const val SOURCE = "https://github.com/quiet-crafts/unbraid"
 
 /** What the APK re-uses, by name, licence and holder; the full texts are tools/notices.sh's assets/notices.txt. */
 private val credits = listOfNotNull(
-    "sing-box 1.14.4" to "GPL-3.0-or-later · nekohasekai (SagerNet). The VPN engine, with a small patch",
+    "sing-box 1.14.4" to "GPL-3.0-or-later · nekohasekai (SagerNet). The engine (its Linux daemon), with small patches",
     "Tailscale" to "BSD-3-Clause · Tailscale Inc. and contributors",
     "wireguard-go" to "MIT · WireGuard LLC",
     "gVisor" to "Apache-2.0 · The gVisor Authors",
-    "Go and about 90 more modules" to "BSD, MIT, Apache-2.0, ISC and MPL-2.0, each listed in the full texts",
-    "AndroidX, Jetpack Compose, Kotlin" to "Apache-2.0 · Google, JetBrains",
+    "Go and about 100 more modules" to "BSD, MIT, Apache-2.0, ISC and MPL-2.0, each listed in the full texts",
+    "Compose Multiplatform, AndroidX, Kotlin" to "Apache-2.0 · JetBrains, Google",
+    "Skia" to "BSD-3-Clause · Google. Draws the app, through Skiko",
+    "gRPC, Netty, Protocol Buffers" to "Apache-2.0 and BSD-3-Clause · The gRPC Authors, The Netty Project, Google. The app's line to its engine",
+    "sqlite-jdbc" to "Apache-2.0 · Taro L. Saito. Keeps the local statistics (SQLite is public domain)",
     "ZXing" to "Apache-2.0 · ZXing authors. Reads QR codes at sign-in",
     "Material Symbols" to "Apache-2.0 · Google",
     "Big Shoulders Display, Onest, Martian Mono" to "SIL Open Font License 1.1 · their project authors",

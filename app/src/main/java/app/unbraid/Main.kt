@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -154,8 +155,9 @@ fun main(args: Array<String>) {
     if (!Instance.serve(::handle)) return // lost a race with another start
     // The engine's worker and statistics end with the app; the tunnels end with it too, as with the Android app.
     Runtime.getRuntime().addShutdownHook(Thread { UnbraidVpn.quit() })
+    // Shown unless started for the background; a connect that can't happen yet (setup unfinished) shows it too.
+    if ("--background" !in a && command != "connect") shown.value = true
     if ("--connect" in a || command == "connect") handle("connect")
-    shown.value = "--background" !in a && command != "connect"
     window()
 }
 
@@ -202,16 +204,20 @@ private fun window() = application {
         Item("Quit", onClick = quit)
     }
     val state = rememberWindowState(size = DpSize(440.dp, 860.dp))
-    Window(
+    // A hidden window leaves the composition: in the background only the connection and the tray keep running.
+    if (visible) Window(
         // Closing the window keeps a connection running, as leaving the Android app keeps its VPN: the tray, the launcher or
         // `unbraid` brings it back. With nothing running, closing quits.
         onCloseRequest = { if (UnbraidVpn.state.value.phase == VpnState.Phase.Off) quit() else shown.value = false },
-        visible = visible, state = state, title = APP, icon = icon,
+        state = state, title = APP, icon = icon,
         onPreviewKeyEvent = { e -> e.key == Key.Escape && e.type == KeyEventType.KeyDown && run { back.value?.invoke(); back.value != null } },
     ) {
-        LaunchedEffect(Unit) { Desktop.window = window; window.minimumSize = java.awt.Dimension(360, 560) }
         // Android's onResume: the installed apps can change while unbraid is in the background.
-        LaunchedEffect(visible) { if (visible) { window.toFront(); ui.refreshApps(); Stats.maintain() } }
+        DisposableEffect(Unit) {
+            Desktop.window = window; window.minimumSize = java.awt.Dimension(360, 560); window.toFront()
+            ui.refreshApps(); Stats.maintain()
+            onDispose { Desktop.window = null }
+        }
         App(ui)
     }
 }

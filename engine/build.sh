@@ -28,3 +28,4 @@ go build -o "$ROOT/engine/out/unbraid-engine.new" -trimpath -buildvcs=false -tag
   ./experimental/boxdd
 mv "$ROOT/engine/out/unbraid-engine.new" "$ROOT/engine/out/unbraid-engine"
 (cd "$ROOT/engine/out" && sha256sum unbraid-engine > unbraid-engine.sha256 && cat unbraid-engine.sha256)
+"$ROOT/engine/notices.sh"
