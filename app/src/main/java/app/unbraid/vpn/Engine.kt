@@ -57,10 +57,7 @@ object Engine {
         if (worker?.isAlive != true) {
             workerChannel?.shutdownNow()
             val socket = File(Paths.runtime, "worker.sock")
-            val p = ProcessBuilder(Paths.engineBinary, "worker", "--socket", socket.path, "--parent-pid", "${ProcessHandle.current().pid()}")
-                .directory(Paths.runtime).redirectError(ProcessBuilder.Redirect.DISCARD).start()
-            if (p.inputStream.bufferedReader().readLine() != "READY") { p.destroy(); error("The engine's worker didn't start") }
-            worker = p
+            worker = startWorker(Paths.engineBinary, socket)
             workerChannel = channel(socket.path)
         }
         return ApplicationServiceGrpc.newBlockingStub(workerChannel).withDeadlineAfter(30, TimeUnit.SECONDS)
@@ -89,6 +86,15 @@ object Engine {
 
     /** Deletes this user's files in the engine (the Tailscale node above all); it refuses while a service runs. */
     fun forget() { desktop().destroyWorkingDirectory(empty) }
+
+    /** Starts the worker for [socket] and waits for its READY, at most [seconds]: one that hangs fails the check, not the app. */
+    internal fun startWorker(bin: String, socket: File, seconds: Long = 20): Process {
+        val p = ProcessBuilder(bin, "worker", "--socket", socket.path, "--parent-pid", "${ProcessHandle.current().pid()}")
+            .directory(socket.parentFile).redirectError(ProcessBuilder.Redirect.DISCARD).start()
+        val ready = java.util.concurrent.CompletableFuture.supplyAsync { p.inputStream.bufferedReader().readLine() }
+        if (runCatching { ready.get(seconds, TimeUnit.SECONDS) }.getOrNull() != "READY") { p.destroyForcibly(); error("The engine's worker didn't start") }
+        return p
+    }
 
     fun serviceStatus() = streams.subscribeServiceStatus(empty)
     fun tailscaleStatus() = streams.subscribeTailscaleStatus(empty)

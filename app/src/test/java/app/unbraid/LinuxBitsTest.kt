@@ -48,6 +48,26 @@ class LinuxBitsTest {
         assertTrue(runCatching { Keyring.key(dir, fakeTool(kept, fail = true).path) }.isFailure)
     }
 
+    /** A keyring that never answers (an unlock prompt left open) fails in time instead of holding the app's start. */
+    @Test fun keyringThatHangsTimesOut() {
+        val dir = tmp.newFolder().apply { File(this, "key.where").writeText("keyring") }
+        val hang = File(tmp.root, "hang").apply { writeText("#!/bin/sh\nsleep 30\n"); setExecutable(true) }
+        val start = System.nanoTime()
+        assertTrue(runCatching { Keyring.key(dir, hang.path, seconds = 1) }.isFailure)
+        assertTrue("took ${(System.nanoTime() - start) / 1_000_000} ms", System.nanoTime() - start < 10_000_000_000L)
+    }
+
+    /** The engine's worker must say READY in time; one that hangs fails the config check instead of blocking it. */
+    @Test fun workerStartIsBounded() {
+        val socket = File(tmp.newFolder(), "w.sock")
+        val hang = File(tmp.root, "hang-worker").apply { writeText("#!/bin/sh\nsleep 30\n"); setExecutable(true) }
+        val start = System.nanoTime()
+        assertTrue(runCatching { app.unbraid.vpn.Engine.startWorker(hang.path, socket, seconds = 1) }.isFailure)
+        assertTrue("took ${(System.nanoTime() - start) / 1_000_000} ms", System.nanoTime() - start < 10_000_000_000L)
+        val ready = File(tmp.root, "ready-worker").apply { writeText("#!/bin/sh\necho READY\nsleep 30\n"); setExecutable(true) }
+        app.unbraid.vpn.Engine.startWorker(ready.path, socket, seconds = 5).destroyForcibly()
+    }
+
     /** No keyring: a key file only this user can read. */
     @Test fun keyFileWithoutKeyring() {
         val dir = tmp.newFolder()

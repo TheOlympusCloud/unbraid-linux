@@ -338,9 +338,10 @@ object UnbraidVpn {
         val next = newProbe()
         // What ran, but never with tailnet DNS authority or a sign-in way around the exit that was taken back since.
         val now = store.setup.value.home
-        // A restarted engine is a new domain table: the next block, noted down before the engine can hand any of it out.
+        // A restarted engine is a new domain table: the next block after the failed start's (which may have answered
+        // lookups before it failed), noted down before the engine can hand any of it out.
         val input = Compiler.Input(last.setup.copy(home = last.setup.home.copy(tsSuffixAllowed = now.tsSuffixAllowed)), last.links, last.selfPackage, last.lockdown,
-            last.tsDir, last.cacheFile, store.tsSuffix, next, Compiler.nextBlock(last.fakeBlock, false), last.blocked, last.tsLoginPending && tsLoginPending)
+            last.tsDir, last.cacheFile, store.tsSuffix, next, Compiler.nextBlock(lastBlock ?: last.fakeBlock, false), last.blocked, last.tsLoginPending && tsLoginPending)
         val json = compile(input)
         store.fakeBlock = input.fakeBlock
         Engine.start(json)
