@@ -222,7 +222,7 @@ private fun window() = application {
         if (vpn.phase != VpnState.Phase.Off) wasOn = true
         else if (!visible && wasOn && !(isTraySupported && closeToTray)) quit()
     }
-    FollowTheme()
+    ReadSystemTheme()
     val icon = painterResource("unbraid.svg")
     if (isTraySupported) Tray(painterResource(if (vpn.phase == VpnState.Phase.On) "unbraid.svg" else "unbraid-off.svg"),
         tooltip = listOf(APP, summary).filter { it.isNotEmpty() }.joinToString(" · "), onAction = { shown.value = true }) {
@@ -261,7 +261,7 @@ private fun window() = application {
     // A hidden window leaves the composition: in the background only the connection and the tray keep running.
     if (visible) Window(
         onCloseRequest = close, state = state, title = APP, icon = icon,
-        onPreviewKeyEvent = { e -> e.type == KeyEventType.KeyDown && keys(e, ui, close, quit) },
+        onPreviewKeyEvent = { e -> e.type == KeyEventType.KeyDown && keys(e.key, e.isCtrlPressed, e.isShiftPressed, e.isAltPressed, ui, close, quit) },
     ) {
         // Android's onResume: the installed apps can change while unbraid is in the background.
         DisposableEffect(Unit) {
@@ -285,24 +285,32 @@ private fun onScreen(p: DesktopSettings.Placement) = runCatching {
 private val systemDark = MutableStateFlow<Boolean?>(null)
 
 @Composable
+private fun ReadSystemTheme() {
+    val theme by DesktopSettings.theme.collectAsState()
+    LaunchedEffect(theme) { while (theme == DesktopSettings.Theme.System) { systemDark.value = withContext(Dispatchers.IO) { Desktop.systemDark() }; delay(30_000) } }
+}
+
+/** The theme in force: Settings › Desktop's choice, or the desktop's own. */
+@Composable
 private fun FollowTheme() {
     val theme by DesktopSettings.theme.collectAsState()
     val dark by systemDark.collectAsState()
-    LaunchedEffect(theme) { while (theme == DesktopSettings.Theme.System) { systemDark.value = withContext(Dispatchers.IO) { Desktop.systemDark() }; delay(30_000) } }
-    SideEffect { Ink.light = !DesktopSettings.dark(theme, dark) }
+    // Read here, in composition, so a change composes again; the effect only hands it on.
+    val light = !DesktopSettings.dark(theme, dark)
+    SideEffect { Ink.light = light }
 }
 
 /** The window's keyboard shortcuts ([Desk.shortcuts]); true for a key it used. */
-private fun keys(e: KeyEvent, ui: Ui, close: () -> Unit, quit: () -> Unit): Boolean {
-    if (e.key == Key.Escape) return run { back.value?.invoke(); back.value != null }
-    if (e.key == Key.F1) return Desk.asks.tryEmit(Desk.Ask.Shortcuts)
-    if (!e.isCtrlPressed || e.isAltPressed) return false
-    if (e.isShiftPressed) return when (e.key) {
+internal fun keys(key: Key, ctrl: Boolean, shift: Boolean, alt: Boolean, ui: Ui, close: () -> Unit, quit: () -> Unit): Boolean {
+    if (key == Key.Escape) return run { back.value?.invoke(); back.value != null }
+    if (key == Key.F1) return Desk.asks.tryEmit(Desk.Ask.Shortcuts)
+    if (!ctrl || alt) return false
+    if (shift) return when (key) {
         Key.C -> Desk.asks.tryEmit(Desk.Ask.Connect)
         Key.P -> { when (ui.vpn.value.phase) { VpnState.Phase.On -> ui.pause(15); VpnState.Phase.Paused -> ui.connect(); else -> Unit }; true }
         else -> false
     }
-    when (e.key) {
+    when (key) {
         Key.One -> Desk.tab.value = Tab.Routes
         Key.Two -> Desk.tab.value = Tab.Apps
         Key.Three -> Desk.tab.value = Tab.Stats
@@ -323,6 +331,7 @@ private val back = MutableStateFlow<(() -> Unit)?>(null)
 /** The screens, as MainActivity composes them on Android, around the desktop's sidebar ([Sidebar]). */
 @Composable
 internal fun App(ui: Ui) = UnbraidTheme {
+    FollowTheme()
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     var connectAfter by rememberSaveable { mutableStateOf(false) }
     var shortcuts by remember { mutableStateOf(false) }

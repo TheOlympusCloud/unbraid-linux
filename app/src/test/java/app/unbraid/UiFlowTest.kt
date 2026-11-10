@@ -3,6 +3,11 @@ package app.unbraid
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
+import org.junit.Assert.assertTrue
+import app.unbraid.ui.Ink
+import app.unbraid.ui.Tab
+import app.unbraid.ui.Desk
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.platform.testTag
@@ -183,6 +188,33 @@ class UiFlowTest {
         shot("7-stats")
         click("Settings")
         shot("8-settings")
+        // Settings › Desktop: login, the tray, the window and the theme. Light turns the whole window at once.
+        onNodeWithText("Desktop").performClick()
+        onNodeWithText("Start minimised to the tray").assertIsDisplayed()
+        shot("8-settings-desktop")
+        onNodeWithText("Light").performClick()
+        runOnIdle { assertEquals(app.unbraid.linux.DesktopSettings.Theme.Light, app.unbraid.linux.DesktopSettings.theme.value) }
+        waitUntil(timeoutMillis = 5_000) { Ink.light }
+        shot("8-settings-desktop-light")
+        click("Apps")
+        shot("6-apps-light")
+        click("Routes")
+        shot("5-routes-light")
+        click("Settings")
+        onNodeWithText("Dark").performClick()
+        waitUntil(timeoutMillis = 5_000) { !Ink.light }
+        // The window's keys: the pages, search, and the list of every shortcut (Esc closes it).
+        fun key(k: Key, ctrl: Boolean = true) = keys(k, ctrl, shift = false, alt = false, ui, {}, {})
+        runOnIdle { assertTrue(key(Key.Two)); assertEquals(Tab.Apps, Desk.tab.value) }
+        runOnIdle { assertTrue(key(Key.Comma)); assertEquals(Tab.Settings, Desk.tab.value) }
+        runOnIdle { assertTrue(key(Key.F)); assertEquals(Tab.Apps, Desk.tab.value) }
+        waitUntil(timeoutMillis = 5_000) { Desk.pending.value == null } // the Apps page took the search
+        runOnIdle { assertTrue(key(Key.Slash)) }
+        onNodeWithText("KEYBOARD SHORTCUTS").assertIsDisplayed()
+        shot("shortcuts")
+        runOnIdle { assertTrue(key(Key.Escape, ctrl = false)) }
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("KEYBOARD SHORTCUTS").fetchSemanticsNodes().isEmpty() }
+        runOnIdle { assertTrue(!key(Key.Z)); Desk.tab.value = Tab.Settings }
         click("Routes")
         // A right click on a route offers what its sheet does.
         onAllNodesWithText("Netherlands").filterToOne(hasClickAction()).performMouseInput { rightClick() }

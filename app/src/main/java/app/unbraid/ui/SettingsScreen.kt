@@ -61,6 +61,16 @@ import app.unbraid.vpn.VpnState.Phase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.graphics.Color
 
 const val PRIVACY = "https://unbraid.app/privacy"
 const val TERMS_URL = "https://unbraid.app/terms"
@@ -201,7 +211,9 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
     // Each page's Advanced settings start closed.
     var advOpen by rememberSaveable(page) { mutableStateOf(false) }
     var wgError by remember { mutableStateOf<String?>(null) }
-    BackHandler(page != null) { back() }
+    BackHandler(stack.size > 1) { back() }
+    // A subject's own page has no back: its list is on the left. Inside one (a provider), back returns to it.
+    val up: (() -> Unit)? = if (stack.size > 1) back else null
     // Tapping Settings again goes back to the hub, as Back does; on the hub, it scrolls to the top.
     OnReselect(Tab.Settings) { stack = emptyList(); settingsHub() }
     // Own servers are added here and only picked in the location picker.
@@ -217,7 +229,10 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
 
     fun setTailscale(on: Boolean) = ui.setHome { it.copy(tailscale = on) }
     // Linux's counterpart of Always-on: read when the page shows, written when it is switched.
-    var autostart by remember(page) { mutableStateOf(app.unbraid.linux.Autostart.enabled) }
+    var login by remember(page) { mutableStateOf(readLogin()) }
+    val theme by app.unbraid.linux.DesktopSettings.theme.collectAsStateWithLifecycle()
+    val closeToTray by app.unbraid.linux.DesktopSettings.closeToTray.collectAsStateWithLifecycle()
+    val keepWindow by app.unbraid.linux.DesktopSettings.rememberWindow.collectAsStateWithLifecycle()
 
     val filter = prefs.filter
     val filterDns = filter.server()
@@ -247,43 +262,13 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
     // A key's setup minute ends while Providers & servers may stay open.
     var tick by remember { mutableStateOf(0) }
     LaunchedEffect(accounts, page) { while (page == "providers" && app.unbraid.data.Providers.settingUp().isNotEmpty()) { delay(5_000); tick++ } }
-    val play = firstShow("settings") // the hub's first rows rise in once per session, as on Routes and Stats
     val motion = androidx.compose.material3.MaterialTheme.motionScheme
-    AnimatedContent(page, transitionSpec = { fadeIn(motion.fastEffectsSpec()) togetherWith fadeOut(motion.fastEffectsSpec()) }, label = "settings") { p ->
+    Row(Modifier.fillMaxSize()) {
+    Subjects(stack.firstOrNull() ?: "providers") { stack = listOf(it); path = stack }
+    Box(Modifier.weight(1f).fillMaxHeight()) {
+    AnimatedContent(page ?: "providers", transitionSpec = { fadeIn(motion.fastEffectsSpec()) togetherWith fadeOut(motion.fastEffectsSpec()) }, label = "settings") { p ->
         when {
-            p == null -> {
-                val hub = rememberLazyListState()
-                OnReselect(Tab.Settings) { hub.animateScrollToItem(0) }
-                Screen(state = hub, overline = "Version ${BuildConfig.VERSION_NAME}", title = "Settings", sub = "", action = { Wordmark() }) {
-                    notice(ui, notice)
-                    val names = signedIn.map { it.name.removeSuffix(" VPN") }
-                    group("Connections", rise = play to 0, items = listOf(
-                        Item("Providers & servers", listOfNotNull(
-                            (names.take(2).joinToString(", ") + if (names.size > 2) " +${names.size - 2}" else "").ifEmpty { "No provider yet" },
-                            setup.servers.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "server" else "servers"}" },
-                        ).joinToString(" · "), { go("providers") }, icon = Icons.vpnKey, anchor = TourStop.Connections) { Chevron() },
-                        Item("Tailscale", if (setup.tailscale) tsStatus else "Off", { go("tailscale") }, icon = Icons.hub) { Chevron() },
-                        Item("Local & home access", "Local network ${onOff(prefs.lan)} · ${homeVia?.let { "home via $it" } ?: "no home access"}", { go("local") }, icon = Icons.home, anchor = TourStop.LocalHome) { Chevron() },
-                    ))
-                    group("Safety", rise = play to 3, items = listOf(
-                        // Not leak-proof: the one warning left once the reminders are off.
-                        Item("VPN behaviour", when {
-                            running && !(vpn.alwaysOn && vpn.lockdown) -> "Not leak-proof: apps go online when $APP is off"
-                            running -> "Always-on on · blocking on"
-                            else -> "Start and connect at login"
-                        }, { go("behaviour") }, icon = Icons.tunnel, cta = running && !(vpn.alwaysOn && vpn.lockdown)) { Chevron() },
-                        Item("Protection", filterDns?.let { d -> listOfNotNull(d.name, "VPN routes".takeIf { filter.routes }, "Direct".takeIf { filter.direct || filter.directApps || filter.apps.containsValue(true) }).joinToString(" · ") } ?: "Each provider's own blocking", { go("dns") }, icon = Icons.dns) { Chevron() },
-                    ))
-                    group("This app", listOf(
-                        Item("Statistics", if (prefs.stats) "Recording · ${"%.1f".format(statsSize / 1e6)} MB" else if (statsSize > 0) "Off · ${"%.1f".format(statsSize / 1e6)} MB saved" else "Off", { go("stats") }, icon = Icons.stats) { Chevron() },
-                        Item("About & support", "Version ${BuildConfig.VERSION_NAME} · open source", { go("about") }, icon = Icons.info, anchor = TourStop.About) { Chevron() },
-                        Item("Legal", "Licences, terms and credits", { go("legal") }, icon = Icons.file) { Chevron() },
-                    ))
-                    item { Gap(24.dp) }
-                }
-            }
-
-            p == "providers" -> Page("Providers & servers", back) {
+            p == "providers" -> Page("Providers & servers", up) {
                 val listDates = app.unbraid.Unbraid.store.catalogDates.value
                 tick.let { }
                 notice(ui, notice)
@@ -377,7 +362,7 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
                 }
             }
 
-            p == "tailscale" -> Page("Tailscale", back) {
+            p == "tailscale" -> Page("Tailscale", up) {
                 notice(ui, notice)
                 group(null, listOfNotNull(
                     Item("Reach your tailnet", if (home.tailscale) tsStatus else if (setup.tsExit != null) "Off · Tailscale still runs for your exit-node route" else "From apps routed through unbraid", { setTailscale(!home.tailscale) }, checked = home.tailscale, icon = Icons.hub) { Toggle(home.tailscale) },
@@ -402,7 +387,7 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
                 if (setup.tailscale || tsStored) group(null, listOf(Item("Sign out of Tailscale", "Its exit routes are removed; their apps follow the default route", { dialog = "tsout" }, danger = true)))
             }
 
-            p == "local" -> Page("Local & home access", back) {
+            p == "local" -> Page("Local & home access", up) {
                 notice(ui, notice)
                 group("This network", listOfNotNull(
                     Item("Local network bypasses the VPN", "Printers, casting and NAS on this network stay reachable", { ui.setPrefs { it.copy(lan = !it.lan) } }, checked = prefs.lan, icon = Icons.lan) { Toggle(prefs.lan) },
@@ -420,23 +405,16 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
                 ))
             }
 
-            p == "behaviour" -> Page("VPN behaviour", back) {
+            p == "behaviour" -> Page("VPN behaviour", up) {
                 notice(ui, notice)
-                item {
-                    Column(Modifier.padding(horizontal = Gutter).fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Ink.surfaceTop).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("AT LOGIN", style = Type.overline, color = Ink.dim, modifier = Modifier.weight(1f))
-                            Text(if (autostart) "ON" else "OFF", style = Type.code, color = if (autostart) Ink.good else Ink.accent)
-                        }
-                        Text("$APP can start and connect as soon as you log in, before your apps go online, and stay in the background.", style = Type.body.copy(fontWeight = FontWeight.Normal), color = Ink.text)
-                        FlagRow(Icons.power, "Start when you log in", "Connects at login; the window opens only when you ask", autostart)
-                        Primary(if (autostart) "Don't start at login" else "Start at login", { app.unbraid.linux.Autostart.set(!autostart); autostart = app.unbraid.linux.Autostart.enabled })
-                    }
-                }
+                group("At login", listOf(
+                    Item(if (login.first) "Starts at login" + if (login.second) " and connects" else "" else "Doesn't start at login",
+                        "Set in Desktop, with the tray and the window", { stack = listOf("desktop"); path = stack }, icon = Icons.power) { Chevron() },
+                ))
                 caption("Linux has no switch that keeps apps offline whenever $APP isn't running: before you log in, while paused and if $APP stops, apps use your normal connection. While $APP is on, nothing goes around it, and Direct apps use your normal connection.")
             }
 
-            p == "dns" -> Page("Protection", back) {
+            p == "dns" -> Page("Protection", up) {
                 notice(ui, notice)
                 // Each filter once, alphabetical, with what it blocks in its own words; none is suggested.
                 group("unbraid's filter", listOf(
@@ -467,7 +445,7 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
                 }
             }
 
-            p == "stats" -> Page("Statistics", back) {
+            p == "stats" -> Page("Statistics", up) {
                 notice(ui, notice)
                 group(null, listOfNotNull(
                     Item("Record usage statistics", "Only on this computer, never uploaded. Turning it off keeps what's saved.", { if (prefs.stats) ui.setStats(false) else dialog = "statsConsent" }, checked = prefs.stats, icon = Icons.stats) { Toggle(prefs.stats) },
@@ -476,7 +454,7 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
                 ))
             }
 
-            p == "legal" -> Page("Legal", back) {
+            p == "legal" -> Page("Legal", up) {
                 val link = @Composable { Icon(Icons.external, null, Modifier.size(20.dp), tint = Ink.dim) }
                 group(null, listOf(
                     Item("Licence", "GNU GPL v3.0 or later: free to use, share and change. No warranty.", { go("notices") }, icon = Icons.file) { Chevron() },
@@ -508,13 +486,49 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
                 }
             }
 
-            p == "about" -> Page("About & support", back) {
+            p == "desktop" -> Page("Desktop", up) {
+                val on = login.first
+                group("At login", listOf(
+                    Item("Start $APP when I log in", "In the background, before your apps go online", { app.unbraid.linux.Autostart.set(!on); login = readLogin() }, checked = on) { Toggle(on) },
+                    Item("Connect when it starts", "The routes of the profile in use", { app.unbraid.linux.Autostart.set(true, connect = !login.second); login = readLogin() }.takeIf { on },
+                        checked = login.second) { Toggle(login.second, enabled = on) },
+                    Item("Start minimised to the tray", if (login.third) "Only the tray icon at login; the window opens when you ask" else "The window opens at login too",
+                        { app.unbraid.linux.Autostart.set(true, minimised = !login.third); login = readLogin() }.takeIf { on }, checked = login.third) { Toggle(login.third, enabled = on) },
+                ))
+                group("Window", listOf(
+                    Item("Closing the window keeps $APP in the tray", if (closeToTray) "The connection stays up; the tray or the launcher brings the window back" else "Closing quits, and the connection ends",
+                        { app.unbraid.linux.DesktopSettings.setCloseToTray(!closeToTray) }, checked = closeToTray) { Toggle(closeToTray) },
+                    Item("Remember the window's size and place", "It opens where you left it", { app.unbraid.linux.DesktopSettings.setRememberWindow(!keepWindow) }, checked = keepWindow) { Toggle(keepWindow) },
+                ))
+                group("Theme", app.unbraid.linux.DesktopSettings.Theme.entries.map { t ->
+                    Item(t.name, when (t) {
+                        app.unbraid.linux.DesktopSettings.Theme.System -> "Follows your desktop's light or dark setting"
+                        app.unbraid.linux.DesktopSettings.Theme.Dark -> "$APP's own look"
+                        app.unbraid.linux.DesktopSettings.Theme.Light -> "A light ground, the same colours a shade deeper"
+                    }, { app.unbraid.linux.DesktopSettings.setTheme(t) }, selected = theme == t) { Radio(theme == t) }
+                })
+                caption("The tray needs a desktop with a system tray. On GNOME, that's the AppIndicator extension; without one, the launcher's menu and \"unbraid connect\" do its job.")
+            }
+
+            p == "shortcuts" -> Page("Keyboard shortcuts", up) {
+                group(null, Desk.shortcuts.map { (what, keys) -> Item(what, null) { Keys(keys) } })
+            }
+
+            p == "about" -> Page("About & support", up) {
                 notice(ui, notice)
                 group(null, listOf(
                     Item("Take the tour", "How $APP works, in eight stops", tour, icon = Icons.routes) { Chevron() },
                     Item("$WORDMARK ${BuildConfig.VERSION_NAME}", "sing-box 1.14 · GPL-3.0", icon = Icons.info),
                     Item("Privacy policy", "No analytics, no ads, no account with us", { openUrl(PRIVACY) }) { Icon(Icons.external, null, Modifier.size(20.dp), tint = Ink.dim) },
                     Item("Terms of use", TERMS_URL.removePrefix("https://"), { openUrl(TERMS_URL) }) { Icon(Icons.external, null, Modifier.size(20.dp), tint = Ink.dim) },
+                ))
+                group("Credits", listOf(
+                    Item("$WORDMARK by Quiet Crafts", "Its design, its features and most of this code are theirs: this Linux version is based on their Android app", { openUrl("https://unbraid.app") }) {
+                        Icon(Icons.external, null, Modifier.size(20.dp), tint = Ink.dim)
+                    },
+                    Item("The Android app's source", "github.com/Quiet-Crafts/unbraid", { openUrl("https://github.com/Quiet-Crafts/unbraid") }) {
+                        Icon(Icons.external, null, Modifier.size(20.dp), tint = Ink.dim)
+                    },
                 ))
                 group("Support", listOf(
                     Item("Free and open source", "Made by one person. A donation helps keep it going.", { openUrl("https://unbraid.app/donate/") }) {
@@ -523,6 +537,9 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
                 ))
             }
         }
+    }
+
+    }
     }
 
     when (dialog) {
@@ -634,8 +651,55 @@ fun SettingsScreen(ui: Ui, addProvider: () -> Unit, tour: () -> Unit) {
 
 /** A sub-page of Settings: back at the top-leading corner, the parent's name above the title. */
 @Composable
-private fun Page(title: String, back: () -> Unit, over: String = "Settings", content: LazyListScope.() -> Unit) =
-    Screen(overline = over, title = title, sub = "", navigation = { IconTap(Icons.back, "Back", back) }) { content(); item { Gap(24.dp) } }
+private fun Page(title: String, back: (() -> Unit)?, over: String = "Settings", content: LazyListScope.() -> Unit) = Column(Modifier.fillMaxSize().padding(top = 26.dp)) {
+    Row(Modifier.widthIn(max = 760.dp).padding(start = 8.dp, end = 16.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        back?.let { IconTap(Icons.back, "Back", it) }
+        Column(Modifier.padding(start = if (back == null) 16.dp else 4.dp)) {
+            Text(over.uppercase(), style = Type.overline, color = Ink.dim)
+            Text(title, style = Type.title.copy(fontSize = 26.sp, lineHeight = 32.sp), color = Ink.text)
+        }
+    }
+    LazyColumn(Modifier.widthIn(max = 760.dp).fillMaxHeight(), contentPadding = PaddingValues(bottom = 24.dp)) { content() }
+}
+
+/** Settings' subjects, on the left of the page shown. */
+private val SUBJECTS = listOf(
+    "Connections" to listOf(Triple("providers", "Providers & servers", Icons.vpnKey), Triple("tailscale", "Tailscale", Icons.hub), Triple("local", "Local & home access", Icons.home)),
+    "Safety" to listOf(Triple("behaviour", "VPN behaviour", Icons.tunnel), Triple("dns", "Protection", Icons.shield)),
+    "This app" to listOf(Triple("desktop", "Desktop", Icons.layers), Triple("stats", "Statistics", Icons.stats), Triple("shortcuts", "Keyboard shortcuts", Icons.bolt),
+        Triple("about", "About & support", Icons.info), Triple("legal", "Legal", Icons.file)),
+)
+
+/** The tour stops these subjects are the anchors of, as their rows were on the phone's hub. */
+private val ANCHORS = mapOf("providers" to TourStop.Connections, "local" to TourStop.LocalHome, "about" to TourStop.About)
+
+@Composable
+private fun Subjects(subject: String, pick: (String) -> Unit) = Row(Modifier.fillMaxHeight()) {
+    Column(Modifier.width(290.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(start = 30.dp, top = 26.dp, end = 14.dp, bottom = 24.dp)) {
+        PageHeader("Version ${BuildConfig.VERSION_NAME}", "Settings")
+        SUBJECTS.forEach { (group, rows) ->
+            Text(group.uppercase(), style = Type.overline, color = Ink.dim, modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 6.dp))
+            rows.forEach { (key, title, icon) ->
+                val source = remember { MutableInteractionSource() }
+                val hovered by source.collectIsHoveredAsState()
+                val on = key == subject
+                Row(
+                    Modifier.fillMaxWidth().height(42.dp).then(ANCHORS[key]?.let { tourAnchor(it) } ?: Modifier).clip(RoundedCornerShape(14.dp))
+                        .background(when { on -> Ink.accentContainer; hovered -> Ink.surfaceHigh; else -> Color.Transparent })
+                        .hover(source).selectable(on, role = Role.Tab) { pick(key) }.padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(icon, null, Modifier.size(20.dp), tint = if (on) Ink.accent else Ink.dim)
+                    Text(title, style = Type.body.copy(fontSize = Type.sub.fontSize), color = if (on || hovered) Ink.text else Ink.dim, maxLines = 1)
+                }
+            }
+        }
+    }
+    Box(Modifier.fillMaxHeight().width(1.dp).background(Ink.surfaceHigh))
+}
+
+/** Starting at login: whether, connecting too, and without the window. */
+private fun readLogin() = Triple(app.unbraid.linux.Autostart.enabled, app.unbraid.linux.Autostart.connects, app.unbraid.linux.Autostart.minimised)
 
 /** The tonal M3E button for a page's main action (Add connection). */
 @Composable
