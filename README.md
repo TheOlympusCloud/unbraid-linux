@@ -148,6 +148,15 @@ unbraid quit
 Starting and connecting at login (Settings, Desktop) is the Linux counterpart of Android's Always-on.
 Before you log in, while paused and if unbraid stops, apps use your normal connection.
 
+### Sending files over your tailnet
+
+With Tailscale on and unbraid connected, Settings, Tailscale lists the devices on your tailnet that take files, as
+Tailscale's own Taildrop does: click one, pick one or more files, and they are sent; the page shows how far it got, and
+the send can be cancelled. Files your devices send to this computer are saved in your Downloads folder (a name already
+there gets a number, so nothing is overwritten), and a notification says so. Only your own devices can send you files,
+or those your tailnet's access rules allow, and the tailnet must allow sending files at all: on Tailscale, turn on Send
+Files in the admin console.
+
 ## Build
 
 You need Rust 1.99 or later and Go 1.26 (Go fetches the exact toolchain itself through `GOTOOLCHAIN`). The packages
@@ -199,6 +208,7 @@ and an X display (an `Xvfb :99` is fine), and no root.
   their jobs.
 - Android's Always-on and "Block connections without VPN" have no Linux counterpart. unbraid can start at login.
 - QR codes are read from a picture or screenshot (there is no camera app to take one).
+- Files can be sent to and received from your tailnet's devices (Taildrop); the Android app refuses files sent to it.
 - Some apps' DNS lookups other than addresses (HTTPS, SVCB, TXT records) go through systemd-resolved, so they follow the
   default route rather than the app's.
 - The optional Google Play tip jar is not part of this version.
@@ -209,7 +219,8 @@ We add no advertising or analytics of our own, and there is no unbraid account. 
 `~/.local/share/unbraid`, which only you can open, sealed with a key kept in your desktop keyring (or, without one, in a
 file only you can read), and are only sent to the service they belong to. The engine never writes the running
 configuration to disk. A Tailscale node's keys stay in the engine's own folder, which only root can read, as with
-Tailscale's own Linux daemon. The list of installed apps is read on your computer so you can assign routes, and it never
+Tailscale's own Linux daemon; so does a file your devices send, until unbraid has saved it in your Downloads folder.
+The list of installed apps is read on your computer so you can assign routes, and it never
 leaves it. The privacy policy, with every service the app talks to, is at [unbraid.app/privacy](https://unbraid.app/privacy).
 
 Routing by program is not a security boundary. A program you run can give itself another program's name, or put

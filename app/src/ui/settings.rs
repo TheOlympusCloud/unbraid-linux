@@ -6,6 +6,8 @@ use crate::desktop_settings::Theme;
 use crate::limits::{self, LIMIT_OPT};
 use crate::model::{Filter, OWN, Route, Setup, filters, own_dns};
 use crate::providers::{self, Device, IMPORTS, MTU, Opt, PROTECT, Provider};
+use crate::taildrop::Sending;
+use crate::ui::stats::bytes_text;
 use crate::ui::status::{OLD_LIST_MS, Tone, provider_status, published_on};
 use crate::vpn::{Phase, VpnState};
 use crate::{APP, TITLE, VERSION_NAME};
@@ -129,6 +131,9 @@ pub enum Act {
     SaveFilter,
     SignOutTailscale,
     TsServer,
+    /// Sends files to tailnet device `arg` (its Tailscale ID): the file chooser opens.
+    SendFiles,
+    CancelSend,
     Subnets,
     DeleteStats,
     /// Provider `arg`'s own limit, as typed.
@@ -395,6 +400,8 @@ pub struct Inputs<'a> {
     pub plan: Option<&'a str>,
     /// A Tailscale node is still kept on this computer, even with Tailscale off.
     pub ts_stored: bool,
+    /// The last send of files to a tailnet device ([`crate::taildrop::sending`]).
+    pub sending: Option<&'a Sending>,
     /// Starting at login ([`crate::autostart::Autostart`]): whether, connecting too, and minimised to the tray.
     pub login: (bool, bool, bool),
     pub theme: Theme,
@@ -899,6 +906,13 @@ fn tailscale_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
             .collect();
         groups.push(group("Exit nodes", rows));
     }
+    if s.tailscale() && i.vpn.ts_files {
+        groups.push(files_group(i));
+    } else if s.tailscale() && i.vpn.ts_state.as_deref() == Some("Running") {
+        groups.push(caption(
+            "Your tailnet doesn't let devices send files. On Tailscale, turn on Send Files in the admin console.",
+        ));
+    }
     if s.tailscale() {
         groups.push(caption("Pick an exit node for a route in Routes. Reaching your home network through Tailscale is under Local & home access."));
         // A Headscale server can name any domain: its devices' names answer apps only once the user allows that suffix.
@@ -953,6 +967,40 @@ fn tailscale_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
         },
     ];
     (groups, dialogs)
+}
+
+/// The tailnet's devices that take files, online first (a click picks the files), and the last send.
+fn files_group(i: &Inputs) -> Group {
+    let busy = i.sending.is_some_and(Sending::running);
+    let mut devices = i.vpn.ts_targets.clone();
+    devices.sort_by_key(|n| !n.online);
+    let mut rows: Vec<Row> = devices
+        .iter()
+        .map(|n| match n.online {
+            true if !busy => row(&n.name, "Online").act(Act::SendFiles, &n.id).end(End::Chevron),
+            true => row(&n.name, "Online"),
+            false => row(&n.name, "Offline"),
+        })
+        .collect();
+    if rows.is_empty() {
+        rows.push(row("No device takes files yet", "Your other devices show here once they're on the tailnet"));
+    }
+    if let Some(s) = i.sending {
+        let files = if s.files == 1 { "1 file".to_string() } else { format!("{} files", s.files) };
+        let (sent, total) = (bytes_text(s.sent as i64), bytes_text(s.total as i64));
+        rows.push(match &s.error {
+            Some(e) => row(format!("Couldn't send to {}", s.to), e).danger(),
+            None if s.done => row(format!("Sent {files} to {}", s.to), total),
+            None => row(format!("Sending {files} to {}", s.to), format!("{sent} of {total}")),
+        });
+        if busy {
+            rows.push(row("Cancel sending", "").act(Act::CancelSend, "").danger());
+        }
+    }
+    Group {
+        caption: "Files your devices send to this computer are saved in Downloads.".into(),
+        ..group("Send files", rows)
+    }
 }
 
 fn local_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
@@ -1503,6 +1551,7 @@ mod tests {
         opts: Vec<Opt>,
         login: (bool, bool, bool),
         size: u64,
+        sending: Option<Sending>,
     }
 
     impl World {
@@ -1543,6 +1592,7 @@ mod tests {
                 opts: vec![],
                 login: (false, true, true),
                 size: 0,
+                sending: None,
             }
         }
 
@@ -1569,6 +1619,7 @@ mod tests {
                 device: None,
                 plan: None,
                 ts_stored: false,
+                sending: self.sending.as_ref(),
                 login: self.login,
                 theme: Theme::System,
                 close_to_tray: true,
@@ -1723,6 +1774,7 @@ mod tests {
             device: Some(&device),
             plan: Some("Paid until 22 Nov 2026"),
             ts_stored: false,
+            sending: None,
             login: w.login,
             theme: Theme::System,
             close_to_tray: true,
@@ -1737,6 +1789,64 @@ mod tests {
         assert!(rows[1].sub.contains("3 are in use"), "{}", rows[1].sub);
         let this = rows.iter().find(|r| r.icon == Glyph::Info).unwrap();
         assert_eq!(("This computer", Act::Url, End::External), (this.title.as_str(), this.act, this.end));
+    }
+
+    /// Sending files: the devices that take them, online first and only those clickable; while a send runs no other
+    /// starts and it can be cancelled; how it ended stays. A tailnet that doesn't allow it says where to turn it on.
+    #[test]
+    fn send_files() {
+        use crate::vpn::TsNode;
+        let mut w = World::new().at(&["tailscale"]);
+        w.setup.home.tailscale = true;
+        w.vpn.phase = Phase::On;
+        w.vpn.ts_state = Some("Running".into());
+        let page = |w: &World| w.view().groups;
+        assert!(page(&w).iter().all(|g| g.label != "Send files"));
+        assert!(page(&w).iter().any(|g| g.caption.contains("turn on Send Files in the admin console")));
+        w.vpn.ts_files = true;
+        let node = |name: &str, online: bool, id: &str| TsNode {
+            name: name.into(),
+            online,
+            id: id.into(),
+            ..TsNode::default()
+        };
+        w.vpn.ts_targets = vec![node("nas", false, "n1"), node("phone", true, "n2")];
+        let groups = page(&w);
+        let files = groups.iter().find(|g| g.label == "Send files").unwrap();
+        assert_eq!(vec!["phone", "nas"], titles(files));
+        assert_eq!(
+            (Act::SendFiles, "n2", "Online"),
+            (files.rows[0].act, files.rows[0].arg.as_str(), files.rows[0].sub.as_str())
+        );
+        assert_eq!((Act::None, "Offline"), (files.rows[1].act, files.rows[1].sub.as_str()));
+        assert_eq!("Files your devices send to this computer are saved in Downloads.", files.caption);
+
+        w.sending =
+            Some(Sending { to: "phone".into(), files: 2, sent: 42_400_000, total: 118_000_000, ..Sending::default() });
+        let groups = page(&w);
+        let files = groups.iter().find(|g| g.label == "Send files").unwrap();
+        assert_eq!(vec!["phone", "nas", "Sending 2 files to phone", "Cancel sending"], titles(files));
+        assert_eq!(Act::None, files.rows[0].act);
+        assert_eq!("42 MB of 118 MB", files.rows[2].sub);
+        assert_eq!(Act::CancelSend, files.rows[3].act);
+
+        w.sending = Some(Sending { to: "phone".into(), files: 1, total: 2048, done: true, ..Sending::default() });
+        let groups = page(&w);
+        let files = groups.iter().find(|g| g.label == "Send files").unwrap();
+        assert_eq!(vec!["phone", "nas", "Sent 1 file to phone"], titles(files));
+        assert_eq!(Act::SendFiles, files.rows[0].act);
+        w.sending =
+            Some(Sending { to: "phone".into(), files: 1, error: Some("Cancelled".into()), ..Sending::default() });
+        let groups = page(&w);
+        let last = groups.iter().find(|g| g.label == "Send files").unwrap().rows.last().unwrap().clone();
+        assert_eq!(
+            ("Couldn't send to phone", "Cancelled", true),
+            (last.title.as_str(), last.sub.as_str(), last.danger)
+        );
+
+        w.vpn.ts_targets.clear();
+        let groups = page(&w);
+        assert_eq!("No device takes files yet", groups.iter().find(|g| g.label == "Send files").unwrap().rows[0].title);
     }
 
     /// unbraid's filter on VPN routes turns each provider's blocking switch off, greyed, keeping its choice.

@@ -7,7 +7,7 @@
 
 use crate::compiler::{self, Input, TS_TAG};
 use crate::engine::{self, Engine};
-use crate::engine_api::daemon::TailscaleEndpointStatus;
+use crate::engine_api::daemon::{TailscaleEndpointStatus, TailscalePeer};
 use crate::error::{Error, Result};
 use crate::health::{self, Streak};
 use crate::link_picker::{self, Picked};
@@ -15,7 +15,7 @@ use crate::model::{Link, Server, Setup};
 use crate::net::NetMonitor;
 use crate::providers::{self, AUTO, PORT_OPT, nord::DEDICATED_IP};
 use crate::store::Store;
-use crate::{APP, app, apps, clock, desktop, linux_pass, log, redact, speed_test, stats, ts_login};
+use crate::{APP, app, apps, clock, desktop, linux_pass, log, redact, speed_test, stats, taildrop, ts_login};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use indexmap::{IndexMap, IndexSet};
@@ -59,6 +59,9 @@ pub struct VpnState {
     pub ts_suffix: Option<String>,
     /// Tailnet peers that offer themselves as exit nodes.
     pub ts_exit_nodes: Vec<TsNode>,
+    /// The tailnet lets this computer send and receive files (Taildrop), to `ts_targets`.
+    pub ts_files: bool,
+    pub ts_targets: Vec<TsNode>,
     /// While paused: when the connection comes back (epoch ms), 0 = only when resumed by hand.
     pub paused_until: i64,
     /// While paused: when the pause began (epoch ms), for the countdown ring.
@@ -1164,10 +1167,11 @@ impl Session {
         })
     }
 
-    /// Tailscale's status: its sign-in link, state, exit nodes and tailnet domain for the window.
+    /// Tailscale's status: its sign-in link, state, exit nodes, devices and tailnet domain for the window. Beside it,
+    /// the files the tailnet sends are moved to Downloads ([`taildrop::watch_inbox`]).
     fn watch_tailscale(&mut self) {
         let (mine, e, me) = (self.session, self.engine, self.me.clone());
-        self.ts = Some(tokio::spawn(async move {
+        let status = async move {
             // The subscription outlives engine reloads; one the engine drops (it restarted) comes back.
             loop {
                 match e.tailscale_status().await {
@@ -1189,27 +1193,34 @@ impl Session {
                 }
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
+        };
+        self.ts = Some(tokio::spawn(async move {
+            tokio::join!(status, taildrop::watch_inbox(e));
         }));
     }
 
     async fn tailscale(&mut self, ep: &TailscaleEndpointStatus) {
-        let mut nodes: Vec<TsNode> = ep
-            .user_groups
-            .iter()
-            .flat_map(|g| &g.peers)
-            .filter(|p| p.exit_node_option && !p.tailscale_i_ps.is_empty())
-            .map(|p| TsNode {
-                name: if p.host_name.is_empty() {
-                    p.dns_name.split('.').next().unwrap_or_default().into()
-                } else {
-                    p.host_name.clone()
-                },
-                ip: p.tailscale_i_ps[0].clone(),
-                online: p.online,
-                id: p.stable_id.clone(),
-            })
-            .collect();
-        nodes.sort_by_key(|n| n.name.to_lowercase());
+        let nodes = |pick: fn(&TailscalePeer) -> bool| {
+            let mut nodes: Vec<TsNode> = ep
+                .user_groups
+                .iter()
+                .flat_map(|g| &g.peers)
+                .filter(|p| pick(p) && !p.tailscale_i_ps.is_empty())
+                .map(|p| TsNode {
+                    name: if p.host_name.is_empty() {
+                        p.dns_name.split('.').next().unwrap_or_default().into()
+                    } else {
+                        p.host_name.clone()
+                    },
+                    ip: p.tailscale_i_ps[0].clone(),
+                    online: p.online,
+                    id: p.stable_id.clone(),
+                })
+                .collect();
+            nodes.sort_by_key(|n| n.name.to_lowercase());
+            nodes
+        };
+        let (targets, nodes) = (nodes(|p| p.can_receive_files), nodes(|p| p.exit_node_option));
         let running = ep.backend_state == "Running";
         let suffix = compiler::ts_suffix(Some(&ep.magic_dns_suffix));
         let stored = self.store.ts_suffix();
@@ -1222,6 +1233,8 @@ impl Session {
             v.ts_login_url = url;
             v.ts_state = Some(backend);
             v.ts_exit_nodes = nodes;
+            v.ts_files = running && ep.can_share_files;
+            v.ts_targets = targets;
             v.ts_suffix = reported;
         });
         // The sign-in pages' way around the exit opens with a sign-in link and closes only once signed in: a restarted
@@ -2160,12 +2173,13 @@ mod tests {
             stable_id: id.into(),
             ..TailscalePeer::default()
         };
-        let peers = vec![
+        let mut peers = vec![
             peer("", "pi.tail1234.ts.net.", Some("100.64.0.6"), true, true, "nPi"),
             peer("laptop", "", Some("100.64.0.7"), false, true, "nLaptop"),
             peer("NAS", "", Some("100.64.0.5"), true, false, "nNas"),
             peer("phone", "", None, true, true, "nPhone"),
         ];
+        peers[1].can_receive_files = true;
         let mut ep = TailscaleEndpointStatus {
             backend_state: "NeedsLogin".into(),
             auth_url: "https://login.tailscale.com/a/1a2b3c".into(),
@@ -2189,11 +2203,16 @@ mod tests {
             v.ts_exit_nodes
         );
         assert!(s.ts_login_pending);
+        // Files go to the devices the tailnet names, once it runs and lets this computer send them.
+        assert_eq!(vec![node("laptop", "100.64.0.7", true, "nLaptop")], v.ts_targets);
+        assert!(!v.ts_files);
         ep.backend_state = "Running".into();
         ep.auth_url.clear();
         ep.magic_dns_suffix = "Tail1234.ts.net.".into();
+        ep.can_share_files = true;
         s.tailscale(&ep).await;
         let v = s.live.state();
+        assert!(v.ts_files);
         assert_eq!((None, Some("tail1234.ts.net")), (v.ts_login_url.as_deref(), v.ts_suffix.as_deref()));
         assert!(!s.ts_login_pending);
         assert_eq!(Some("tail1234.ts.net".into()), s.store.ts_suffix());

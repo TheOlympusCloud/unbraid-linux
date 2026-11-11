@@ -14,7 +14,7 @@ use crate::ui::importer::{self, PromptView};
 use crate::ui::settings::{self as logic, Act, End, Glyph};
 use crate::ui::status::Tone;
 use crate::vpn::VpnState;
-use crate::{app, desktop, keyring, paths, stats};
+use crate::{app, desktop, keyring, paths, stats, taildrop, vpn};
 use indexmap::IndexMap;
 use slint::Global;
 use std::collections::HashSet;
@@ -54,7 +54,7 @@ macro_rules! same {
         }
     };
 }
-same!(act: Act => SettingsAct [None, Open, Pick, Url, Dialog, Advanced, Tailscale, TsLogin, Suffix, Lan, HomeConfig, Opt, Filter, FilterRoutes, FilterDirect, Outside, Through, Stats, Login, Connect, Minimised, CloseToTray, RememberWindow, Theme, Tour, AddProvider, ImportFile, Shadowsocks, SaveFilter, SignOutTailscale, TsServer, Subnets, DeleteStats, Limit, SignOut, RenameServer, RemoveServer]);
+same!(act: Act => SettingsAct [None, Open, Pick, Url, Dialog, Advanced, Tailscale, TsLogin, Suffix, Lan, HomeConfig, Opt, Filter, FilterRoutes, FilterDirect, Outside, Through, Stats, Login, Connect, Minimised, CloseToTray, RememberWindow, Theme, Tour, AddProvider, ImportFile, Shadowsocks, SaveFilter, SignOutTailscale, TsServer, SendFiles, CancelSend, Subnets, DeleteStats, Limit, SignOut, RenameServer, RemoveServer]);
 same!(end: End => SettingsEnd [None, Chevron, Dot, Toggle, Radio, External, Delete, Mark, Keys, Remove, Expand]);
 same!(glyph: Glyph => SettingsGlyph [None, VpnKey, Hub, Home, Tunnel, Shield, Layers, Stats, Bolt, Info, File, Phone, Dns, Lan, Router, Power, Routes, Sliders]);
 same!(tone: Tone => SettingsTone [Good, Warn, Bad, Idle]);
@@ -257,6 +257,18 @@ pub(super) fn wire(w: &AppWindow) {
             win.ui.set_tailscale_server(some(&url), some(&key));
         });
     });
+    // The files are picked first, for the device clicked; its name is the one the page shows.
+    p.on_send_files(|id| {
+        let id = id.to_string();
+        let Some(name) = vpn::live().state().ts_targets.into_iter().find(|n| n.id == id).map(|n| n.name) else {
+            return;
+        };
+        app::runtime().spawn(async move {
+            let files = desktop::pick_files(&format!("Choose files to send to {name}")).await;
+            taildrop::send(crate::engine::get(), id, name, files);
+        });
+    });
+    p.on_cancel_send(taildrop::cancel);
     p.on_set_subnets(|t| {
         app::store().edit(|s| logic::set_subnets(s, &t).unwrap_or_else(|| s.clone()));
     });
@@ -362,6 +374,7 @@ pub(super) fn show(win: &Win, setup: &Setup, vpn: &VpnState) {
     let running = crate::vpn::live().running();
     let tags = crate::vpn::live().tags();
     let notice = ui.notice.borrow().clone();
+    let sending = taildrop::sending().borrow().clone();
     let data = paths::data().ok();
     let key_file = data
         .filter(|d| keyring::in_file(d))
@@ -381,6 +394,7 @@ pub(super) fn show(win: &Win, setup: &Setup, vpn: &VpnState) {
         device: g.device.as_ref(),
         plan: g.plan.as_deref(),
         ts_stored: *ui.ts_stored.borrow(),
+        sending: sending.as_ref(),
         login: g.login.unwrap_or_default(),
         theme: *ds::theme().borrow(),
         close_to_tray: *ds::close_to_tray().borrow(),

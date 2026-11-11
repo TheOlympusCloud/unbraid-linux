@@ -451,6 +451,7 @@ fn follow_all(ui: &Arc<Ui>) {
     follow(ds::remember_window().subscribe());
     follow(recorded::live());
     follow(crate::speed_test::run());
+    follow(crate::taildrop::sending().subscribe());
     follow(crate::speed_test::all());
 }
 

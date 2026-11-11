@@ -1,7 +1,7 @@
 //! Renders Settings headless beside the sidebar, as the window shows it, with the data of the approved screenshots:
 //! Providers & servers and Desktop in both themes and at the smallest window; then a provider's page, Local & home
-//! access with its Advanced settings open, About, Legal, the licences, a sheet, a prompt and an import prompt. Shots go
-//! to `target/screenshots/settings-*.png`.
+//! access with its Advanced settings open, Tailscale's devices to send files to, About, Legal, the licences, a sheet, a
+//! prompt and an import prompt. Shots go to `target/screenshots/settings-*.png`.
 
 mod common;
 
@@ -17,10 +17,11 @@ use slint::{ComponentHandle, Global, LogicalPosition, ModelRc, Rgb8Pixel, Shared
 use unbraid::desktop_settings::Theme;
 use unbraid::model::{Location, OwnServer, Route, Setup, WgPeer};
 use unbraid::providers::{self, Opt};
+use unbraid::taildrop::Sending;
 use unbraid::ui::importer::{self as ilogic, Draft};
 use unbraid::ui::settings::{self as logic, Act, End, Glyph};
 use unbraid::ui::status::Tone;
-use unbraid::vpn::VpnState;
+use unbraid::vpn::{TsNode, VpnState};
 
 slint::slint! {
     import { Sidebar, ProfileChip } from "../ui/shell.slint";
@@ -69,7 +70,7 @@ macro_rules! same {
         }
     };
 }
-same!(act: Act => SettingsAct [None, Open, Pick, Url, Dialog, Advanced, Tailscale, TsLogin, Suffix, Lan, HomeConfig, Opt, Filter, FilterRoutes, FilterDirect, Outside, Through, Stats, Login, Connect, Minimised, CloseToTray, RememberWindow, Theme, Tour, AddProvider, ImportFile, Shadowsocks, SaveFilter, SignOutTailscale, TsServer, Subnets, DeleteStats, Limit, SignOut, RenameServer, RemoveServer]);
+same!(act: Act => SettingsAct [None, Open, Pick, Url, Dialog, Advanced, Tailscale, TsLogin, Suffix, Lan, HomeConfig, Opt, Filter, FilterRoutes, FilterDirect, Outside, Through, Stats, Login, Connect, Minimised, CloseToTray, RememberWindow, Theme, Tour, AddProvider, ImportFile, Shadowsocks, SaveFilter, SignOutTailscale, TsServer, SendFiles, CancelSend, Subnets, DeleteStats, Limit, SignOut, RenameServer, RemoveServer]);
 same!(end: End => SettingsEnd [None, Chevron, Dot, Toggle, Radio, External, Delete, Mark, Keys, Remove, Expand]);
 same!(glyph: Glyph => SettingsGlyph [None, VpnKey, Hub, Home, Tunnel, Shield, Layers, Stats, Bolt, Info, File, Phone, Dns, Lan, Router, Power, Routes, Sliders]);
 same!(tone: Tone => SettingsTone [Good, Warn, Bad, Idle]);
@@ -170,6 +171,7 @@ struct World {
     opts: Vec<Opt>,
     login: (bool, bool, bool),
     theme: Theme,
+    sending: Option<Sending>,
 }
 
 impl World {
@@ -212,6 +214,7 @@ impl World {
             opts: vec![],
             login: (false, true, true),
             theme: Theme::System,
+            sending: None,
         }
     }
 
@@ -241,6 +244,7 @@ impl World {
             device: None,
             plan: None,
             ts_stored: false,
+            sending: self.sending.as_ref(),
             login: self.login,
             theme: self.theme,
             close_to_tray: true,
@@ -388,6 +392,37 @@ fn advanced_settings_open() {
     click(&shot, 900.0, y as f32);
     point(&shot, 1270.0, 790.0);
     assert!(shoot(&shot, 1280, 800, Duration::from_secs(20)) == closed, "a second click closes it");
+}
+
+/// Tailscale's page on a tailnet that allows sending files: the devices that take them, the send under way and its
+/// Cancel. A device's row asks for its files, by its Tailscale ID.
+#[test]
+fn send_files() {
+    headless();
+    let mut world = World::new().at(&["tailscale"]);
+    world.setup.home.tailscale = true;
+    world.vpn.phase = unbraid::vpn::Phase::On;
+    world.vpn.ts_state = Some("Running".into());
+    world.vpn.ts_files = true;
+    let node =
+        |name: &str, online: bool, id: &str| TsNode { name: name.into(), online, id: id.into(), ..TsNode::default() };
+    world.vpn.ts_targets =
+        vec![node("pixel-8", true, "nPixel"), node("nas", false, "nNas"), node("laptop", true, "nLaptop")];
+    world.sending =
+        Some(Sending { to: "laptop".into(), files: 3, sent: 42_000_000, total: 118_000_000, ..Sending::default() });
+    let shot = world.shot(false, true);
+    let px = render(&shot, 1280, 800, &shots_dir().join("settings-send-files.png"));
+    assert_eq!(SURFACE, at(&px, 1280, 900, 140), "the first group");
+    world.sending = None;
+    let v = world.view();
+    let files = v.groups.iter().find(|g| g.label == "Send files").unwrap();
+    let asked = Rc::new(RefCell::new(Vec::<String>::new()));
+    let a = asked.clone();
+    let p = SettingsPage::get(&shot);
+    p.on_send_files(move |id| a.borrow_mut().push(id.into()));
+    p.invoke_run(row(&files.rows[1]), "".into(), "".into());
+    p.invoke_run(row(&files.rows[2]), "".into(), "".into());
+    assert_eq!(vec!["nLaptop"], *asked.borrow(), "the offline nas takes no files");
 }
 
 /// About, Legal and Licences.
