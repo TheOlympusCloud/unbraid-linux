@@ -90,7 +90,8 @@ impl Engine {
     /// Fails if the engine would refuse `config`, without stopping what runs: the system service replaces its running
     /// config only by stopping it first. Its message can quote the config, keys included: callers redact it.
     pub async fn check(&self, config: &str) -> Result<(), Status> {
-        let ch = self.worker().map_err(|e| Status::unavailable(e.to_string()))?;
+        // A worker that won't start is the app's own failure, not a missing service ([`missing`]).
+        let ch = self.worker().map_err(|e| Status::unknown(e.to_string()))?;
         let mut c = ApplicationServiceClient::new(ch);
         deadline(30, c.check_config(timed(ConfigContent { content: config.into() }, 30))).await.map(|_| ())
     }
@@ -116,10 +117,21 @@ impl Engine {
     pub async fn start(&self, config: &str) -> Result<(), Status> {
         let request = StartServiceRequest { config_content: config.into(), options: None };
         // 120 s: with nobody owning it the engine asks polkit first, which away from the session at the screen is a password.
+        // The calls own their clients and request, so a start can run on any of the runtime's threads (it is Send).
+        let (start, owner, take) = (self.desktop(), self.desktop(), self.desktop());
         starting(
-            async || deadline(120, self.desktop().start_service(timed(request.clone(), 120))).await.map(|_| ()),
-            async || deadline(30, self.desktop().get_daemon_info(timed((), 30))).await.map(|i| i.into_inner().ownership == DaemonOwnership::Other as i32),
-            async || deadline(120, self.desktop().take_over_service(timed((), 120))).await.map(|_| ()),
+            move || {
+                let (mut c, r) = (start.clone(), request.clone());
+                async move { deadline(120, c.start_service(timed(r, 120))).await.map(|_| ()) }
+            },
+            move || {
+                let mut c = owner.clone();
+                async move { deadline(30, c.get_daemon_info(timed((), 30))).await.map(|i| i.into_inner().ownership == DaemonOwnership::Other as i32) }
+            },
+            move || {
+                let mut c = take.clone();
+                async move { deadline(120, c.take_over_service(timed((), 120))).await.map(|_| ()) }
+            },
         )
         .await
     }
