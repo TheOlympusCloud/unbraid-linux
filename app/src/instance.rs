@@ -99,9 +99,33 @@ pub fn serve(path: &Path, handle: Arc<dyn Fn(&str) -> String + Send + Sync>) -> 
         .is_ok()
 }
 
+/// A pause's minutes as `pause [minutes]` gives them: 15 when left out, 0 (until resumed) or 5 to 60; anything else is
+/// refused, as USAGE says.
+pub fn pause_minutes(arg: &str) -> Option<i32> {
+    match arg.trim() {
+        "" => Some(15),
+        m => m.parse().ok().filter(|m| *m == 0 || (5..=60).contains(m)),
+    }
+}
+
+/// The answer to a pause outside that range.
+pub const PAUSE_REFUSED: &str = "error: pause takes 0 (until resumed) or 5 to 60 minutes";
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only what USAGE offers is taken: no negative, oversized or partial pauses reach the connection.
+    #[test]
+    fn pause_takes_only_the_minutes_usage_offers() {
+        assert_eq!(Some(15), pause_minutes(""));
+        assert_eq!(Some(0), pause_minutes("0"));
+        assert_eq!(Some(5), pause_minutes("5"));
+        assert_eq!(Some(60), pause_minutes(" 60 "));
+        for bad in ["1", "4", "61", "-1", "-15", "99999999999999999999", "15m", "x", "1.5"] {
+            assert_eq!(None, pause_minutes(bad), "{bad}");
+        }
+    }
 
     fn args(a: &[&str]) -> Args {
         Args::parse(&a.iter().map(|s| s.to_string()).collect::<Vec<_>>())

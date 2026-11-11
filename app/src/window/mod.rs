@@ -315,10 +315,13 @@ pub fn handle(line: &str) -> String {
             vpn::stop();
             "ok".into()
         }
-        "pause" => {
-            vpn::pause(arg.parse::<i32>().map_or(15, |m| m.clamp(0, 60)));
-            "ok".into()
-        }
+        "pause" => match instance::pause_minutes(arg) {
+            Some(m) => {
+                vpn::pause(m);
+                "ok".into()
+            }
+            None => instance::PAUSE_REFUSED.into(),
+        },
         "profile" => {
             *locked(&WANTED) = Some(arg.to_string());
             show();

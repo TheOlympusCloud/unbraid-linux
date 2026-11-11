@@ -22,6 +22,10 @@ fn main() {
     // Another instance runs: it does what was asked.
     let line = if args.command.is_empty() { "ping" } else { args.command.as_str() };
     if let Some(answer) = instance::send(&socket, line) {
+        if answer.starts_with("error") {
+            eprintln!("{answer}");
+            std::process::exit(1);
+        }
         if !answer.is_empty() && answer != "ok" {
             println!("{answer}");
         }
