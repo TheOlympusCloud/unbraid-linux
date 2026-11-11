@@ -1,44 +1,33 @@
 #!/bin/bash
 # Builds dist/unbraid_<version>-1_amd64.deb (Debian 13+, Ubuntu 24.04+ and their derivatives) and dist/arch/ (a
-# PKGBUILD and the tree it packages, for Arch and its derivatives). The app runs on the distribution's own Java (17 or
-# later); the engine is built by engine/build.sh. Both packages hold the same files.
+# PKGBUILD and the tree it packages, for Arch and its derivatives). The app is one native program (app-rs); the engine is
+# built by engine/build.sh. Both packages hold the same files.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
-VERSION=$(sed -n 's/^val versionName = "\(.*\)"/\1/p' app/build.gradle.kts)
+VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' app-rs/Cargo.toml | head -1)
 DIST=$ROOT/dist
-IMAGE=app/build/compose/binaries/main/app/unbraid
 [ -x engine/out/unbraid-engine ] || engine/build.sh
-./gradlew -q :app:createDistributable
-
-# The files both packages install, under $1; the app's Java is the distribution's, at $2.
+command -v cargo >/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
+(cd app-rs && cargo build --release --locked -q)
+# The files both packages install, under $1.
 stage() {
   local r=$1
-  rm -rf "$r" && mkdir -p "$r/usr/lib/unbraid" "$r/usr/bin"
-  cp -a "$IMAGE/bin" "$IMAGE/lib" "$r/usr/lib/unbraid/"
-  rm -rf "$r/usr/lib/unbraid/lib/runtime"
-  ln -s "$2" "$r/usr/lib/unbraid/lib/runtime"
-  # Native code for other systems and processors, and gRPC's TLS (the engine's socket is local): about 16 MB.
-  python3 -I - "$r"/usr/lib/unbraid/lib/app/{sqlite-jdbc,grpc-netty-shaded}-*.jar <<'PY'
-import re, sys, zipfile
-drop = re.compile(r"org/sqlite/native/(?!Linux/x86_64/).+|META-INF/native/.*(tcnative|aarch_64).*")
-for jar in sys.argv[1:]:
-    entries = [(i, zipfile.ZipFile(jar).read(i)) for i in zipfile.ZipFile(jar).infolist() if not drop.fullmatch(i.filename)]
-    with zipfile.ZipFile(jar, "w", zipfile.ZIP_DEFLATED) as out:
-        for i, data in entries: out.writestr(i, data)
-PY
+  rm -rf "$r" && mkdir -p "$r/usr/lib/unbraid/bin" "$r/usr/bin"
+  # The app is one native program; the engine recognises it by this path, so it stays where the launcher was.
+  install -m755 app-rs/target/release/unbraid "$r/usr/lib/unbraid/bin/unbraid"
   install -m755 engine/out/unbraid-engine "$r/usr/lib/unbraid/unbraid-engine"
   ln -s ../lib/unbraid/bin/unbraid "$r/usr/bin/unbraid"
   install -Dm644 packaging/files/unbraid-engine.service "$r/usr/lib/systemd/system/unbraid-engine.service"
   install -Dm644 packaging/files/app.unbraid.engine.policy "$r/usr/share/polkit-1/actions/app.unbraid.engine.policy"
   install -Dm644 packaging/files/unbraid.desktop "$r/usr/share/applications/unbraid.desktop"
-  install -Dm644 app/src/main/resources/unbraid.svg "$r/usr/share/icons/hicolor/scalable/apps/unbraid.svg"
+  install -Dm644 app-rs/ui/unbraid.svg "$r/usr/share/icons/hicolor/scalable/apps/unbraid.svg"
 }
 
 rm -rf "$DIST" && mkdir -p "$DIST"
 
 D=$DIST/deb
-stage "$D" /usr/lib/jvm/default-java
+stage "$D"
 install -Dm644 packaging/debian/copyright "$D/usr/share/doc/unbraid/copyright"
 mkdir -p "$D/DEBIAN"
 sed -e "s/@VERSION@/$VERSION/" -e "s/@SIZE@/$(du -sk "$D" | cut -f1)/" packaging/debian/control > "$D/DEBIAN/control"
@@ -47,7 +36,7 @@ fakeroot dpkg-deb -Zxz --build --root-owner-group "$D" "$DIST/unbraid_${VERSION}
 rm -rf "$D"
 
 A=$DIST/arch
-stage "$A/stage" /usr/lib/jvm/java-21-openjdk
+stage "$A/stage"
 install -Dm644 LICENSE "$A/stage/usr/share/licenses/unbraid/LICENSE"
 tar -C "$A/stage" --owner=0 --group=0 -czf "$A/unbraid-$VERSION-x86_64.tar.gz" usr
 rm -rf "$A/stage"
