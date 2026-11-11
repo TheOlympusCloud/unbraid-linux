@@ -1,0 +1,868 @@
+// The shared building blocks of every page: the page frame, search, route marks, the wordmark, segmented groups,
+// switches, icon buttons, app icons, buttons, key caps, and the modal layer dialogs sit on.
+
+import { Ink, Type, Headline, Overline, Code, Small, Title, Body, Sub, Caption } from "theme.slint";
+import { Icons, Icon, Shapes } from "icons.slint";
+import { Motion, Squish } from "motion.slint";
+
+// Every page keeps the same gutters, so header, title baseline and search sit at the same place everywhere.
+export global Metrics {
+    out property <length> gutter: 16px;
+    out property <length> header-height: 128px;
+    // Below this window width the sidebar folds to a rail.
+    out property <length> wide: 1000px;
+}
+
+// Material's state layer: the pointer over a control, a press or keyboard focus tint it with the content colour, black
+// as the theme sets none, 8 % for hover and 10 % for a press or focus. It comes at once and fades in 150 ms.
+export component StateLayer inherits Rectangle {
+    in property <bool> hovered;
+    in property <bool> pressed;
+    in property <bool> focused;
+    private property <bool> on: self.hovered || self.pressed || self.focused;
+    background: #000000;
+    opacity: self.pressed || self.focused ? 0.10 : self.hovered ? 0.08 : 0;
+    animate opacity {
+        duration: Motion.reduced ? 0ms : root.on ? 15ms : 150ms;
+    }
+}
+
+// Keyboard focus as a 2 px ring on the control's edge: the state layer's 10 % alone is all but invisible on the dark
+// ground.
+export component FocusRing inherits Rectangle {
+    // The control's corner radius. Bound here, not on an instance: a radius only given from outside would be dropped.
+    in property <length> radius;
+    border-width: 2px;
+    border-color: Ink.accent;
+    border-radius: self.radius;
+}
+
+// What makes a control a control: the pointer's hover and press with the state layer, Enter or Space for a click, and
+// the focus ring while it has keyboard focus (a click doesn't take the focus). It fills the control; the control sets
+// its accessible role, name and default action on it, so screen readers find them where the focus is.
+export component Tappable inherits Rectangle {
+    in property <bool> enabled: true;
+    // Draws the hover look without a pointer, for previews such as the gallery.
+    in property <bool> force-hover;
+    // Off for a control that draws its own (a switch's thumb).
+    in property <bool> layer: true;
+    in property <brush> ring: Ink.accent;
+    in property <MouseCursor> cursor: MouseCursor.default;
+    out property <bool> hovered: (self.enabled && touch.has-hover) || self.force-hover;
+    out property <bool> pressed: self.enabled && touch.pressed;
+    out property <bool> focused: focus.has-focus;
+    callback clicked();
+    forward-focus: focus;
+    if root.layer: StateLayer {
+        border-radius: root.border-radius;
+        hovered: root.hovered;
+        pressed: root.pressed;
+        focused: root.focused;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.cursor;
+        clicked => {
+            root.clicked();
+        }
+    }
+    focus := FocusScope {
+        x: 0;
+        width: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == Key.Space {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    if focus.has-focus: FocusRing {
+        radius: root.border-radius;
+        border-color: root.ring;
+    }
+}
+
+// Keyboard focus and activation alone, for a control whose pointer handling sits elsewhere (a group's row, a switch):
+// it carries the accessible role, and draws the focus ring on its four corners.
+component Keyed inherits Rectangle {
+    in property <bool> enabled: true;
+    callback activated();
+    focus := FocusScope {
+        x: 0;
+        width: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == Key.Space {
+                root.activated();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    if focus.has-focus: Rectangle {
+        border-width: 2px;
+        border-color: Ink.accent;
+        border-top-left-radius: root.border-top-left-radius;
+        border-top-right-radius: root.border-top-right-radius;
+        border-bottom-left-radius: root.border-bottom-left-radius;
+        border-bottom-right-radius: root.border-bottom-right-radius;
+    }
+}
+
+// An icon button. A filled one ([fill] set) is an M3E squircle; a bare one keeps the round ripple.
+export component IconTap inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <length> size: 48px;
+    in property <brush> tint: Ink.text;
+    in property <color> fill: transparent;
+    in property <bool> force-hover;
+    callback clicked();
+    width: root.size;
+    height: root.size;
+    border-radius: root.fill == transparent ? root.size / 2 : 16px;
+    background: root.fill;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    forward-focus: tap;
+    Icon {
+        x: (parent.width - 24px) / 2;
+        y: (parent.height - 24px) / 2;
+        icon: root.icon;
+        tint: root.tint;
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        force-hover: root.force-hover;
+        accessible-role: button;
+        accessible-label: root.label;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// The logo: "un/braid" in the display face, lowercase, its slash in the accent. On the Settings hub, top-trailing.
+export component Wordmark {
+    in property <length> size: 34px;
+    in property <color> ink: Ink.text;
+    horizontal-stretch: 0;
+    accessible-role: text;
+    accessible-label: "unbraid";
+    HorizontalLayout {
+        alignment: start;
+        Text {
+            text: "un";
+            font-family: Type.display;
+            font-weight: 900;
+            font-size: root.size;
+            color: root.ink;
+            accessible-role: none;
+        }
+        Text {
+            text: "/";
+            font-family: Type.display;
+            font-weight: 900;
+            font-size: root.size;
+            color: Ink.accent;
+            accessible-role: none;
+        }
+        Text {
+            text: "braid";
+            font-family: Type.display;
+            font-weight: 900;
+            font-size: root.size;
+            color: root.ink;
+            accessible-role: none;
+        }
+    }
+}
+
+// Screen skeleton. Every screen uses this, so header, title baseline and search sit at the same place everywhere: 24 px
+// top inset, overline, 6 px, headline, 6 px, sub, 8 px, at least 128 px in all. The children follow it top to bottom:
+// the search, the list (give it vertical-stretch: 1), then what sits at the bottom.
+export component Screen inherits Rectangle {
+    in property <string> overline;
+    in property <string> title;
+    in property <string> sub;
+    in property <color> overline-color: Ink.dim;
+    in property <color> title-color: Ink.text;
+    in property <color> sub-color: Ink.dim;
+    // Back or Close: Material's navigation icon (Icons.back, Icons.close) and its name, top-leading above the title.
+    in property <string> navigation-icon;
+    in property <string> navigation-label;
+    callback navigate();
+    private property <bool> nav: self.navigation-icon != "";
+    background: Ink.ground;
+    VerticalLayout {
+        if root.nav: HorizontalLayout {
+            padding-left: 4px;
+            padding-top: 4px;
+            height: 60px;
+            alignment: start;
+            cross-axis-alignment: center;
+            IconTap {
+                icon: root.navigation-icon;
+                label: root.navigation-label;
+                clicked => {
+                    root.navigate();
+                }
+            }
+        }
+        // Grows with large text instead of clipping it.
+        HorizontalLayout {
+            padding-left: 24px;
+            padding-right: Metrics.gutter;
+            padding-top: root.nav ? 0 : 24px;
+            padding-bottom: 8px;
+            min-height: root.nav ? Metrics.header-height - 40px : Metrics.header-height;
+            VerticalLayout {
+                spacing: 6px;
+                alignment: start;
+                Overline {
+                    text: root.overline.to-uppercase();
+                    color: root.overline-color;
+                }
+                // Titles are set in capitals; the wordmark stays lowercase, its slash in the accent.
+                if root.title == "un/braid": HorizontalLayout {
+                    alignment: start;
+                    Wordmark {
+                        size: 44px;
+                        ink: root.title-color;
+                    }
+                }
+                if root.title != "un/braid": Headline {
+                    text: root.title.to-uppercase();
+                    color: root.title-color;
+                    overflow: elide;
+                }
+                if root.sub != "": Sub {
+                    text: root.sub;
+                    color: root.sub-color;
+                    wrap: word-wrap;
+                    max-lines: 2;
+                    overflow: elide;
+                }
+            }
+        }
+        @children
+    }
+}
+
+// Keys as a keyboard shows them.
+export component Keys inherits Rectangle {
+    in property <string> keys;
+    background: Ink.surface-high;
+    border-width: 1px;
+    border-color: Ink.line;
+    border-radius: 6px;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        padding-top: 1px;
+        padding-bottom: 1px;
+        Small {
+            text: root.keys;
+            color: Ink.dim;
+        }
+    }
+}
+
+// A search box. [compact] for a desktop page's toolbar, without the phone's gutter; [keys], its shortcut, shows at the
+// end while it's empty (Ctrl+F), and focus-field() is for that shortcut.
+export component SearchField inherits Rectangle {
+    in-out property <string> value;
+    in property <string> placeholder;
+    in property <bool> compact;
+    in property <string> keys;
+    callback changed(text: string);
+    callback accepted();
+    public function focus-field() {
+        input.focus();
+    }
+    forward-focus: input;
+    min-height: root.compact ? 44px : 56px;
+    HorizontalLayout {
+        padding-left: root.compact ? 0 : Metrics.gutter;
+        padding-right: root.compact ? 0 : Metrics.gutter;
+        Rectangle {
+            border-radius: self.height / 2;
+            background: Ink.surface-high;
+            border-width: input.has-focus ? 2px : 0;
+            border-color: Ink.accent;
+            HorizontalLayout {
+                padding-left: root.compact ? 16px : 20px;
+                padding-right: root.compact ? 16px : 20px;
+                spacing: 12px;
+                cross-axis-alignment: center;
+                Icon {
+                    icon: Icons.search;
+                    size: root.compact ? 20px : 24px;
+                    tint: Ink.dim;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    // Ink.faint fails 4.5:1 on this surface, so the placeholder is dim.
+                    if root.value == "": Text {
+                        width: 100%;
+                        height: 100%;
+                        vertical-alignment: center;
+                        text: root.placeholder;
+                        color: Ink.dim;
+                        font-family: Type.sans;
+                        font-size: root.compact ? 14px : 16px;
+                        font-weight: root.compact ? 400 : 500;
+                        accessible-role: none;
+                    }
+                    input := TextInput {
+                        width: 100%;
+                        height: 100%;
+                        text <=> root.value;
+                        color: Ink.text;
+                        font-family: Type.sans;
+                        font-size: root.compact ? 14px : 16px;
+                        font-weight: root.compact ? 400 : 500;
+                        selection-background-color: Ink.accent-container;
+                        selection-foreground-color: Ink.text;
+                        single-line: true;
+                        vertical-alignment: center;
+                        accessible-label: root.placeholder;
+                        edited => {
+                            root.changed(self.text);
+                        }
+                        accepted => {
+                            root.accepted();
+                        }
+                    }
+                }
+                if root.value != "": IconTap {
+                    icon: Icons.close;
+                    label: "Clear search";
+                    size: root.compact ? 32px : 40px;
+                    clicked => {
+                        root.value = "";
+                        root.changed("");
+                    }
+                }
+                if root.value == "" && root.keys != "": Keys {
+                    keys: root.keys;
+                }
+            }
+        }
+    }
+}
+
+// Route code chip: "NL", "US", "··". Filled for an explicit choice, outlined when inherited.
+export component CodeChip {
+    in property <string> code;
+    in property <color> color;
+    in property <bool> filled: true;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    Rectangle {
+        border-radius: 8px;
+        background: root.filled ? root.color : transparent;
+        border-width: root.filled ? 0 : 1px;
+        border-color: Ink.line;
+        HorizontalLayout {
+            padding-left: 7px;
+            padding-right: 7px;
+            padding-top: 5px;
+            padding-bottom: 5px;
+            Code {
+                text: root.code;
+                color: root.filled ? Ink.ground : Ink.faint;
+            }
+        }
+    }
+}
+
+// A route chip: one slash per VPN hop, then the exit's code ("/NL"), in one size for every place; Direct keeps its
+// small bypass glyph.
+export component RouteMark {
+    in property <string> code;
+    in property <color> color;
+    in property <bool> filled: true;
+    in property <bool> direct;
+    in property <int> hops: 1;
+    private property <color> ink: self.filled ? Ink.ground : Ink.faint;
+    width: root.direct ? 30px : 36px;
+    height: 26px;
+    accessible-role: text;
+    accessible-label: root.direct ? "Direct" : root.code;
+    Rectangle {
+        border-radius: 8px;
+        background: root.filled ? root.color : transparent;
+        border-width: root.filled ? 0 : 1px;
+        border-color: Ink.line;
+    }
+    HorizontalLayout {
+        alignment: center;
+        cross-axis-alignment: center;
+        if root.direct: Icon {
+            icon: Icons.direct;
+            size: 14px;
+            tint: root.ink;
+        }
+        // The slashes in the logo's face at the code's size, as in the wordmark; both faces share their metrics, so
+        // baselines meet.
+        if !root.direct: HorizontalLayout {
+            for hop in root.hops: Text {
+                text: "/";
+                font-family: Type.display;
+                font-weight: 900;
+                font-size: 12px;
+                color: root.ink;
+                accessible-role: none;
+            }
+        }
+        if !root.direct && root.code == "··": Icon {
+            icon: Icons.bolt;
+            size: 16px;
+            tint: root.ink;
+        }
+        if !root.direct && root.code != "··": Code {
+            text: root.code;
+            color: root.ink;
+            accessible-role: none;
+        }
+    }
+}
+
+// A section's name above what it labels. [tall]: every label on a page in one 48 px row (room for a button), 4 px from
+// what it labels, so sections keep one rhythm. Children sit at its trailing end.
+export component SectionLabel {
+    in property <string> text;
+    in property <bool> tall;
+    min-height: root.tall ? 48px + 16px + 4px : 24px + 20px + 8px;
+    HorizontalLayout {
+        padding-left: 24px;
+        padding-right: root.tall ? Metrics.gutter - 4px : Metrics.gutter;
+        padding-top: root.tall ? 16px : 20px;
+        padding-bottom: root.tall ? 4px : 8px;
+        cross-axis-alignment: center;
+        Overline {
+            horizontal-stretch: 1;
+            text: root.text.to-uppercase();
+            color: Ink.dim;
+        }
+        @children
+    }
+}
+
+// What a row of a group is, to its user and to screen readers: text only, a button, one switch (the whole row toggles;
+// its Toggle stays passive) or one choice of several (announced as a radio button).
+export enum RowKind { plain, button, switch, choice }
+
+// A row's title and, under it, its sub. Used by GroupRow; give it as a child yourself when the row has something at
+// its leading end, and leave the row's own title empty.
+export component RowText inherits VerticalLayout {
+    in property <string> title;
+    in property <string> sub;
+    in property <color> title-color: Ink.text;
+    horizontal-stretch: 1;
+    spacing: 2px;
+    alignment: center;
+    Body {
+        text: root.title;
+        color: root.title-color;
+        wrap: word-wrap;
+        accessible-role: none;
+    }
+    if root.sub != "": Caption {
+        text: root.sub;
+        color: Ink.dim;
+        wrap: word-wrap;
+        max-lines: 2;
+        overflow: elide;
+        accessible-role: none;
+    }
+}
+
+// One row of a segmented group: big outer corners, small inner ones, 2 px gaps; row [i] of [n] shapes its corners.
+// Its children sit at the trailing end (Chevron, a Toggle, a value). For one at the leading end too, leave [title]
+// empty and give the children in order with a RowText between them; [label] then names the row for screen readers.
+export component GroupRow {
+    in property <int> i;
+    in property <int> n: 1;
+    in property <string> title;
+    in property <string> sub;
+    in property <color> title-color: Ink.text;
+    in property <string> label: self.title;
+    in property <RowKind> kind: RowKind.plain;
+    // The switch's state, or whether this choice is the one picked.
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    in property <bool> force-hover;
+    callback clicked();
+    private property <bool> live: self.kind != RowKind.plain && self.enabled;
+    private property <length> top-r: self.n == 1 || self.i == 0 ? 22px : 6px;
+    private property <length> bottom-r: self.n == 1 || self.i == self.n - 1 ? 22px : 6px;
+    min-height: max(66px, content.min-height);
+    // A tappable row presses like the cards: the shared squish.
+    squish := Squish {
+        pressed: touch.pressed;
+    }
+    card := Rectangle {
+        x: Metrics.gutter + (1 - squish.scale) * (root.width - 2 * Metrics.gutter) / 2;
+        y: 1px + (1 - squish.scale) * (root.height - 2px) / 2;
+        width: (root.width - 2 * Metrics.gutter) * squish.scale;
+        height: (root.height - 2px) * squish.scale;
+        background: Ink.surface;
+        border-top-left-radius: root.top-r;
+        border-top-right-radius: root.top-r;
+        border-bottom-left-radius: root.bottom-r;
+        border-bottom-right-radius: root.bottom-r;
+        StateLayer {
+            border-top-left-radius: root.top-r;
+            border-top-right-radius: root.top-r;
+            border-bottom-left-radius: root.bottom-r;
+            border-bottom-right-radius: root.bottom-r;
+            hovered: root.live && (touch.has-hover || root.force-hover);
+            pressed: root.live && touch.pressed;
+        }
+        touch := TouchArea {
+            enabled: root.live;
+            clicked => {
+                root.clicked();
+            }
+        }
+        if root.kind == RowKind.button: Keyed {
+            border-top-left-radius: root.top-r;
+            border-top-right-radius: root.top-r;
+            border-bottom-left-radius: root.bottom-r;
+            border-bottom-right-radius: root.bottom-r;
+            enabled: root.enabled;
+            accessible-role: button;
+            accessible-label: root.label;
+            accessible-description: root.sub;
+            accessible-enabled: root.enabled;
+            accessible-action-default => {
+                root.clicked();
+            }
+            activated => {
+                root.clicked();
+            }
+        }
+        if root.kind == RowKind.switch: Keyed {
+            border-top-left-radius: root.top-r;
+            border-top-right-radius: root.top-r;
+            border-bottom-left-radius: root.bottom-r;
+            border-bottom-right-radius: root.bottom-r;
+            enabled: root.enabled;
+            accessible-role: switch;
+            accessible-label: root.label;
+            accessible-description: root.sub;
+            accessible-enabled: root.enabled;
+            accessible-checkable: true;
+            accessible-checked: root.checked;
+            accessible-action-default => {
+                root.clicked();
+            }
+            activated => {
+                root.clicked();
+            }
+        }
+        if root.kind == RowKind.choice: Keyed {
+            border-top-left-radius: root.top-r;
+            border-top-right-radius: root.top-r;
+            border-bottom-left-radius: root.bottom-r;
+            border-bottom-right-radius: root.bottom-r;
+            enabled: root.enabled;
+            accessible-role: radio-button;
+            accessible-label: root.label;
+            accessible-description: root.sub;
+            accessible-enabled: root.enabled;
+            accessible-checkable: true;
+            accessible-checked: root.checked;
+            accessible-action-default => {
+                root.clicked();
+            }
+            activated => {
+                root.clicked();
+            }
+        }
+        if root.kind == RowKind.plain && root.label != "": Rectangle {
+            accessible-role: text;
+            accessible-label: root.label;
+            accessible-description: root.sub;
+        }
+    }
+    content := HorizontalLayout {
+        padding-left: Metrics.gutter + 16px;
+        padding-right: Metrics.gutter + 16px;
+        padding-top: 13px;
+        padding-bottom: 13px;
+        spacing: 14px;
+        cross-axis-alignment: center;
+        if root.title != "": RowText {
+            title: root.title;
+            sub: root.sub;
+            title-color: root.title-color;
+        }
+        @children
+    }
+}
+
+// A switch, as Material's: the thumb grows and carries a check when on. Standalone it toggles itself ([toggled] gets the
+// new state); [passive] in a switch row, where the row toggles and is announced as the switch.
+export component Toggle {
+    in property <bool> on;
+    in property <bool> enabled: true;
+    in property <bool> passive;
+    in property <string> label;
+    in property <bool> force-hover;
+    callback toggled(on: bool);
+    private property <bool> hovered: !self.passive && self.enabled && (touch.has-hover || self.force-hover);
+    private property <bool> pressed: !self.passive && self.enabled && touch.pressed;
+    // Material's disabled colours, composited over the ground so they stay opaque.
+    private property <color> track: !self.enabled ? (self.on ? Ink.ground.mix(Ink.text, 0.88) : Ink.ground.mix(Ink.surface-top, 0.88))
+        : self.on ? Ink.accent : Ink.surface-top;
+    private property <color> edge: !self.enabled ? (self.on ? self.track : Ink.ground.mix(Ink.text, 0.88)) : self.on ? Ink.accent : Ink.faint;
+    private property <color> thumb: !self.enabled ? (self.on ? Ink.ground : Ink.ground.mix(Ink.text, 0.62)) : self.on ? Ink.on-accent : Ink.faint;
+    private property <length> knob: self.pressed ? 28px : self.on ? 24px : 16px;
+    private property <length> center: self.on ? 36px : 16px;
+    width: 52px;
+    height: root.passive ? 32px : 48px;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    Rectangle {
+        y: (parent.height - 32px) / 2;
+        width: 52px;
+        height: 32px;
+        border-radius: 16px;
+        background: root.track;
+        border-width: 2px;
+        border-color: root.edge;
+        // The thumb's state layer: a 40 px circle around it.
+        StateLayer {
+            x: root.center - 20px;
+            y: -4px;
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            hovered: root.hovered;
+            pressed: root.pressed;
+        }
+        Rectangle {
+            x: root.center - root.knob / 2;
+            y: (parent.height - root.knob) / 2;
+            width: root.knob;
+            height: root.knob;
+            border-radius: root.knob / 2;
+            background: root.thumb;
+            animate x, y, width, height, border-radius {
+                duration: Motion.fast-spatial;
+                easing: spring(0.4);
+            }
+            if root.on: Icon {
+                x: (parent.width - 16px) / 2;
+                y: (parent.height - 16px) / 2;
+                icon: Icons.check;
+                size: 16px;
+                tint: Ink.accent;
+            }
+        }
+    }
+    touch := TouchArea {
+        enabled: !root.passive && root.enabled;
+        clicked => {
+            root.toggled(!root.on);
+        }
+    }
+    if !root.passive: Keyed {
+        y: (parent.height - 32px) / 2;
+        height: 32px;
+        border-top-left-radius: 16px;
+        border-top-right-radius: 16px;
+        border-bottom-left-radius: 16px;
+        border-bottom-right-radius: 16px;
+        enabled: root.enabled;
+        accessible-role: switch;
+        accessible-label: root.label;
+        accessible-enabled: root.enabled;
+        accessible-checkable: true;
+        accessible-checked: root.on;
+        accessible-action-default => {
+            root.toggled(!root.on);
+        }
+        activated => {
+            root.toggled(!root.on);
+        }
+    }
+}
+
+// An app's icon on a tinted tile, or its initial when it has none. [letter] is the label's first letter, upper case
+// (Slint can't take a string apart).
+export component AppIcon inherits Rectangle {
+    in property <image> icon;
+    in property <string> letter;
+    in property <length> size: 40px;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size * 0.32;
+    background: Ink.surface-top;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    if root.icon.width > 0: Image {
+        width: root.size;
+        height: root.size;
+        source: root.icon;
+        image-fit: contain;
+        accessible-role: none;
+    }
+    if root.icon.width == 0: Title {
+        width: root.size;
+        height: root.size;
+        text: root.letter;
+        color: Ink.dim;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+}
+
+// The page's main action, full width. [busy]: Material's loading indicator in its place, and no clicks.
+export component Primary inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> busy;
+    in property <bool> force-hover;
+    callback clicked();
+    private property <int> turn;
+    height: 56px;
+    border-radius: 28px;
+    background: root.enabled ? Ink.accent : Ink.surface-top;
+    forward-focus: tap;
+    if !root.busy: Title {
+        text: root.text;
+        color: root.enabled ? Ink.on-accent : Ink.faint;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+    // Material's loading indicator: a turning cookie, 32 px in its 40 px box.
+    if root.busy: Path {
+        width: 32px;
+        height: 32px;
+        commands: Shapes.cookie-turns[root.turn];
+        fill: Ink.on-accent;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        accessible-role: none;
+    }
+    Timer {
+        interval: 60ms;
+        running: root.busy && !Motion.reduced;
+        triggered => {
+            root.turn = Math.mod(root.turn + 1, Shapes.cookie-turns.length);
+        }
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        enabled: root.enabled && !root.busy;
+        force-hover: root.force-hover;
+        ring: Ink.text;
+        accessible-role: button;
+        accessible-label: root.text;
+        accessible-enabled: root.enabled;
+        accessible-description: root.busy ? "Working" : "";
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A text button: the accent's words on nothing, for a dialog's actions and a section's own action.
+export component Secondary {
+    in property <string> text;
+    in property <color> color: Ink.accent;
+    in property <bool> enabled: true;
+    in property <bool> force-hover;
+    callback clicked();
+    min-height: 48px;
+    horizontal-stretch: 0;
+    forward-focus: tap;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        Title {
+            text: root.text;
+            font-weight: 500;
+            color: root.color;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    tap := Tappable {
+        border-radius: 24px;
+        enabled: root.enabled;
+        force-hover: root.force-hover;
+        accessible-role: button;
+        accessible-label: root.text;
+        accessible-enabled: root.enabled;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Space: [size] both ways.
+export component Gap inherits Rectangle {
+    in property <length> size;
+    width: root.size;
+    height: root.size;
+}
+
+// The layer a dialog sits on: the page dimmed behind it (black 60 %, as the desktop's dialogs dim it), the dialog
+// centred. A click beside the dialog or Esc closes it. Make it the window's last child, so it covers everything.
+export component Modal inherits Rectangle {
+    in property <brush> dim: #00000099;
+    // The dialog's name, as screen readers announce it when the focus comes in.
+    in property <string> label;
+    callback close();
+    background: root.dim;
+    accessible-role: groupbox;
+    accessible-label: root.label;
+    init => {
+        keys.focus();
+    }
+    TouchArea {
+        clicked => {
+            root.close();
+        }
+    }
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.close();
+                return accept;
+            }
+            return reject;
+        }
+        VerticalLayout {
+            alignment: center;
+            padding: 24px;
+            HorizontalLayout {
+                alignment: center;
+                // The dialog itself takes its clicks, so they don't close it.
+                TouchArea {
+                    @children
+                }
+            }
+        }
+    }
+}

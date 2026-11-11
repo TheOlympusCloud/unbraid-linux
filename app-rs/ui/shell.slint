@@ -1,0 +1,747 @@
+// The desktop window's own pieces: the sidebar (wordmark, connection, pages, profiles), tips, the shortcuts list, page
+// headers, toolbar pills and the right-click menu.
+
+import { Ink, Type, Overline, Small, Title, Body, Sub, Caption, Headline } from "theme.slint";
+import { Icons, Icon, Shapes } from "icons.slint";
+import { Metrics, Tappable, Keys, Wordmark, Secondary, Modal } from "components.slint";
+
+export { Keys }
+
+// A page of the window as the sidebar lists it: its name, its icon (from Icons) and its keys.
+export struct NavPage {
+    label: string,
+    icon: string,
+    keys: string,
+}
+
+// A saved profile as the sidebar's chips show it: [in-use] is the one running, [shown] the one Routes shows.
+export struct ProfileChip {
+    name: string,
+    in-use: bool,
+    shown: bool,
+}
+
+// One of the window's shortcuts: what it does, and its keys.
+export struct Shortcut {
+    what: string,
+    keys: string,
+}
+
+// Where the VPN stands.
+export enum Phase { off, connecting, on, paused }
+
+// What the window's keys reach: its pages, and every shortcut as the shortcuts list shows them.
+export global Desk {
+    out property <[NavPage]> pages: [
+        { label: "Routes", icon: Icons.routes, keys: "Ctrl+1" },
+        { label: "Apps", icon: Icons.apps, keys: "Ctrl+2" },
+        { label: "Stats", icon: Icons.stats, keys: "Ctrl+3" },
+        { label: "Settings", icon: Icons.sliders, keys: "Ctrl+," },
+    ];
+    out property <[Shortcut]> shortcuts: [
+        { what: "Connect or disconnect", keys: "Ctrl+Shift+C" },
+        { what: "Pause 15 minutes", keys: "Ctrl+Shift+P" },
+        { what: "Routes", keys: "Ctrl+1" },
+        { what: "Apps", keys: "Ctrl+2" },
+        { what: "Stats", keys: "Ctrl+3" },
+        { what: "Settings", keys: "Ctrl+," },
+        { what: "Search apps", keys: "Ctrl+F" },
+        { what: "New route", keys: "Ctrl+N" },
+        { what: "Close the open page or dialog", keys: "Esc" },
+        { what: "Close the window", keys: "Ctrl+W" },
+        { what: "Quit", keys: "Ctrl+Q" },
+        { what: "This list", keys: "Ctrl+/" },
+    ];
+}
+
+// A name on hover, as Tip shows it; on its own for previews.
+export component TipBubble inherits Rectangle {
+    in property <string> text;
+    background: Ink.text;
+    border-radius: 8px;
+    HorizontalLayout {
+        padding-left: 9px;
+        padding-right: 9px;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        Caption {
+            text: root.text;
+            color: Ink.ground;
+        }
+    }
+}
+
+// A name on hover, for an icon that shows none (the folded sidebar). It shows after Slint's tooltip delay, beside the
+// pointer.
+export component Tip inherits Rectangle {
+    in property <string> text;
+    HorizontalLayout {
+        @children
+    }
+    Tooltip {
+        TipBubble {
+            text: root.text;
+        }
+    }
+}
+
+// The menu's panel: the app's colours, Material's 8 px above and below, as wide as its widest row.
+export component MenuCard inherits Rectangle {
+    background: Ink.surface-top;
+    border-radius: 14px;
+    min-width: 112px;
+    max-width: 280px;
+    VerticalLayout {
+        padding-top: 8px;
+        padding-bottom: 8px;
+        @children
+    }
+}
+
+// A menu at a right click: show() it after setting x and y (the click, in the parent's coordinates). It closes on a
+// click, inside or out, and on Esc; give it MenuItems and MenuLabels.
+export component ClickMenu inherits PopupWindow {
+    MenuCard {
+        @children
+    }
+}
+
+// One row of a menu: an icon (or the children, for a mark such as a RouteMark) at its start, then the text, and at its
+// end a check in the accent when [checked], or else its [keys].
+export component MenuItem {
+    in property <string> text;
+    in property <string> icon;
+    in property <bool> checked;
+    in property <string> keys;
+    in property <color> color: Ink.text;
+    in property <bool> enabled: true;
+    in property <bool> force-hover;
+    callback clicked();
+    private property <color> ink: self.enabled ? self.color : Ink.faint;
+    height: 38px;
+    forward-focus: tap;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        cross-axis-alignment: center;
+        HorizontalLayout {
+            min-width: 24px;
+            cross-axis-alignment: center;
+            if root.icon != "": Icon {
+                icon: root.icon;
+                size: 18px;
+                tint: root.ink;
+            }
+            @children
+        }
+        Sub {
+            horizontal-stretch: 1;
+            text: root.text;
+            color: root.ink;
+            overflow: elide;
+            accessible-role: none;
+        }
+        if root.checked: Icon {
+            icon: Icons.check;
+            size: 18px;
+            tint: Ink.accent;
+        }
+        if !root.checked && root.keys != "": Small {
+            text: root.keys;
+            color: Ink.faint;
+            accessible-role: none;
+        }
+    }
+    tap := Tappable {
+        enabled: root.enabled;
+        force-hover: root.force-hover;
+        accessible-role: button;
+        accessible-label: root.text;
+        accessible-enabled: root.enabled;
+        accessible-checkable: root.checked;
+        accessible-checked: root.checked;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A menu's section name.
+export component MenuLabel inherits HorizontalLayout {
+    in property <string> text;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-top: 8px;
+    padding-bottom: 4px;
+    Overline {
+        text: root.text.to-uppercase();
+        color: Ink.dim;
+    }
+}
+
+// The power button: Material's nine-sided cookie in the connection's colour, the power sign cut in the ground's.
+component PowerButton inherits Rectangle {
+    in property <length> size;
+    in property <color> ink;
+    in property <string> label;
+    // Shown on hover, where the sidebar is a rail and names nothing.
+    in property <string> tip;
+    in property <bool> force-hover;
+    callback clicked();
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    forward-focus: tap;
+    Path {
+        width: root.size;
+        height: root.size;
+        commands: Shapes.cookie;
+        fill: root.ink;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        accessible-role: none;
+    }
+    Icon {
+        icon: Icons.power;
+        size: root.size > 40px ? 24px : 20px;
+        tint: Ink.ground;
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        cursor: MouseCursor.pointer;
+        force-hover: root.force-hover;
+        accessible-role: button;
+        accessible-label: root.label;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+    if root.tip != "": Tooltip {
+        TipBubble {
+            text: root.tip;
+        }
+    }
+}
+
+// The connection, as the sidebar keeps it in view on every page: its state, and the power button. Off or paused, the
+// button connects; on or connecting, it opens Pause and Disconnect.
+export component Connection {
+    in property <Phase> phase;
+    // The default route's exit ("Direct" when it has none), and the VPN's summary line.
+    in property <string> exit: "Direct";
+    in property <string> summary;
+    in property <bool> wide: true;
+    in property <bool> force-hover;
+    callback connect();
+    callback pause();
+    callback disconnect();
+    private property <bool> on: self.phase == Phase.on || self.phase == Phase.connecting;
+    private property <string> label: self.phase == Phase.on ? "Protected"
+        : self.phase == Phase.paused ? "Paused"
+        : self.phase == Phase.connecting ? "Connecting" : "Not connected";
+    private property <color> state-color: self.phase == Phase.on ? Ink.good
+        : self.phase == Phase.paused ? Ink.accent
+        : self.phase == Phase.off ? Ink.bad : Ink.dim;
+    Rectangle {
+        background: root.wide ? Ink.surface : transparent;
+        border-radius: 22px;
+        HorizontalLayout {
+            padding: root.wide ? 14px : 0;
+            spacing: 12px;
+            alignment: root.wide ? LayoutAlignment.stretch : LayoutAlignment.center;
+            cross-axis-alignment: center;
+            power := PowerButton {
+                size: root.wide ? 46px : 40px;
+                ink: root.phase == Phase.connecting ? Ink.surface-top : root.state-color;
+                label: root.on ? "Pause or disconnect" : "Connect";
+                tip: root.wide ? "" : root.label;
+                force-hover: root.force-hover;
+                clicked => {
+                    if root.on {
+                        menu.show();
+                    } else {
+                        root.connect();
+                    }
+                }
+            }
+            if root.wide: VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                Overline {
+                    text: root.label.to-uppercase();
+                    color: root.phase == Phase.connecting ? Ink.dim : root.state-color;
+                    overflow: elide;
+                }
+                Body {
+                    text: root.phase == Phase.off ? "Unprotected" : root.exit;
+                    font-size: 14px;
+                    overflow: elide;
+                }
+                Caption {
+                    text: root.phase == Phase.off ? "Click to connect" : root.summary == "" ? " " : root.summary;
+                    overflow: elide;
+                }
+            }
+        }
+    }
+    menu := ClickMenu {
+        x: root.wide ? 14px : (root.width - 40px) / 2;
+        y: root.wide ? (root.height + 46px) / 2 : 40px;
+        if root.phase == Phase.on: MenuItem {
+            text: "Pause 15 minutes";
+            icon: Icons.pause;
+            clicked => {
+                root.pause();
+            }
+        }
+        MenuItem {
+            text: "Disconnect";
+            icon: Icons.power;
+            clicked => {
+                root.disconnect();
+            }
+        }
+    }
+}
+
+// A page in the sidebar: wide, its icon, name and keys; on the rail its icon alone, named on hover.
+export component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <string> icon;
+    in property <string> keys;
+    in property <bool> selected;
+    in property <bool> wide: true;
+    in property <bool> force-hover;
+    callback clicked();
+    private property <bool> hovered: tap.hovered;
+    height: root.wide ? 42px : 44px;
+    preferred-width: 44px;
+    border-radius: 14px;
+    background: root.selected ? Ink.accent-container : root.hovered ? Ink.surface-high : transparent;
+    forward-focus: tap;
+    HorizontalLayout {
+        padding-left: root.wide ? 12px : 0;
+        padding-right: root.wide ? 12px : 0;
+        spacing: 12px;
+        alignment: root.wide ? LayoutAlignment.stretch : LayoutAlignment.center;
+        cross-axis-alignment: center;
+        Icon {
+            icon: root.icon;
+            size: 22px;
+            tint: root.selected ? Ink.accent : root.hovered ? Ink.text : Ink.dim;
+        }
+        if root.wide: Body {
+            horizontal-stretch: 1;
+            text: root.label;
+            color: root.selected || root.hovered ? Ink.text : Ink.dim;
+            accessible-role: none;
+        }
+        if root.wide: Small {
+            text: root.keys;
+            color: Ink.faint;
+            accessible-role: none;
+        }
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        cursor: MouseCursor.pointer;
+        force-hover: root.force-hover;
+        accessible-role: tab;
+        accessible-label: root.label;
+        accessible-description: root.keys;
+        accessible-item-selectable: true;
+        accessible-item-selected: root.selected;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+    if !root.wide: Tooltip {
+        TipBubble {
+            text: root.label + "  " + root.keys;
+        }
+    }
+}
+
+// A small text link in the accent or the faint ink: the sidebar's Manage and Shortcuts.
+component Link inherits Rectangle {
+    in property <string> label;
+    callback clicked();
+    border-radius: 8px;
+    horizontal-stretch: 0;
+    forward-focus: tap;
+    HorizontalLayout {
+        @children
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        cursor: MouseCursor.pointer;
+        accessible-role: button;
+        accessible-label: root.label;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A saved profile's chip: filled when in use, outlined in the accent when it's the one Routes shows.
+component Chip inherits Rectangle {
+    in property <ProfileChip> chip;
+    callback clicked();
+    border-radius: 16px;
+    background: root.chip.in-use ? Ink.text : transparent;
+    border-width: root.chip.in-use ? 0 : 1px;
+    border-color: root.chip.shown ? Ink.accent : Ink.line;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+        Caption {
+            text: root.chip.name;
+            color: root.chip.in-use ? Ink.ground : root.chip.shown ? Ink.text : Ink.dim;
+            accessible-role: none;
+        }
+    }
+    Tappable {
+        border-radius: root.border-radius;
+        cursor: MouseCursor.pointer;
+        accessible-role: button;
+        accessible-label: root.chip.in-use ? root.chip.name + ", in use" : "Show " + root.chip.name;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// The window's navigation: the wordmark, the connection with its power button, the pages, then the profiles. Wide, it
+// names everything; below Metrics.wide of window width, give it wide: false and it folds to a rail of icons whose names
+// show on hover.
+export component Sidebar {
+    in property <bool> wide: true;
+    in property <[NavPage]> pages: Desk.pages;
+    // The page shown, as an index into [pages].
+    in property <int> current;
+    in property <Phase> phase;
+    in property <string> exit: "Direct";
+    in property <string> summary;
+    in property <[ProfileChip]> profiles;
+    in property <string> version;
+    callback page-clicked(index: int);
+    callback connect();
+    callback pause();
+    callback disconnect();
+    // Manage (or Save… with no profile yet): the profiles page on Routes.
+    callback manage-profiles();
+    // A chip: Routes shows that profile.
+    callback profile-clicked(name: string);
+    callback shortcuts();
+    accessible-role: navigation;
+    accessible-label: "Unbraid by TheOlympus";
+    HorizontalLayout {
+        Rectangle {
+            width: root.wide ? 248px : 72px;
+            background: Ink.bar;
+            VerticalLayout {
+                padding-left: root.wide ? 14px : 12px;
+                padding-right: root.wide ? 14px : 12px;
+                padding-top: 20px;
+                padding-bottom: 20px;
+                // The app is Unbraid by TheOlympus: the maker's name stays quiet under the logo.
+                if root.wide: VerticalLayout {
+                    padding-left: 10px;
+                    padding-bottom: 4px;
+                    HorizontalLayout {
+                        alignment: start;
+                        Wordmark {
+                            size: 30px;
+                            accessible-label: "Unbraid by TheOlympus";
+                        }
+                    }
+                    Small {
+                        text: "by TheOlympus";
+                        color: Ink.dim;
+                        accessible-role: none;
+                    }
+                }
+                Connection {
+                    wide: root.wide;
+                    phase: root.phase;
+                    exit: root.exit;
+                    summary: root.summary;
+                    connect => {
+                        root.connect();
+                    }
+                    pause => {
+                        root.pause();
+                    }
+                    disconnect => {
+                        root.disconnect();
+                    }
+                }
+                Rectangle {
+                    height: root.wide ? 20px : 16px;
+                }
+                VerticalLayout {
+                    spacing: 3px;
+                    cross-axis-alignment: root.wide ? CrossAxisAlignment.stretch : CrossAxisAlignment.center;
+                    accessible-role: tab-list;
+                    accessible-label: "Pages";
+                    for page[index] in root.pages: NavItem {
+                        label: page.label;
+                        icon: page.icon;
+                        keys: page.keys;
+                        selected: index == root.current;
+                        wide: root.wide;
+                        clicked => {
+                            root.page-clicked(index);
+                        }
+                    }
+                }
+                Rectangle {
+                    vertical-stretch: 1;
+                }
+                if root.wide: HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 4px;
+                    padding-bottom: 8px;
+                    cross-axis-alignment: center;
+                    Overline {
+                        horizontal-stretch: 1;
+                        text: "PROFILE";
+                        color: Ink.dim;
+                    }
+                    Link {
+                        label: root.profiles.length == 0 ? "Save…" : "Manage";
+                        clicked => {
+                            root.manage-profiles();
+                        }
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 6px;
+                            padding-top: 2px;
+                            padding-bottom: 2px;
+                            Caption {
+                                text: root.profiles.length == 0 ? "Save…" : "Manage";
+                                color: Ink.accent;
+                                accessible-role: none;
+                            }
+                        }
+                    }
+                }
+                if root.wide && root.profiles.length == 0: HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    Caption {
+                        text: "Save this setup to switch back to it in one click.";
+                        color: Ink.faint;
+                        wrap: word-wrap;
+                    }
+                }
+                if root.wide && root.profiles.length > 0: FlexboxLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    spacing: 6px;
+                    for chip in root.profiles: Chip {
+                        chip: chip;
+                        clicked => {
+                            root.profile-clicked(chip.name);
+                        }
+                    }
+                }
+                if root.wide: HorizontalLayout {
+                    padding-top: 14px;
+                    padding-left: 10px;
+                    padding-right: 6px;
+                    cross-axis-alignment: center;
+                    Small {
+                        horizontal-stretch: 1;
+                        text: root.version;
+                        color: Ink.faint;
+                    }
+                    Link {
+                        label: "Shortcuts";
+                        clicked => {
+                            root.shortcuts();
+                        }
+                        HorizontalLayout {
+                            padding: 4px;
+                            spacing: 6px;
+                            Small {
+                                text: "Shortcuts";
+                                color: Ink.faint;
+                                accessible-role: none;
+                            }
+                            Keys {
+                                keys: "Ctrl+/";
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Rectangle {
+            width: 1px;
+            background: Ink.surface-high;
+        }
+    }
+}
+
+// Every shortcut of the window (Ctrl+/), on its modal layer: the window's last child.
+export component ShortcutsDialog inherits Modal {
+    in property <[Shortcut]> shortcuts: Desk.shortcuts;
+    label: "Keyboard shortcuts";
+    Rectangle {
+        min-width: 380px;
+        preferred-width: 460px;
+        max-width: 460px;
+        border-radius: 28px;
+        background: Ink.surface;
+        VerticalLayout {
+            padding: 24px;
+            spacing: 4px;
+            HorizontalLayout {
+                padding-bottom: 8px;
+                Overline {
+                    text: "KEYBOARD SHORTCUTS";
+                    color: Ink.dim;
+                }
+            }
+            for shortcut in root.shortcuts: HorizontalLayout {
+                height: 32px;
+                cross-axis-alignment: center;
+                Sub {
+                    horizontal-stretch: 1;
+                    text: shortcut.what;
+                    color: Ink.text;
+                }
+                Keys {
+                    keys: shortcut.keys;
+                }
+            }
+            HorizontalLayout {
+                padding-top: 12px;
+                alignment: end;
+                Secondary {
+                    text: "Close";
+                    clicked => {
+                        root.close();
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A desktop page's head: what it holds (the overline), its title in the display face, its actions (the children) on the
+// right, sitting on the title's line.
+export component PageHeader {
+    in property <string> overline;
+    in property <string> title;
+    in property <color> overline-color: Ink.dim;
+    in property <string> sub;
+    HorizontalLayout {
+        padding-bottom: 16px;
+        spacing: 10px;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 4px;
+            alignment: end;
+            Overline {
+                text: root.overline.to-uppercase();
+                color: root.overline-color;
+                overflow: elide;
+            }
+            Headline {
+                text: root.title.to-uppercase();
+            }
+            if root.sub != "": Sub {
+                text: root.sub;
+                color: Ink.dim;
+                wrap: word-wrap;
+                max-lines: 2;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: end;
+            HorizontalLayout {
+                spacing: 10px;
+                @children
+            }
+        }
+    }
+}
+
+// A toolbar button's kind: filled for the page's main action, tonal for the rest, outlined for a quiet one.
+export enum PillKind { primary, tonal, outline }
+
+// A toolbar button: a pill, filled for the page's main action.
+export component PillButton inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    in property <PillKind> kind: PillKind.tonal;
+    in property <bool> enabled: true;
+    in property <bool> force-hover;
+    callback clicked();
+    private property <bool> hovered: tap.hovered;
+    private property <color> ink: !self.enabled ? Ink.faint : self.kind == PillKind.primary ? Ink.on-accent : Ink.text;
+    height: 40px;
+    border-radius: 20px;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    background: self.kind == PillKind.primary ? Ink.accent
+        : self.kind == PillKind.tonal ? (self.hovered ? Ink.surface-top : Ink.surface-high)
+        : self.hovered ? Ink.surface-high : transparent;
+    border-width: self.kind == PillKind.outline ? 1px : 0;
+    border-color: Ink.line;
+    forward-focus: tap;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 8px;
+        cross-axis-alignment: center;
+        if root.icon != "": Icon {
+            icon: root.icon;
+            size: 18px;
+            tint: root.ink;
+        }
+        Title {
+            text: root.text;
+            font-size: 14px;
+            color: root.ink;
+            accessible-role: none;
+        }
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        enabled: root.enabled;
+        force-hover: root.force-hover;
+        cursor: MouseCursor.pointer;
+        ring: root.kind == PillKind.primary ? Ink.text : Ink.accent;
+        accessible-role: button;
+        accessible-label: root.text;
+        accessible-enabled: root.enabled;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}

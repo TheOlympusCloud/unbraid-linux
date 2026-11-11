@@ -47,28 +47,37 @@ export global Type {
 }
 
 // The type scale: headline (display, 44), overline and code and small (mono, 12), title and body (sans, 16), sub (14),
-// caption (13).
+// caption (13). A line is its face's own height (1.197 em display, 1.2 mono, 1.275 sans) rounded to the nearest pixel,
+// as the approved look has it; Slint would round it up, a pixel taller.
 export component Headline inherits Text {
+    line-height-factor: (Math.round(self.font-size * 1.197 / 1px) - 0.01) / (self.font-size * 1.197 / 1px);
     font-family: Type.display; font-weight: 900; font-size: 44px; color: Ink.text;
 }
 export component Overline inherits Text {
+    line-height-factor: (Math.round(self.font-size * 1.2 / 1px) - 0.01) / (self.font-size * 1.2 / 1px);
     font-family: Type.mono; font-size: 12px; letter-spacing: 1.2px; color: Ink.dim;
 }
 export component Code inherits Text {
+    line-height-factor: (Math.round(self.font-size * 1.2 / 1px) - 0.01) / (self.font-size * 1.2 / 1px);
     font-family: Type.mono; font-weight: 500; font-size: 12px; color: Ink.text;
 }
 export component Small inherits Text {
+    line-height-factor: (Math.round(self.font-size * 1.2 / 1px) - 0.01) / (self.font-size * 1.2 / 1px);
     font-family: Type.mono; font-size: 12px; color: Ink.dim;
 }
 export component Title inherits Text {
+    line-height-factor: (Math.round(self.font-size * 1.275 / 1px) - 0.01) / (self.font-size * 1.275 / 1px);
     font-family: Type.sans; font-weight: 600; font-size: 16px; color: Ink.text;
 }
 export component Body inherits Text {
+    line-height-factor: (Math.round(self.font-size * 1.275 / 1px) - 0.01) / (self.font-size * 1.275 / 1px);
     font-family: Type.sans; font-weight: 500; font-size: 16px; color: Ink.text;
 }
 export component Sub inherits Text {
+    line-height-factor: (Math.round(self.font-size * 1.275 / 1px) - 0.01) / (self.font-size * 1.275 / 1px);
     font-family: Type.sans; font-size: 14px; color: Ink.dim;
 }
 export component Caption inherits Text {
+    line-height-factor: (Math.round(self.font-size * 1.275 / 1px) - 0.01) / (self.font-size * 1.275 / 1px);
     font-family: Type.sans; font-size: 13px; color: Ink.dim;
 }
