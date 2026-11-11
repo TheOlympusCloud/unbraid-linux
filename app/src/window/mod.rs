@@ -57,7 +57,7 @@ pub struct State {
     pub shortcuts: bool,
     /// The welcome's whole introduction (a new install) or only the terms; read once, when it first shows.
     pub fresh: Option<bool>,
-    /// It was connected since the window was hidden ([`ds::quits_when_hidden`]).
+    /// It was on at a redraw, and no redraw has seen it off since ([`ds::quits_when_hidden`]).
     pub was_on: bool,
     /// A Tailscale sign-in link to ask about (a host other than the control server's), or one refused.
     pub ts: Option<crate::ts_login::Check>,
@@ -822,9 +822,7 @@ impl Win {
         let visible = VISIBLE.load(Ordering::SeqCst);
         {
             let mut s = self.s.borrow_mut();
-            if vpn.phase != vpn::Phase::Off {
-                s.was_on = true;
-            } else if ds::quits_when_hidden(visible, s.was_on, tray_shown()) {
+            if ds::quits_when_hidden(visible, vpn.phase != vpn::Phase::Off, &mut s.was_on, tray_shown()) {
                 drop(s);
                 quit();
                 return;

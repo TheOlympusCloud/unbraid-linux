@@ -114,10 +114,16 @@ pub fn close_hides(close_to_tray: bool, tray: bool, connected: bool) -> bool {
     close_to_tray && (tray || connected)
 }
 
-/// Whether unbraid quits once its window is hidden and nothing runs any more (`was_on`: it was connected, then was
-/// disconnected from the tray or the command line). With a tray there's a way back, whatever closing the window does.
-pub fn quits_when_hidden(visible: bool, was_on: bool, tray: bool) -> bool {
-    !visible && was_on && !tray
+/// Whether unbraid quits, at a redraw, once its window is hidden and nothing runs any more: it was on (`was_on`, kept
+/// between redraws), then was disconnected from the tray or the command line. With a tray there's a way back, whatever
+/// closing the window does. A connection's end is looked at once: a tray that goes away later (its host restarting)
+/// doesn't end unbraid.
+pub fn quits_when_hidden(visible: bool, on: bool, was_on: &mut bool, tray: bool) -> bool {
+    if on {
+        *was_on = true;
+        return false;
+    }
+    std::mem::take(was_on) && !visible && !tray
 }
 
 /// The place to remember for a window at `x`, `y` (none until the desktop has placed it) and of this size: maximized
@@ -188,10 +194,17 @@ mod tests {
         assert!(!close_hides(true, false, false));
         assert!(!close_hides(false, true, true));
         // Disconnected from the tray while hidden: with a tray it stays, whatever closing the window does; without, it ends.
-        assert!(!quits_when_hidden(false, true, true));
-        assert!(quits_when_hidden(false, true, false));
-        assert!(!quits_when_hidden(true, true, false));
-        assert!(!quits_when_hidden(false, false, false));
+        let quits = |visible, was_on, tray| quits_when_hidden(visible, false, &mut { was_on }, tray);
+        assert!(!quits(false, true, true));
+        assert!(quits(false, true, false));
+        assert!(!quits(true, true, false));
+        assert!(!quits(false, false, false));
+        // The end is looked at once: a tray host that restarts after a connect and a disconnect doesn't end it.
+        let mut was_on = false;
+        assert!(!quits_when_hidden(false, true, &mut was_on, true));
+        assert!(was_on);
+        assert!(!quits_when_hidden(false, false, &mut was_on, true));
+        assert!(!quits_when_hidden(false, false, &mut was_on, false));
     }
 
     /// The window's place: floating as it is, maximized with the size it had, nothing before the desktop places it or full screen.
