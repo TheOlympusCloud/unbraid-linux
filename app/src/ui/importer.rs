@@ -113,9 +113,11 @@ impl Draft {
         let made = if let Some(text) = self.wg.clone() {
             wg_conf::parse(&text, &self.named("WireGuard")).map(|p| Some(server(Some(p), None, None)))
         } else if let Some((text, name)) = self.ovpn.clone() {
-            parse_ovpn(&text, &self.named(&name), self.user.trim(), &self.pass).and_then(|p| Ok(self.accepted(ovpn_weakness(&p)?).then(|| server(None, Some(p), None))))
+            parse_ovpn(&text, &self.named(&name), self.user.trim(), &self.pass)
+                .and_then(|p| Ok(self.accepted(ovpn_weakness(&p)?).then(|| server(None, Some(p), None))))
         } else if let Some(link) = self.link.clone() {
-            parse_ss(link.trim(), &self.named("")).map(|p| self.accepted(ss_weakness(&p)).then(|| server(None, None, Some(p))))
+            parse_ss(link.trim(), &self.named(""))
+                .map(|p| self.accepted(ss_weakness(&p)).then(|| server(None, None, Some(p))))
         } else {
             Ok(None)
         };
@@ -190,7 +192,9 @@ mod tests {
     const KEY: &str = "5p4RkybdRU5uaDi90eu4KZPTFif0lKCg4Qp6t1c4F30=";
 
     fn wg(allowed: &str) -> String {
-        format!("[Interface]\nPrivateKey = {KEY}\nAddress = 10.8.0.2/32\n\n[Peer]\nPublicKey = {KEY}\nEndpoint = 203.0.113.7:51820\nAllowedIPs = {allowed}\n")
+        format!(
+            "[Interface]\nPrivateKey = {KEY}\nAddress = 10.8.0.2/32\n\n[Peer]\nPublicKey = {KEY}\nEndpoint = 203.0.113.7:51820\nAllowedIPs = {allowed}\n"
+        )
     }
 
     /// Files over 64 KB aren't read at all; a file's name, without its extension, names the server.
@@ -206,7 +210,15 @@ mod tests {
         std::fs::write(&big, vec![b'#'; CAP]).unwrap();
         assert!(read_capped(&big).is_some());
         assert_eq!(None, read_capped(&dir.path().join("missing")));
-        assert_eq!(("Home lab", "a.b", "Imported", "noext"), (file_name(&small).as_str(), file_name(Path::new("a.b.conf")).as_str(), file_name(Path::new(".conf")).as_str(), file_name(Path::new("noext")).as_str()));
+        assert_eq!(
+            ("Home lab", "a.b", "Imported", "noext"),
+            (
+                file_name(&small).as_str(),
+                file_name(Path::new("a.b.conf")).as_str(),
+                file_name(Path::new(".conf")).as_str(),
+                file_name(Path::new("noext")).as_str()
+            )
+        );
         assert_eq!(40, file_name(Path::new(&format!("{}.conf", "x".repeat(60)))).len());
     }
 
@@ -218,7 +230,10 @@ mod tests {
         d.file("any", None);
         assert_eq!(None, d.picked(Some(&wg("0.0.0.0/0")), "lab"));
         let p = prompt(&d);
-        assert_eq!(("wg", "Name this server", "lab", "Import", true), (p.kind.as_str(), p.title.as_str(), p.name.as_str(), p.confirm.as_str(), p.ready));
+        assert_eq!(
+            ("wg", "Name this server", "lab", "Import", true),
+            (p.kind.as_str(), p.title.as_str(), p.name.as_str(), p.confirm.as_str(), p.ready)
+        );
         d.edited("  My VPS  ", "", "", "");
         let s = d.import().expect("saved");
         assert_eq!(("My VPS", "WireGuard"), (s.name().as_str(), s.kind()));
@@ -226,7 +241,11 @@ mod tests {
         d.file("wg", Some("PureVPN"));
         assert_eq!(None, d.picked(Some(&wg("0.0.0.0/0")), "nl1"));
         assert_eq!("PureVPN · nl1", d.name);
-        assert_eq!(Some("This config only reaches 10.0.0.0/8; import it under Settings → Home instead".to_string()), d.picked(Some(&wg("10.0.0.0/8")), "lan"), "a split tunnel is no route");
+        assert_eq!(
+            Some("This config only reaches 10.0.0.0/8; import it under Settings → Home instead".to_string()),
+            d.picked(Some(&wg("10.0.0.0/8")), "lan"),
+            "a split tunnel is no route"
+        );
         assert_eq!(Some(UNREADABLE.to_string()), d.picked(None, "x"));
     }
 
@@ -234,7 +253,10 @@ mod tests {
     #[test]
     fn shadowsocks_weak_cipher() {
         use base64::Engine;
-        let link = format!("ss://{}@198.51.100.4:8388#Outline", base64::engine::general_purpose::STANDARD.encode("aes-256-cfb:pw"));
+        let link = format!(
+            "ss://{}@198.51.100.4:8388#Outline",
+            base64::engine::general_purpose::STANDARD.encode("aes-256-cfb:pw")
+        );
         let mut d = Draft::default();
         d.shadowsocks();
         assert!(!prompt(&d).ready, "nothing to import yet");

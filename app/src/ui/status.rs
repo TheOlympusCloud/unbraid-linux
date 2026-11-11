@@ -15,14 +15,26 @@ pub const OLD_LIST_MS: i64 = 60 * 86_400_000;
 /// `setting_up`, its routes `blocked` for a passing reason, a route `dropping` (its warning), its only list published
 /// long ago (`old_list`, that date), its saved server list over a day old (not `list_fresh`), its routes `connected`.
 #[allow(clippy::too_many_arguments)]
-pub fn provider_status(name: &str, used: bool, refused: bool, setting_up: bool, blocked: bool, list_fresh: bool, connected: bool, dropping: Option<&str>, old_list: Option<&str>) -> (Tone, String) {
+pub fn provider_status(
+    name: &str,
+    used: bool,
+    refused: bool,
+    setting_up: bool,
+    blocked: bool,
+    list_fresh: bool,
+    connected: bool,
+    dropping: Option<&str>,
+    old_list: Option<&str>,
+) -> (Tone, String) {
     match () {
         _ if refused => (Tone::Bad, format!("{name} refused this computer. Sign in again")),
         _ if !used => (Tone::Idle, "Not used".into()),
         _ if setting_up => (Tone::Warn, "Setting up your key".into()),
         _ if blocked => (Tone::Warn, "Can't reach its servers right now".into()),
         _ if dropping.is_some() => (Tone::Warn, dropping.unwrap_or_default().into()),
-        _ if old_list.is_some() => (Tone::Warn, format!("Its server list is from {} and may be out of date", old_list.unwrap_or_default())),
+        _ if old_list.is_some() => {
+            (Tone::Warn, format!("Its server list is from {} and may be out of date", old_list.unwrap_or_default()))
+        }
         _ if !list_fresh => (Tone::Warn, "Using an older server list".into()),
         _ if connected => (Tone::Good, "Connected".into()),
         _ => (Tone::Good, "Server list up to date".into()),
@@ -31,7 +43,8 @@ pub fn provider_status(name: &str, used: bool, refused: bool, setting_up: bool, 
 
 /// A catalogue's publication date ([`crate::catalog::set_published`], epoch seconds), e.g. "6 Aug 2026".
 pub fn published_on(epoch_seconds: i64) -> String {
-    chrono::DateTime::from_timestamp(epoch_seconds, 0).map_or_else(|| "an unknown date".into(), |t| t.format("%-d %b %Y").to_string())
+    chrono::DateTime::from_timestamp(epoch_seconds, 0)
+        .map_or_else(|| "an unknown date".into(), |t| t.format("%-d %b %Y").to_string())
 }
 
 #[cfg(test)]
@@ -60,8 +73,14 @@ mod tests {
     #[test]
     fn dropping_warns() {
         let d = "Netherlands keeps dropping. Proton VPN Free may be over its connection limit.";
-        assert_eq!((Tone::Warn, d.to_string()), provider_status("Proton VPN Free", true, false, false, false, false, true, Some(d), None));
-        assert_eq!(Tone::Bad, provider_status("Proton VPN Free", true, true, false, false, true, true, Some(d), None).0);
+        assert_eq!(
+            (Tone::Warn, d.to_string()),
+            provider_status("Proton VPN Free", true, false, false, false, false, true, Some(d), None)
+        );
+        assert_eq!(
+            Tone::Bad,
+            provider_status("Proton VPN Free", true, true, false, false, true, true, Some(d), None).0
+        );
         assert_eq!(Tone::Good, provider_status("Proton VPN Free", true, false, false, false, true, true, None, None).0);
     }
 

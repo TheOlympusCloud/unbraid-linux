@@ -1,9 +1,11 @@
 //! Stats: the hub, its sections and the speed test. The figures are read off the window's thread, again every 30 s.
 
 use super::{
-    AppBar, AppWindow, ChartPart, ChartSeries, DaySpan, Decision, ExitBar, Fact, FlowRow, FlowsView, Gauge, GoButton, HistoryRow, HistoryView, HubView, Ink,
-    JournalView, Lane, LegBar, LegPick, LegResult, Legend, LiveRow, LiveView, Member, MonthMark, Named, NumPart, OffView, Part, Pill, Segment, ServerCard,
-    ServerRow, Share, SpeedBar, SpeedCard, SpeedChoice, SpeedView, StatsPage, Together, TunnelRow, TunnelView, TunnelsView, UsageView, Win, list, post, text, with,
+    AppBar, AppWindow, ChartPart, ChartSeries, DaySpan, Decision, ExitBar, Fact, FlowRow, FlowsView, Gauge, GoButton,
+    HistoryRow, HistoryView, HubView, Ink, JournalView, Lane, LegBar, LegPick, LegResult, Legend, LiveRow, LiveView,
+    Member, MonthMark, Named, NumPart, OffView, Part, Pill, Segment, ServerCard, ServerRow, Share, SpeedBar, SpeedCard,
+    SpeedChoice, SpeedView, StatsPage, Together, TunnelRow, TunnelView, TunnelsView, UsageView, Win, list, post, text,
+    with,
 };
 use crate::model::Setup;
 use crate::ui::stats::{self as logic, Data, Period, SpeedInputs};
@@ -56,11 +58,22 @@ fn part(p: &logic::Part) -> Part {
 
 /// A chart's parts in their colours: the page's ink for each hue, in the theme shown.
 fn columns(page: &StatsPage, v: &[Vec<logic::Part>]) -> ModelRc<ModelRc<ChartPart>> {
-    list(v.iter().map(|c| list(c.iter().map(|p| ChartPart { value: p.value, color: page.invoke_ink(p.hue) }).collect())).collect())
+    list(
+        v.iter()
+            .map(|c| list(c.iter().map(|p| ChartPart { value: p.value, color: page.invoke_ink(p.hue) }).collect()))
+            .collect(),
+    )
 }
 
 fn go_button(g: &logic::GoButton) -> GoButton {
-    GoButton { text: text(&g.text), size: g.size, hue: g.hue, label: text(&g.label), working: g.working, bloom: g.bloom }
+    GoButton {
+        text: text(&g.text),
+        size: g.size,
+        hue: g.hue,
+        label: text(&g.label),
+        working: g.working,
+        bloom: g.bloom,
+    }
 }
 
 fn gauge(g: &logic::Gauge) -> Gauge {
@@ -68,11 +81,19 @@ fn gauge(g: &logic::Gauge) -> Gauge {
 }
 
 fn cards(v: &[logic::SpeedCard]) -> ModelRc<SpeedCard> {
-    list(v.iter().map(|c| SpeedCard { title: text(&c.title), value: text(&c.value), unit: text(&c.unit), active: c.active }).collect())
+    list(
+        v.iter()
+            .map(|c| SpeedCard { title: text(&c.title), value: text(&c.value), unit: text(&c.unit), active: c.active })
+            .collect(),
+    )
 }
 
 fn choices(v: &[logic::Choice]) -> ModelRc<SpeedChoice> {
-    list(v.iter().map(|c| SpeedChoice { id: text(&c.id), code: text(&c.code), hue: c.hue, name: text(&c.name), on: c.on }).collect())
+    list(
+        v.iter()
+            .map(|c| SpeedChoice { id: text(&c.id), code: text(&c.code), hue: c.hue, name: text(&c.name), on: c.on })
+            .collect(),
+    )
 }
 
 fn speed_view(v: &logic::SpeedView) -> SpeedView {
@@ -108,7 +129,18 @@ fn speed_view(v: &logic::SpeedView) -> SpeedView {
             measuring: t.measuring,
             gauge: gauge(&t.gauge),
             exits: t.exits,
-            bars: list(t.bars.iter().map(|b| LegBar { code: text(&b.code), hue: b.hue, frac: b.frac, now: text(&b.now), stopped: b.stopped }).collect()),
+            bars: list(
+                t.bars
+                    .iter()
+                    .map(|b| LegBar {
+                        code: text(&b.code),
+                        hue: b.hue,
+                        frac: b.frac,
+                        now: text(&b.now),
+                        stopped: b.stopped,
+                    })
+                    .collect(),
+            ),
             finished: t.finished,
             error: text(&t.error),
             done: t.done,
@@ -117,7 +149,16 @@ fn speed_view(v: &logic::SpeedView) -> SpeedView {
             results: list(
                 t.results
                     .iter()
-                    .map(|r| LegResult { code: text(&r.code), hue: r.hue, name: text(&r.name), line: text(&r.line), failed: r.failed, down: text(&r.down), up: text(&r.up), ping: text(&r.ping) })
+                    .map(|r| LegResult {
+                        code: text(&r.code),
+                        hue: r.hue,
+                        name: text(&r.name),
+                        line: text(&r.line),
+                        failed: r.failed,
+                        down: text(&r.down),
+                        up: text(&r.up),
+                        ping: text(&r.ping),
+                    })
                     .collect(),
             ),
             heading: text(&t.heading),
@@ -125,7 +166,16 @@ fn speed_view(v: &logic::SpeedView) -> SpeedView {
             picks: list(
                 t.picks
                     .iter()
-                    .map(|k| LegPick { id: text(&k.id), code: text(&k.code), hue: k.hue, name: text(&k.name), sub: text(&k.sub), on: k.on, state: text(&k.state), tone: k.tone })
+                    .map(|k| LegPick {
+                        id: text(&k.id),
+                        code: text(&k.code),
+                        hue: k.hue,
+                        name: text(&k.name),
+                        sub: text(&k.sub),
+                        on: k.on,
+                        state: text(&k.state),
+                        tone: k.tone,
+                    })
                     .collect(),
             ),
             nodes: choices(&t.nodes),
@@ -161,7 +211,13 @@ fn speed_view(v: &logic::SpeedView) -> SpeedView {
 fn set(page: &StatsPage, v: &logic::StatsView, old: Option<&logic::StatsView>) {
     let changed = |f: &dyn Fn(&logic::StatsView) -> bool| old.is_none_or(|o| !f(o));
     page.set_recording(v.recording);
-    page.set_off(OffView { overline: text(&v.off.overline), title: text(&v.off.title), text: text(&v.off.text), button: text(&v.off.button), saved: v.off.saved });
+    page.set_off(OffView {
+        overline: text(&v.off.overline),
+        title: text(&v.off.title),
+        text: text(&v.off.text),
+        button: text(&v.off.button),
+        saved: v.off.saved,
+    });
     page.set_loaded(v.loaded);
     page.set_period(v.period);
     page.set_section(text(&v.section));
@@ -193,12 +249,36 @@ fn set(page: &StatsPage, v: &logic::StatsView, old: Option<&logic::StatsView>) {
             tested: h.tested,
             best: text(&h.best),
             best_line: text(&h.best_line),
-            fastest: list(h.fastest.iter().map(|b| SpeedBar { code: text(&b.code), hue: b.hue, frac: b.frac }).collect()),
+            fastest: list(
+                h.fastest.iter().map(|b| SpeedBar { code: text(&b.code), hue: b.hue, frac: b.frac }).collect(),
+            ),
             legend: list(h.legend.iter().map(|l| Legend { name: text(&l.name), hue: l.hue }).collect()),
             columns: columns(page, &h.columns),
             summary: text(&h.summary),
-            apps: list(h.apps.iter().map(|a| AppBar { name: text(&a.name), code: text(&a.code), hue: a.hue, frac: a.frac, bytes: text(&a.bytes) }).collect()),
-            exits: list(h.exits.iter().map(|e| ExitBar { code: text(&e.code), hue: e.hue, name: text(&e.name), apps: text(&e.apps), bytes: text(&e.bytes) }).collect()),
+            apps: list(
+                h.apps
+                    .iter()
+                    .map(|a| AppBar {
+                        name: text(&a.name),
+                        code: text(&a.code),
+                        hue: a.hue,
+                        frac: a.frac,
+                        bytes: text(&a.bytes),
+                    })
+                    .collect(),
+            ),
+            exits: list(
+                h.exits
+                    .iter()
+                    .map(|e| ExitBar {
+                        code: text(&e.code),
+                        hue: e.hue,
+                        name: text(&e.name),
+                        apps: text(&e.apps),
+                        bytes: text(&e.bytes),
+                    })
+                    .collect(),
+            ),
         });
     }
     let u = &v.usage;
@@ -221,10 +301,26 @@ fn set(page: &StatsPage, v: &logic::StatsView, old: Option<&logic::StatsView>) {
             empty: text(&l.empty),
             now: num(&l.now),
             sub: text(&l.sub),
-            series: list(l.series.iter().map(|x| ChartSeries { values: list(x.values.clone()), color: page.invoke_ink(x.hue) }).collect()),
+            series: list(
+                l.series
+                    .iter()
+                    .map(|x| ChartSeries { values: list(x.values.clone()), color: page.invoke_ink(x.hue) })
+                    .collect(),
+            ),
             cap: l.cap,
             summary: text(&l.summary),
-            rows: list(l.rows.iter().map(|r| LiveRow { code: text(&r.code), hue: r.hue, name: text(&r.name), via: text(&r.via), now: num(&r.now) }).collect()),
+            rows: list(
+                l.rows
+                    .iter()
+                    .map(|r| LiveRow {
+                        code: text(&r.code),
+                        hue: r.hue,
+                        name: text(&r.name),
+                        via: text(&r.via),
+                        now: num(&r.now),
+                    })
+                    .collect(),
+            ),
         });
     }
     let f = &v.flows;
@@ -245,18 +341,35 @@ fn set(page: &StatsPage, v: &logic::StatsView, old: Option<&logic::StatsView>) {
                         bytes: text(&l.bytes),
                         pct: text(&l.pct),
                         frac: l.frac,
-                        segments: list(l.segments.iter().map(|g| Segment { weight: g.weight, alpha: g.alpha }).collect()),
-                        names: list(l.names.iter().map(|n| Named { name: text(&n.name), bytes: text(&n.bytes) }).collect()),
+                        segments: list(
+                            l.segments.iter().map(|g| Segment { weight: g.weight, alpha: g.alpha }).collect(),
+                        ),
+                        names: list(
+                            l.names.iter().map(|n| Named { name: text(&n.name), bytes: text(&n.bytes) }).collect(),
+                        ),
                         rest: text(&l.rest),
                         selected: l.selected,
                     })
                     .collect(),
             ),
-            pills: list(f.pills.iter().map(|p| Pill { id: text(&p.id), code: text(&p.code), hue: p.hue, text: text(&p.text), on: p.on }).collect()),
+            pills: list(
+                f.pills
+                    .iter()
+                    .map(|p| Pill { id: text(&p.id), code: text(&p.code), hue: p.hue, text: text(&p.text), on: p.on })
+                    .collect(),
+            ),
             rows: list(
                 f.rows
                     .iter()
-                    .map(|r| FlowRow { pkg: text(&r.pkg), letter: text(&r.letter), name: text(&r.name), code: text(&r.code), hue: r.hue, bytes: text(&r.bytes), frac: r.frac })
+                    .map(|r| FlowRow {
+                        pkg: text(&r.pkg),
+                        letter: text(&r.letter),
+                        name: text(&r.name),
+                        code: text(&r.code),
+                        hue: r.hue,
+                        bytes: text(&r.bytes),
+                        frac: r.frac,
+                    })
                     .collect(),
             ),
             more: text(&f.more),
@@ -288,7 +401,16 @@ fn set(page: &StatsPage, v: &logic::StatsView, old: Option<&logic::StatsView>) {
             rows: list(
                 t.rows
                     .iter()
-                    .map(|r| TunnelRow { id: text(&r.id), code: text(&r.code), hue: r.hue, name: text(&r.name), via: text(&r.via), tested: r.tested, test: text(&r.test), frac: r.frac })
+                    .map(|r| TunnelRow {
+                        id: text(&r.id),
+                        code: text(&r.code),
+                        hue: r.hue,
+                        name: text(&r.name),
+                        via: text(&r.via),
+                        tested: r.tested,
+                        test: text(&r.test),
+                        frac: r.frac,
+                    })
                     .collect(),
             ),
         });
@@ -303,7 +425,9 @@ fn set(page: &StatsPage, v: &logic::StatsView, old: Option<&logic::StatsView>) {
             tested: t.tested,
             best: text(&t.best),
             sub: text(&t.sub),
-            servers: list(t.servers.iter().map(|x| ServerRow { name: text(&x.name), pct: text(&x.pct), frac: x.frac }).collect()),
+            servers: list(
+                t.servers.iter().map(|x| ServerRow { name: text(&x.name), pct: text(&x.pct), frac: x.frac }).collect(),
+            ),
         });
     }
     if changed(&|o| o.speed == v.speed) {
@@ -331,7 +455,14 @@ fn set(page: &StatsPage, v: &logic::StatsView, old: Option<&logic::StatsView>) {
                         members: list(
                             r.members
                                 .iter()
-                                .map(|m| Member { code: text(&m.code), hue: m.hue, name: text(&m.name), down: text(&m.down), up: text(&m.up), ping: text(&m.ping) })
+                                .map(|m| Member {
+                                    code: text(&m.code),
+                                    hue: m.hue,
+                                    name: text(&m.name),
+                                    down: text(&m.down),
+                                    up: text(&m.up),
+                                    ping: text(&m.ping),
+                                })
                                 .collect(),
                         ),
                     })
@@ -417,7 +548,13 @@ pub(super) fn wire(w: &AppWindow) {
     });
     p.on_go_together(|| {
         with(|win| {
-            let nearest: IndexSet<String> = win.stats.borrow().last.as_ref().map(|v| v.speed.together.nearest.iter().cloned().collect()).unwrap_or_default();
+            let nearest: IndexSet<String> = win
+                .stats
+                .borrow()
+                .last
+                .as_ref()
+                .map(|v| v.speed.together.nearest.iter().cloned().collect())
+                .unwrap_or_default();
             rt(|| speed_test::go(nearest));
         });
     });
@@ -450,7 +587,8 @@ pub(super) fn show(win: &Win, setup: &Setup, vpn: &VpnState) {
     stats::set_watching(true);
     let now = chrono::Local::now().naive_local();
     read(win, now.date());
-    let labels: IndexMap<String, String> = win.ui.apps.borrow().iter().map(|a| (a.pkg.clone(), a.label.clone())).collect();
+    let labels: IndexMap<String, String> =
+        win.ui.apps.borrow().iter().map(|a| (a.pkg.clone(), a.label.clone())).collect();
     let live = stats::live().borrow().clone();
     let (run, all) = (speed_test::run().borrow().clone(), speed_test::all().borrow().clone());
     let nodes = speed_test::nodes();

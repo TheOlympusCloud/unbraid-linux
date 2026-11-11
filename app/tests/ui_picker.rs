@@ -162,7 +162,8 @@ fn nord_countries() -> Vec<Country> {
 
 /// The set-up app of the approved screenshots: three Nord countries and a WireGuard server; the default favourites.
 fn set_up() -> Setup {
-    let lab = WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
+    let lab =
+        WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
     Setup {
         routes: vec![
             Route::new("nl", Location::country("nord", 153, "NL", "Netherlands")),
@@ -247,7 +248,17 @@ fn row(r: &logic::PickRow) -> PickRow {
 }
 
 fn choices(c: &[logic::Choice]) -> ModelRc<Choice> {
-    ModelRc::new(VecModel::from(c.iter().map(|c| Choice { key: text(&c.key), label: text(&c.label), sub: text(&c.sub), on: c.on, enabled: c.enabled }).collect::<Vec<_>>()))
+    ModelRc::new(VecModel::from(
+        c.iter()
+            .map(|c| Choice {
+                key: text(&c.key),
+                label: text(&c.label),
+                sub: text(&c.sub),
+                on: c.on,
+                enabled: c.enabled,
+            })
+            .collect::<Vec<_>>(),
+    ))
 }
 
 /// The picker's view on its Page global, as the window will set it.
@@ -286,7 +297,12 @@ fn show(shot: &Shot, p: &mut Picker) {
     page.set_hint(text(&v.hint));
     page.set_options_open(v.options_open);
     page.set_groups(choices(&v.groups));
-    page.set_blocking(v.blocking.as_ref().map(|b| Blocking { title: text(&b.title), sub: text(&b.sub), on: b.on, enabled: b.enabled }).unwrap_or_default());
+    page.set_blocking(
+        v.blocking
+            .as_ref()
+            .map(|b| Blocking { title: text(&b.title), sub: text(&b.sub), on: b.on, enabled: b.enabled })
+            .unwrap_or_default(),
+    );
     p.view = v;
 }
 
@@ -364,8 +380,16 @@ fn picker_as_approved() {
         assert_eq!(GROUND, at(&px, 1280, 300, 600), "{file}: the list's ground");
         assert_eq!(SURFACE_HIGH, at(&px, 1280, 759, 300), "{file}: the line before the panel");
         assert_eq!(SURFACE, at(&px, 1280, 900, 400), "{file}: the panel");
-        assert!(near(at(&px, 1280, 60, 400), [0x0b, 0x0e, 0x10]), "{file}: the sidebar, dimmed: {:?}", at(&px, 1280, 60, 400));
-        assert!(near(at(&px, 1280, 300, 232), [0x44, 0x33, 0x27]), "{file}: the chosen tab, in the route's tint: {:?}", at(&px, 1280, 300, 232));
+        assert!(
+            near(at(&px, 1280, 60, 400), [0x0b, 0x0e, 0x10]),
+            "{file}: the sidebar, dimmed: {:?}",
+            at(&px, 1280, 60, 400)
+        );
+        assert!(
+            near(at(&px, 1280, 300, 232), [0x44, 0x33, 0x27]),
+            "{file}: the chosen tab, in the route's tint: {:?}",
+            at(&px, 1280, 300, 232)
+        );
         assert!(inked(&px, 1280, (690, 520, 730, 660), ACCENT) > 100, "{file}: the favourites' stars, filled");
         assert_eq!(SURFACE_HIGH, at(&px, 1280, 400, 740), "{file}: Route options at the bottom");
     }
@@ -383,7 +407,11 @@ fn a_country_beside_the_list() {
     let (shot, state) = open(Picker::new(""), false, true);
     let window = shot.window();
     let scroll = |by: f32| {
-        window.dispatch_event(WindowEvent::PointerScrolled { position: LogicalPosition::new(440.0, 550.0), delta_x: 0.0, delta_y: -by });
+        window.dispatch_event(WindowEvent::PointerScrolled {
+            position: LogicalPosition::new(440.0, 550.0),
+            delta_x: 0.0,
+            delta_y: -by,
+        });
         shoot(&shot, 1280, 800, Duration::from_secs(1));
     };
     shoot(&shot, 1280, 800, Duration::from_secs(1));
@@ -399,9 +427,16 @@ fn a_country_beside_the_list() {
         assert!(p.picks.all_open, "All countries opened");
         assert_eq!(logic::Sheet::Country(81), p.picks.sheet, "Germany's ⋯ opened Germany");
         assert!(p.asked.is_empty(), "nothing was picked: {:?}", p.asked);
-        assert_eq!(vec!["Germany", "Fastest in Germany", "Cities", "Frankfurt", "Berlin", "Hamburg", "Servers"], p.view.panel.iter().map(|r| r.title.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["Germany", "Fastest in Germany", "Cities", "Frankfurt", "Berlin", "Hamburg", "Servers"],
+            p.view.panel.iter().map(|r| r.title.as_str()).collect::<Vec<_>>()
+        );
     }
-    assert!(near(at(&px, 1280, 400, 500), [0x0d, 0x10, 0x12]), "the row under the pointer, hovered: {:?}", at(&px, 1280, 400, 500));
+    assert!(
+        near(at(&px, 1280, 400, 500), [0x0d, 0x10, 0x12]),
+        "the row under the pointer, hovered: {:?}",
+        at(&px, 1280, 400, 500)
+    );
     assert!(inked(&px, 1280, (1080, 400, 1130, 424), ACCENT) > 20, "the servers' Show, in the accent");
     // Show asks for the servers; Hide puts them away; the panel's close button closes it.
     click(window, 1105.0, 412.0);
@@ -452,7 +487,10 @@ fn the_fields_menus() {
     assert_eq!([0x23, 0x2a, 0x2e], at(&px, 1280, 480, 350), "the menu's surface under the field");
     // OpenVPN TCP, the third: a new route only remembers it.
     click(window, 520.0, 341.0 + 2.5 * 48.0);
-    assert_eq!(("OpenVPN TCP".to_string(), vec!["protocol openvpn_tcp false".to_string()]), (state.borrow().view.protocol.clone(), state.borrow().asked.clone()));
+    assert_eq!(
+        ("OpenVPN TCP".to_string(), vec!["protocol openvpn_tcp false".to_string()]),
+        (state.borrow().view.protocol.clone(), state.borrow().asked.clone())
+    );
     shoot(&shot, 1280, 800, Duration::from_secs(1));
     click(window, 280.0, 305.0);
     shoot(&shot, 1280, 800, Duration::from_secs(1));
@@ -476,9 +514,16 @@ fn my_servers() {
     let (shot, state) = open(p, false, true);
     assert!(state.borrow().view.mine, "a route through a saved server opens on My servers");
     let px = render(&shot, 1280, 800, &shots_dir().join("picker-mine.png"));
-    assert!(near(at(&px, 1280, 600, 232), [0x2b, 0x3f, 0x35]), "the chosen tab, in the route's green: {:?}", at(&px, 1280, 600, 232));
+    assert!(
+        near(at(&px, 1280, 600, 232), [0x2b, 0x3f, 0x35]),
+        "the chosen tab, in the route's green: {:?}",
+        at(&px, 1280, 600, 232)
+    );
     let rows: Vec<_> = state.borrow().view.rows.iter().map(|r| r.title.clone()).collect();
-    assert_eq!(vec!["Tailscale exit node", "pi", "nas", "Saved servers", "Home lab", "Add or manage servers in Settings."], rows);
+    assert_eq!(
+        vec!["Tailscale exit node", "pi", "nas", "Saved servers", "Home lab", "Add or manage servers in Settings."],
+        rows
+    );
 }
 
 /// What the window keeps for the sign-in, and the view model's forms.
@@ -527,13 +572,23 @@ fn show_sign_in(c: &Card, s: &SignIn) {
     page.set_sub(text(&v.sub));
     page.set_closable(v.closable);
     page.set_notice(text(&v.notice));
-    page.set_providers(ModelRc::new(VecModel::from(v.providers.iter().map(|p| ProviderRow { id: text(&p.id), name: text(&p.name), fields: text(&p.fields) }).collect::<Vec<_>>())));
+    page.set_providers(ModelRc::new(VecModel::from(
+        v.providers
+            .iter()
+            .map(|p| ProviderRow { id: text(&p.id), name: text(&p.name), fields: text(&p.fields) })
+            .collect::<Vec<_>>(),
+    )));
     let other = |o: signin::Other| match o {
         signin::Other::File => Other::File,
         signin::Other::Shadowsocks => Other::Shadowsocks,
         signin::Other::Tailscale => Other::Tailscale,
     };
-    page.set_others(ModelRc::new(VecModel::from(v.others.iter().map(|o| OtherRow { other: other(o.other), title: text(&o.title), sub: text(&o.sub) }).collect::<Vec<_>>())));
+    page.set_others(ModelRc::new(VecModel::from(
+        v.others
+            .iter()
+            .map(|o| OtherRow { other: other(o.other), title: text(&o.title), sub: text(&o.sub) })
+            .collect::<Vec<_>>(),
+    )));
     page.set_import_error(text(&v.import_error));
     let f = &v.form;
     let fields = f
@@ -597,7 +652,9 @@ fn sign_in_card(s: SignIn, light: bool) -> (Card, Rc<RefCell<SignIn>>) {
     on!(on_field_changed, |s, id, key, t| {
         s.form.insert(signin::form_key(&id, &key), t.to_string());
     });
-    on!(on_submit, |s, id| s.asked.push(format!("submit {id} {:?}", signin::submit(&s.inputs()).map(|a| a.into_values().collect::<Vec<_>>()))));
+    on!(on_submit, |s, id| s
+        .asked
+        .push(format!("submit {id} {:?}", signin::submit(&s.inputs()).map(|a| a.into_values().collect::<Vec<_>>()))));
     on!(on_close, |s| s.asked.push("close".into()));
     on!(on_import_file, |s| s.asked.push("import-file".into()));
     on!(on_shadowsocks, |s| s.asked.push("shadowsocks".into()));
@@ -613,7 +670,11 @@ fn sign_in_card(s: SignIn, light: bool) -> (Card, Rc<RefCell<SignIn>>) {
 fn sign_in_as_approved() {
     headless();
     let dir = shots_dir();
-    for (light, file, w, h) in [(false, "sign-in-dark.png", 1280, 800), (true, "sign-in-light.png", 1280, 800), (false, "sign-in-small.png", 880, 600)] {
+    for (light, file, w, h) in [
+        (false, "sign-in-dark.png", 1280, 800),
+        (true, "sign-in-light.png", 1280, 800),
+        (false, "sign-in-small.png", 880, 600),
+    ] {
         let (c, _state) = sign_in_card(SignIn::default(), light);
         let px = render(&c, w, h, &dir.join(file));
         if light {
@@ -641,13 +702,21 @@ fn a_providers_form() {
     shoot(&c, 1280, 800, Duration::from_secs(1));
     click(window, 640.0, 261.0);
     typed(window, "half a token");
-    assert_eq!(Some("half a token"), state.borrow().form.get("nord:token").map(String::as_str), "every key reached the form, the field kept its focus");
+    assert_eq!(
+        Some("half a token"),
+        state.borrow().form.get("nord:token").map(String::as_str),
+        "every key reached the form, the field kept its focus"
+    );
     let px = render(&c, 1280, 800, &shots_dir().join("sign-in-form.png"));
     assert!(near(at(&px, 1280, 640, 769 - 28), ACCENT), "Continue, enabled once filled: {:?}", at(&px, 1280, 640, 741));
     press(window, Key::Return);
     assert_eq!(vec!["submit nord Some([\"half a token\"])"], state.borrow().asked);
     press(window, Key::Escape);
-    assert_eq!((None, true), (state.borrow().step.clone(), state.borrow().form.is_empty()), "Esc stepped back and forgot what was typed");
+    assert_eq!(
+        (None, true),
+        (state.borrow().step.clone(), state.borrow().form.is_empty()),
+        "Esc stepped back and forgot what was typed"
+    );
     let px = shoot(&c, 1280, 800, Duration::from_secs(1));
     assert_eq!(SURFACE, at(&px, 1280, 640, 190), "the list again");
 }
@@ -657,13 +726,26 @@ fn a_providers_form() {
 fn a_providers_question() {
     headless();
     let mut png = std::io::Cursor::new(Vec::new());
-    image::RgbImage::from_fn(240, 80, |x, y| if (x / 12 + y / 12) % 2 == 0 { image::Rgb([40, 40, 40]) } else { image::Rgb([200, 200, 200]) })
-        .write_to(&mut png, image::ImageFormat::Png)
-        .expect("encode a PNG");
+    image::RgbImage::from_fn(240, 80, |x, y| {
+        if (x / 12 + y / 12) % 2 == 0 { image::Rgb([40, 40, 40]) } else { image::Rgb([200, 200, 200]) }
+    })
+    .write_to(&mut png, image::ImageFormat::Png)
+    .expect("encode a PNG");
     let mut s = SignIn { step: Some("ivpn".into()), ..SignIn::default() };
     s.form.insert("ivpn:account".into(), "i-AB12-CD34-EF56".into());
-    let field = unbraid::providers::Field { secret: false, ..unbraid::providers::Field::new("captcha", "Characters in the picture") };
-    s.challenges.insert("ivpn".into(), unbraid::error::Challenge { message: "Type the characters in the picture to continue.".into(), field, image: Some(png.into_inner()), keep: IndexMap::new() });
+    let field = unbraid::providers::Field {
+        secret: false,
+        ..unbraid::providers::Field::new("captcha", "Characters in the picture")
+    };
+    s.challenges.insert(
+        "ivpn".into(),
+        unbraid::error::Challenge {
+            message: "Type the characters in the picture to continue.".into(),
+            field,
+            image: Some(png.into_inner()),
+            keep: IndexMap::new(),
+        },
+    );
     s.errors.insert("ivpn".into(), "Type the characters in the picture to continue.".into());
     let (c, state) = sign_in_card(s, false);
     let px = render(&c, 1280, 800, &shots_dir().join("sign-in-question.png"));

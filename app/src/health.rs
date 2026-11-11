@@ -51,12 +51,18 @@ pub async fn reachable(tag: &str) -> bool {
 /// A TLS handshake with a well-known site through `tag`, over the app's own way into that exit ([`crate::probe`]).
 async fn https(tag: &str) -> bool {
     let t = tag.to_string();
-    probe::cancellable(move |raw| probe::open(&t, "www.google.com", 443, 5_000, raw, None).map(|c| c.close())).await.is_ok()
+    probe::cancellable(move |raw| probe::open(&t, "www.google.com", 443, 5_000, raw, None).map(|c| c.close()))
+        .await
+        .is_ok()
 }
 
 /// Tunnels a round's failures may be blamed on: none when every checked tunnel failed and so did a plain HTTPS request
 /// over the computer's own network (`direct`), since then it is that network that is down, not the servers.
-pub async fn blame(down: IndexSet<String>, checked: &IndexSet<String>, direct: impl AsyncFnOnce() -> bool) -> Option<IndexSet<String>> {
+pub async fn blame(
+    down: IndexSet<String>,
+    checked: &IndexSet<String>,
+    direct: impl AsyncFnOnce() -> bool,
+) -> Option<IndexSet<String>> {
     if !down.is_empty() && down == *checked && !direct().await { None } else { Some(down) }
 }
 
@@ -70,7 +76,8 @@ pub fn record(history: &[bool], ok: bool) -> Vec<bool> {
 /// since. One that stays down is moved to another server instead; this catches the ones that come and go, like two
 /// tunnels taking turns on an account with one connection.
 pub fn dropping(history: &[bool]) -> bool {
-    history.iter().filter(|ok| !**ok).count() >= 3 && !(history.len() >= 3 && history[history.len() - 3..].iter().all(|ok| *ok))
+    history.iter().filter(|ok| !**ok).count() >= 3
+        && !(history.len() >= 3 && history[history.len() - 3..].iter().all(|ok| *ok))
 }
 
 /// A tunnel's run of failed checks: how many, since when and the latest (elapsed-realtime ms). None = all well.
@@ -82,7 +89,11 @@ pub struct Streak {
 }
 
 pub fn next(s: &Streak, ok: bool, now: i64) -> Streak {
-    if ok { Streak::default() } else { Streak { fails: s.fails + 1, since: if s.fails == 0 { now } else { s.since }, last: now } }
+    if ok {
+        Streak::default()
+    } else {
+        Streak { fails: s.fails + 1, since: if s.fails == 0 { now } else { s.since }, last: now }
+    }
 }
 
 /// When a failing tunnel is checked again on its own: twice [`QUICK`] apart, then once [`RECOVER`] after its first

@@ -22,7 +22,9 @@ use crate::ui::{Ui, tour};
 use crate::vpn::{self, VpnState};
 use crate::{APP, VERSION_NAME, app, desktop, stats as recorded, tray};
 use slint::winit_030::{WinitWindowAccessor, winit};
-use slint::{CloseRequestResponse, ComponentHandle, Global, LogicalPosition, LogicalSize, ModelRc, SharedString, VecModel};
+use slint::{
+    CloseRequestResponse, ComponentHandle, Global, LogicalPosition, LogicalSize, ModelRc, SharedString, VecModel,
+};
 use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
@@ -210,7 +212,9 @@ pub fn run(args: &Args, socket: &Path) {
     // The engine's worker and statistics end with the app; the tunnels end with it too.
     app::runtime().spawn(async {
         use tokio::signal::unix::{SignalKind, signal};
-        let (Ok(mut term), Ok(mut int)) = (signal(SignalKind::terminate()), signal(SignalKind::interrupt())) else { return };
+        let (Ok(mut term), Ok(mut int)) = (signal(SignalKind::terminate()), signal(SignalKind::interrupt())) else {
+            return;
+        };
         tokio::select! {
             _ = term.recv() => {}
             _ = int.recv() => {}
@@ -236,7 +240,8 @@ pub fn run(args: &Args, socket: &Path) {
     follow_theme();
     // The window's last place, if it is still on a screen, before it shows: the screens are known once the loop runs.
     let placed = slint::winit_030::invoke_from_active_event_loop(|el| {
-        let screens: Vec<ds::Rect> = el.available_monitors().map(|m| screen(m.position(), m.size(), m.scale_factor())).collect();
+        let screens: Vec<ds::Rect> =
+            el.available_monitors().map(|m| screen(m.position(), m.size(), m.scale_factor())).collect();
         with(|win| {
             win.place(&screens);
             if VISIBLE.load(Ordering::SeqCst) {
@@ -253,7 +258,12 @@ pub fn run(args: &Args, socket: &Path) {
 /// A screen's area in the units of [`ds::Placement`] (logical pixels), from what the windowing system says of it.
 fn screen(at: winit::dpi::PhysicalPosition<i32>, size: winit::dpi::PhysicalSize<u32>, scale: f64) -> ds::Rect {
     let (at, size) = (at.to_logical::<f64>(scale), size.to_logical::<f64>(scale));
-    ds::Rect { x: at.x.round() as i32, y: at.y.round() as i32, width: size.width.round() as i32, height: size.height.round() as i32 }
+    ds::Rect {
+        x: at.x.round() as i32,
+        y: at.y.round() as i32,
+        width: size.width.round() as i32,
+        height: size.height.round() as i32,
+    }
 }
 
 /// Ends the app: what is still to be saved, then its connection (up to 10 s), off the window's thread and the runtime.
@@ -271,7 +281,10 @@ fn ready() -> bool {
     let s = app::store().current();
     tour::terms_ok()
         && tour::vpn_ok()
-        && (!app::store().current_accounts().is_empty() || s.routes.iter().any(|r| r.imported()) || !s.servers.is_empty() || s.home.tailscale)
+        && (!app::store().current_accounts().is_empty()
+            || s.routes.iter().any(|r| r.imported())
+            || !s.servers.is_empty()
+            || s.home.tailscale)
 }
 
 /// Shows the window, from any thread.
@@ -601,7 +614,15 @@ impl Win {
         let w = self.w.window();
         let (k, max) = (w.scale_factor(), w.is_maximized());
         let (at, size) = (w.position().to_logical(k), w.size().to_logical(k));
-        let to = ds::to_save(ds::placement(), Some(at.x as i32), Some(at.y as i32), size.width as i32, size.height as i32, max, !max && !w.is_fullscreen());
+        let to = ds::to_save(
+            ds::placement(),
+            Some(at.x as i32),
+            Some(at.y as i32),
+            size.width as i32,
+            size.height as i32,
+            max,
+            !max && !w.is_fullscreen(),
+        );
         if let Some(p) = to {
             ds::save(p);
         }
@@ -719,7 +740,11 @@ impl Win {
         let (ui, pkg) = (self.ui.clone(), pkg.to_string());
         app::runtime().spawn(async move {
             let Some(img) = ui.icon(&pkg).await else { return };
-            let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(img.as_raw(), img.width(), img.height());
+            let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+                img.as_raw(),
+                img.width(),
+                img.height(),
+            );
             post(move |win| {
                 win.icons.borrow_mut().insert(pkg, slint::Image::from_rgba8(buf));
                 // The rows are set again, so they ask for their icons again.
@@ -827,7 +852,13 @@ impl Win {
         if std::mem::replace(&mut self.s.borrow_mut().layer, layer) != layer {
             w.invoke_refocus();
         }
-        w.set_ts_host(ts.as_ref().filter(|c| c.verdict == crate::ts_login::Verdict::Ask).and_then(|c| c.host.as_deref()).unwrap_or("").into());
+        w.set_ts_host(
+            ts.as_ref()
+                .filter(|c| c.verdict == crate::ts_login::Verdict::Ask)
+                .and_then(|c| c.host.as_deref())
+                .unwrap_or("")
+                .into(),
+        );
         w.set_ts_refused(ts.as_ref().is_some_and(|c| c.verdict == crate::ts_login::Verdict::Refuse));
         self.sidebar(&setup, &vpn);
         // The page shown before lets go of what it follows (its clock, its samples, its checks), also when the window
@@ -881,7 +912,11 @@ impl Win {
         let chips: Vec<ProfileChip> = setup
             .profiles
             .iter()
-            .map(|p| ProfileChip { name: text(&p.name), in_use: setup.profile.as_ref() == Some(&p.name), shown: shown == Some(&p.name) })
+            .map(|p| ProfileChip {
+                name: text(&p.name),
+                in_use: setup.profile.as_ref() == Some(&p.name),
+                shown: shown == Some(&p.name),
+            })
             .collect();
         let mut st = self.start.borrow_mut();
         if st.chips != chips {
@@ -909,14 +944,20 @@ pub(crate) fn sync<T: Clone + PartialEq + 'static>(model: &VecModel<T>, rows: Ve
 /// The logo, for the desktop's task bar.
 fn logo() -> slint::Image {
     use resvg::{tiny_skia, usvg};
-    let Ok(tree) = usvg::Tree::from_str(include_str!("../../ui/unbraid.svg"), &usvg::Options::default()) else { return slint::Image::default() };
+    let Ok(tree) = usvg::Tree::from_str(include_str!("../../ui/unbraid.svg"), &usvg::Options::default()) else {
+        return slint::Image::default();
+    };
     let Some(mut p) = tiny_skia::Pixmap::new(128, 128) else { return slint::Image::default() };
     let k = 128.0 / tree.size().width().max(tree.size().height());
     resvg::render(&tree, tiny_skia::Transform::from_scale(k, k), &mut p.as_mut());
-    image(128, 128, p.pixels().iter().flat_map(|c| {
-        let c = c.demultiply();
-        [c.red(), c.green(), c.blue(), c.alpha()]
-    }))
+    image(
+        128,
+        128,
+        p.pixels().iter().flat_map(|c| {
+            let c = c.demultiply();
+            [c.red(), c.green(), c.blue(), c.alpha()]
+        }),
+    )
 }
 
 /// Straight RGBA pixels as an image.

@@ -93,7 +93,8 @@ impl Onboarding {
 }
 
 fn state() -> MutexGuard<'static, Onboarding> {
-    static STATE: LazyLock<Mutex<Onboarding>> = LazyLock::new(|| Mutex::new(Onboarding::load(SharedPreferences::named("unbraid_ui").ok())));
+    static STATE: LazyLock<Mutex<Onboarding>> =
+        LazyLock::new(|| Mutex::new(Onboarding::load(SharedPreferences::named("unbraid_ui").ok())));
     STATE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -277,7 +278,10 @@ mod tests {
     #[test]
     fn reads_what_the_earlier_app_wrote() {
         let dir = tempfile::tempdir().unwrap();
-        let p = prefs(dir.path(), "#Tue Nov 10 22:26:00 CET 2026\nleak=1\nleak_snoozes=2\nleak_until=1762800000000\nterms=1\ntour_pending=true\nvpn_disclosure=false\n");
+        let p = prefs(
+            dir.path(),
+            "#Tue Nov 10 22:26:00 CET 2026\nleak=1\nleak_snoozes=2\nleak_until=1762800000000\nterms=1\ntour_pending=true\nvpn_disclosure=false\n",
+        );
         let o = Onboarding::load(Some(p));
         assert!(o.terms_ok && o.tour_pending && !o.vpn_ok);
         assert_eq!((1, 1_762_800_000_000, 2), (o.leak, o.leak_until, o.snoozes));
@@ -337,7 +341,10 @@ mod tests {
         assert_eq!(vec![3, 7, 14, 14], waits);
         assert!(!o.leak_due(1000) && o.leak_due(1000 + 14 * DAY_MS));
         let file = reopen(dir.path());
-        assert_eq!((1, 4, 1000 + 14 * DAY_MS), (file.get_int("leak", 0), file.get_int("leak_snoozes", 0), file.get_long("leak_until", 0)));
+        assert_eq!(
+            (1, 4, 1000 + 14 * DAY_MS),
+            (file.get_int("leak", 0), file.get_int("leak_snoozes", 0), file.get_long("leak_until", 0))
+        );
         o.set_leak(3);
         assert!(!o.leak_due(i64::MAX));
         assert_eq!(3, reopen(dir.path()).get_int("leak", 0));
@@ -347,15 +354,24 @@ mod tests {
     #[test]
     fn notes() {
         let first = view(0, true);
-        assert_eq!(("ROUTES · 1 / 8", "Connect, pause, stop", "Next"), (first.overline.as_str(), first.title.as_str(), first.next_label.as_str()));
+        assert_eq!(
+            ("ROUTES · 1 / 8", "Connect, pause, stop", "Next"),
+            (first.overline.as_str(), first.title.as_str(), first.next_label.as_str())
+        );
         assert!(first.round && !first.has_back);
         let last = view(7, true);
         assert_eq!(("SETTINGS · 8 / 8", "Done"), (last.overline.as_str(), last.next_label.as_str()));
-        assert_eq!("The tray icon works without opening unbraid. Replay this tour here, in About & support.", last.body);
+        assert_eq!(
+            "The tray icon works without opening unbraid. Replay this tour here, in About & support.",
+            last.body
+        );
         assert!(last.has_back && !last.round && last.stops == 8);
         assert_eq!(last, view(99, true));
         assert_eq!("APPS · 4 / 8", view(3, true).overline);
-        assert_eq!("Show my apps lists them here. Click any app to pick its exit; Direct skips the VPN.", view(3, false).body);
+        assert_eq!(
+            "Show my apps lists them here. Click any app to pick its exit; Direct skips the VPN.",
+            view(3, false).body
+        );
         assert_eq!(TourStop::AppsList.body(), view(3, true).body);
         let pages: Vec<_> = TourStop::ALL.iter().map(|s| s.tab()).collect();
         assert_eq!(vec![0, 0, 0, 1, 2, 3, 3, 3], pages);

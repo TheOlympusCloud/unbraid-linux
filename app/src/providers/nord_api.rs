@@ -56,13 +56,21 @@ pub fn recommend(loc: &Location, limit: usize, tech: &str) -> Result<Vec<Server>
 }
 
 fn query(pairs: &[(&str, Option<&str>)]) -> String {
-    pairs.iter().map(|(k, v)| http::enc(k) + &v.map(|v| format!("={v}")).unwrap_or_default()).collect::<Vec<_>>().join("&")
+    pairs
+        .iter()
+        .map(|(k, v)| http::enc(k) + &v.map(|v| format!("={v}")).unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join("&")
 }
 
 /// The `/servers` list of `place` for `tech`, cut down to the given response `fields`.
 fn servers(place: (&str, &str), tech: &str, fields: &[&str]) -> Result<String> {
     let fields: Vec<String> = fields.iter().map(|f| format!("fields[servers.{f}]")).collect();
-    let mut pairs = vec![(place.0, Some(place.1)), ("filters[servers_technologies][identifier]", Some(tech)), ("limit", Some("20000"))];
+    let mut pairs = vec![
+        (place.0, Some(place.1)),
+        ("filters[servers_technologies][identifier]", Some(tech)),
+        ("limit", Some("20000")),
+    ];
     pairs.extend(fields.iter().map(|f| (f.as_str(), None)));
     get(&format!("/servers?{}", query(&pairs)), None)
 }
@@ -79,7 +87,16 @@ pub fn in_place(country_id: i32, city_id: Option<i32>, tech: &str) -> Result<Vec
         Some(city) => ("filters[country_city_id]", city.to_string()),
         None => ("filters[country_id]", country_id.to_string()),
     };
-    let fields = ["name", "hostname", "station", "load", "locations.country.code", "locations.country.city.name", "technologies.identifier", "technologies.metadata"];
+    let fields = [
+        "name",
+        "hostname",
+        "station",
+        "load",
+        "locations.country.code",
+        "locations.country.city.name",
+        "technologies.identifier",
+        "technologies.metadata",
+    ];
     parse_servers(&servers((place.0, &place.1), tech, &fields)?, tech == "wireguard_udp")
 }
 
@@ -126,14 +143,27 @@ pub fn dedicated(token: &str, tech: &str) -> Result<Vec<Server>> {
     if ids.is_empty() {
         return Ok(vec![]);
     }
-    let fields =
-        ["id", "name", "hostname", "station", "load", "locations.country.code", "locations.country.city.name", "technologies.identifier", "technologies.metadata"];
+    let fields = [
+        "id",
+        "name",
+        "hostname",
+        "station",
+        "load",
+        "locations.country.code",
+        "locations.country.city.name",
+        "technologies.identifier",
+        "technologies.metadata",
+    ];
     with_ids(&group_servers("legacy_dedicated_ip", tech, &fields)?, &ids, tech == "wireguard_udp")
 }
 
 pub(crate) fn with_ids(body: &str, ids: &HashSet<i64>, need_key: bool) -> Result<Vec<Server>> {
     let all: Vec<Listed> = http::parsed("NordVPN", || serde_json::from_str(body))?;
-    Ok(all.into_iter().filter(|s| s.id.is_some_and(|id| ids.contains(&id))).filter_map(|s| s.server(need_key)).collect())
+    Ok(all
+        .into_iter()
+        .filter(|s| s.id.is_some_and(|id| ids.contains(&id)))
+        .filter_map(|s| s.server(need_key))
+        .collect())
 }
 
 #[derive(Deserialize)]

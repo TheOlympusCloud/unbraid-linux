@@ -119,16 +119,33 @@ pub fn sheet(s: &Setup, editing: Option<&str>, empty: bool, typed: &str) -> Prof
     let valid = s.profile_name(&name, editing);
     let taken = !name.trim().is_empty() && valid.is_none() && graphemes(name.trim()) <= PROFILE_NAME;
     // New: the current setup (saved and in use when none is), a copy of the one in use, or empty.
-    let shown = s.saved().into_iter().find(|p| Some(p.name.as_str()) == editing).unwrap_or_else(|| if empty { Profile::new("", "") } else { Profile { apps: s.apps.clone(), ..Profile::new("", &s.default_route) } });
+    let shown = s.saved().into_iter().find(|p| Some(p.name.as_str()) == editing).unwrap_or_else(|| {
+        if empty {
+            Profile::new("", "")
+        } else {
+            Profile { apps: s.apps.clone(), ..Profile::new("", &s.default_route) }
+        }
+    });
     let mut by_route: IndexMap<&str, usize> = IndexMap::new();
     for route in shown.apps.values() {
         *by_route.entry(route.as_str()).or_default() += 1;
     }
     let ex: Vec<String> = by_route
         .iter()
-        .map(|(id, n)| format!("{} · {}", if *id == DIRECT { "Direct".into() } else { s.route(Some(id)).map_or_else(|| id.to_string(), Route::name) }, if *n == 1 { "1 app".into() } else { format!("{n} apps") }))
+        .map(|(id, n)| {
+            format!(
+                "{} · {}",
+                if *id == DIRECT {
+                    "Direct".into()
+                } else {
+                    s.route(Some(id)).map_or_else(|| id.to_string(), Route::name)
+                },
+                if *n == 1 { "1 app".into() } else { format!("{n} apps") }
+            )
+        })
         .collect();
-    let mut keeps_exceptions: Vec<String> = if ex.is_empty() { vec!["None".into()] } else { ex.iter().take(3).cloned().collect() };
+    let mut keeps_exceptions: Vec<String> =
+        if ex.is_empty() { vec!["None".into()] } else { ex.iter().take(3).cloned().collect() };
     if ex.len() > 3 {
         keeps_exceptions.push(format!("+{} more", ex.len() - 3));
     }
@@ -150,8 +167,16 @@ pub fn sheet(s: &Setup, editing: Option<&str>, empty: bool, typed: &str) -> Prof
         name,
         valid: valid.unwrap_or_default(),
         taken,
-        hint: if taken { "You already have a profile with this name".into() } else { format!("Up to {PROFILE_NAME} characters") },
-        keeps_default: if !shown.ready() { "Not set".into() } else { s.route(Some(&shown.default_route)).map_or_else(|| "Direct".into(), Route::name) },
+        hint: if taken {
+            "You already have a profile with this name".into()
+        } else {
+            format!("Up to {PROFILE_NAME} characters")
+        },
+        keeps_default: if !shown.ready() {
+            "Not set".into()
+        } else {
+            s.route(Some(&shown.default_route)).map_or_else(|| "Direct".into(), Route::name)
+        },
         keeps_exceptions,
         save: if editing.is_none() { "Save profile" } else { "Save" }.into(),
     }
@@ -170,7 +195,10 @@ mod tests {
                 Route { hue: 2, ..Route::new("it", Location::country("nord", 106, "IT", "Italy")) },
             ],
             default_route: "nl".into(),
-            apps: [("firefox", "us"), ("thunderbird", "us"), ("spotify", "it"), ("code", DIRECT)].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            apps: [("firefox", "us"), ("thunderbird", "us"), ("spotify", "it"), ("code", DIRECT)]
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
             ..Setup::default()
         }
     }
@@ -179,7 +207,10 @@ mod tests {
     #[test]
     fn summaries() {
         let s = base();
-        assert_eq!("Netherlands · 3 exceptions", summary(&s, &Profile { apps: s.apps.clone(), ..Profile::new("Home", "nl") }));
+        assert_eq!(
+            "Netherlands · 3 exceptions",
+            summary(&s, &Profile { apps: s.apps.clone(), ..Profile::new("Home", "nl") })
+        );
         assert_eq!("Italy · 1 exception", summary(&s, &Profile::with_apps("Work", "it", &[("a", "us"), ("b", "us")])));
         assert_eq!("Direct · no exceptions", summary(&s, &Profile::new("Trip", DIRECT)));
         assert_eq!("Empty · no default route yet", summary(&s, &Profile::new("New", "")));
@@ -188,8 +219,20 @@ mod tests {
     /// The use bar names what is in use, offers Back to it (Close with none), and Use once the profile has a default.
     #[test]
     fn use_bars() {
-        assert_eq!(UseBarView { name: "Trip".into(), title: "Trip · not in use".into(), sub: "Home is in use".into(), back: "Back".into(), ready: true }, use_bar("Trip", Some("Home"), true));
-        assert_eq!(("No profile is in use", "Close"), (use_bar("Trip", None, true).sub.as_str(), use_bar("Trip", None, true).back.as_str()));
+        assert_eq!(
+            UseBarView {
+                name: "Trip".into(),
+                title: "Trip · not in use".into(),
+                sub: "Home is in use".into(),
+                back: "Back".into(),
+                ready: true
+            },
+            use_bar("Trip", Some("Home"), true)
+        );
+        assert_eq!(
+            ("No profile is in use", "Close"),
+            (use_bar("Trip", None, true).sub.as_str(), use_bar("Trip", None, true).back.as_str())
+        );
         assert_eq!("Choose a default route to use it", use_bar("Trip", Some("Home"), false).sub);
     }
 
@@ -198,8 +241,21 @@ mod tests {
     fn page() {
         let s = base().save_as("Home").add("Trip", true);
         let v = view(&s);
-        assert_eq!(("2 of 20 · drag to reorder", false, "20 profiles is the most. Delete one to add another."), (v.sub.as_str(), v.at_limit, v.full_note.as_str()));
-        assert_eq!(ProfileRow { name: "Home".into(), in_use: true, summary: "Netherlands · 3 exceptions".into(), code: "NL".into(), hue: 0, direct: false }, v.rows[0]);
+        assert_eq!(
+            ("2 of 20 · drag to reorder", false, "20 profiles is the most. Delete one to add another."),
+            (v.sub.as_str(), v.at_limit, v.full_note.as_str())
+        );
+        assert_eq!(
+            ProfileRow {
+                name: "Home".into(),
+                in_use: true,
+                summary: "Netherlands · 3 exceptions".into(),
+                code: "NL".into(),
+                hue: 0,
+                direct: false
+            },
+            v.rows[0]
+        );
         assert!(v.rows[1].direct && !v.rows[1].in_use);
         let mut full = base();
         for n in 0..MAX_PROFILES {
@@ -213,15 +269,38 @@ mod tests {
     fn sheet_words() {
         let s = base();
         let first = sheet(&s, None, false, "");
-        assert_eq!(("Save this setup", "Saves this setup so you can switch back in one click", "Current setup", "Save profile"), (first.title.as_str(), first.sub.as_str(), first.copy.as_str(), first.save.as_str()));
-        assert_eq!(("Netherlands", vec!["United States · 2 apps".to_string(), "Italy · 1 app".into(), "Direct · 1 app".into()]), (first.keeps_default.as_str(), first.keeps_exceptions.clone()));
+        assert_eq!(
+            (
+                "Save this setup",
+                "Saves this setup so you can switch back in one click",
+                "Current setup",
+                "Save profile"
+            ),
+            (first.title.as_str(), first.sub.as_str(), first.copy.as_str(), first.save.as_str())
+        );
+        assert_eq!(
+            (
+                "Netherlands",
+                vec!["United States · 2 apps".to_string(), "Italy · 1 app".into(), "Direct · 1 app".into()]
+            ),
+            (first.keeps_default.as_str(), first.keeps_exceptions.clone())
+        );
         let s = s.save_as("Home");
         let copy = sheet(&s, None, false, "");
-        assert_eq!(("New profile", "A copy of Home, not in use until you click Use", "Copy of Home"), (copy.title.as_str(), copy.sub.as_str(), copy.copy.as_str()));
+        assert_eq!(
+            ("New profile", "A copy of Home, not in use until you click Use", "Copy of Home"),
+            (copy.title.as_str(), copy.sub.as_str(), copy.copy.as_str())
+        );
         let empty = sheet(&s, None, true, "");
-        assert_eq!(("New profile", "Empty, not in use until you click Use", "Not set", vec!["None".to_string()]), (empty.title.as_str(), empty.sub.as_str(), empty.keeps_default.as_str(), empty.keeps_exceptions));
+        assert_eq!(
+            ("New profile", "Empty, not in use until you click Use", "Not set", vec!["None".to_string()]),
+            (empty.title.as_str(), empty.sub.as_str(), empty.keeps_default.as_str(), empty.keeps_exceptions)
+        );
         let edit = sheet(&s, Some("Home"), false, "Home");
-        assert_eq!(("Edit profile", "Rename it, or delete it", "Save", "Home"), (edit.title.as_str(), edit.sub.as_str(), edit.save.as_str(), edit.valid.as_str()));
+        assert_eq!(
+            ("Edit profile", "Rename it, or delete it", "Save", "Home"),
+            (edit.title.as_str(), edit.sub.as_str(), edit.save.as_str(), edit.valid.as_str())
+        );
     }
 
     /// A name: at most twelve characters people see, as typed; one another profile has (in any case) is said to be taken.
@@ -229,7 +308,10 @@ mod tests {
     fn names() {
         let s = base().save_as("Home");
         let taken = sheet(&s, None, false, "home ");
-        assert_eq!((true, "", "You already have a profile with this name", "5/12"), (taken.taken, taken.valid.as_str(), taken.hint.as_str(), taken.count.as_str()));
+        assert_eq!(
+            (true, "", "You already have a profile with this name", "5/12"),
+            (taken.taken, taken.valid.as_str(), taken.hint.as_str(), taken.count.as_str())
+        );
         let ok = sheet(&s, None, false, " Travel ");
         assert_eq!((false, "Travel", "Up to 12 characters"), (ok.taken, ok.valid.as_str(), ok.hint.as_str()));
         let long = sheet(&s, None, false, "A very long profile name");
@@ -242,6 +324,9 @@ mod tests {
         let mut many = base();
         many.routes.push(Route::new("de", Location::country("nord", 81, "DE", "Germany")));
         many.apps.insert("chromium".into(), "de".into());
-        assert_eq!(vec!["United States · 2 apps", "Italy · 1 app", "Direct · 1 app", "+1 more"], sheet(&many, None, false, "").keeps_exceptions);
+        assert_eq!(
+            vec!["United States · 2 apps", "Italy · 1 app", "Direct · 1 app", "+1 more"],
+            sheet(&many, None, false, "").keeps_exceptions
+        );
     }
 }

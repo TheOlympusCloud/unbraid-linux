@@ -73,7 +73,8 @@ impl Status {
         }
         let plan = self.current_plan.to_lowercase();
         // The longest matching name, the first of equals.
-        let named = self.available_plans.iter().filter(|p| !p.name.trim().is_empty() && plan.contains(&p.name.to_lowercase()));
+        let named =
+            self.available_plans.iter().filter(|p| !p.name.trim().is_empty() && plan.contains(&p.name.to_lowercase()));
         named.rev().max_by_key(|p| p.name.chars().count()).map_or(0, |p| p.device_limit)
     }
 }
@@ -197,11 +198,16 @@ const CODE: &str = "confirmation";
 const CAPTCHA: &str = "captcha";
 const CAPTCHA_ID: &str = "captcha_id";
 
-static ACCOUNT_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new("^(?:i-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}|ivpn[A-Za-z0-9]{7,8})$").unwrap());
+static ACCOUNT_ID: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new("^(?:i-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}|ivpn[A-Za-z0-9]{7,8})$").unwrap());
 static CAPTCHA_KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new("^[A-Za-z0-9_-]{1,128}$").unwrap());
 /// Base64 as a MIME decoder reads it: padding optional, bits left over at the end ignored.
-const B64: GeneralPurpose =
-    GeneralPurpose::new(&STANDARD, GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent).with_decode_allow_trailing_bits(true));
+const B64: GeneralPurpose = GeneralPurpose::new(
+    &STANDARD,
+    GeneralPurposeConfig::new()
+        .with_decode_padding_mode(DecodePaddingMode::Indifferent)
+        .with_decode_allow_trailing_bits(true),
+);
 
 fn code_field() -> Field {
     Field { secret: false, hint: "6 digits".into(), ..Field::new(CODE, "Two-factor code") }
@@ -232,7 +238,10 @@ impl Provider for Ivpn {
     }
 
     fn defaults(&self) -> IndexMap<String, String> {
-        [(PROTECT, "off"), (LIST, OISD), (HARDCORE, "off"), (PORT_OPT, AUTO)].into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        [(PROTECT, "off"), (LIST, OISD), (HARDCORE, "off"), (PORT_OPT, AUTO)]
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     /// One session serves every IVPN route, so this computer is always one device.
@@ -245,7 +254,10 @@ impl Provider for Ivpn {
             .filter(|r| r.status == Some(200));
         let name = now.and_then(|r| r.device).unwrap_or(a.device);
         Some(Device {
-            line: format!("{}See all your devices in the IVPN client area", if name.trim().is_empty() { String::new() } else { format!("Named {name}. ") }),
+            line: format!(
+                "{}See all your devices in the IVPN client area",
+                if name.trim().is_empty() { String::new() } else { format!("Named {name}. ") }
+            ),
             url: Some(CLIENT_AREA.into()),
             used: None,
         })
@@ -253,13 +265,20 @@ impl Provider for Ivpn {
 
     /// The plan's device limit as read at sign-in; unbraid always holds one session.
     fn limit(&self, blob: &str) -> Limit {
-        Limit { unit: "device".into(), per_tunnel: false, value: Some(account(blob).map_or(0, |a| a.limit)).filter(|n| *n > 0) }
+        Limit {
+            unit: "device".into(),
+            per_tunnel: false,
+            value: Some(account(blob).map_or(0, |a| a.limit)).filter(|n| *n > 0),
+        }
     }
 
     /// A block list is saved as its two resolvers, "normal|hardcore", so a route needs no server list to use it.
     fn blocking_dns(&self, opts: &dyn Fn(&str) -> Option<String>) -> Option<String> {
         let list = opts(LIST).unwrap_or_else(|| OISD.into());
-        let pick = list.split('|').nth(if opts(HARDCORE).as_deref() == Some("on") { 1 } else { 0 }).filter(|ip| compiler::ipv4(ip).is_some_and(|(_, len)| len == 32) && !ip.contains('/'));
+        let pick = list
+            .split('|')
+            .nth(if opts(HARDCORE).as_deref() == Some("on") { 1 } else { 0 })
+            .filter(|ip| compiler::ipv4(ip).is_some_and(|(_, len)| len == 32) && !ip.contains('/'));
         Some(pick.unwrap_or(OISD.split('|').next().unwrap_or_default()).to_string())
     }
 
@@ -283,13 +302,19 @@ impl Provider for Ivpn {
     }
 
     fn sign_in(&self, input: &IndexMap<String, String>) -> Result<String> {
-        let acct: String = input.get("account").map_or("", String::as_str).chars().filter(|c| !c.is_whitespace()).collect();
+        let acct: String =
+            input.get("account").map_or("", String::as_str).chars().filter(|c| !c.is_whitespace()).collect();
         require!(ACCOUNT_ID.is_match(&acct), "Account ID must look like i-XXXX-XXXX-XXXX or ivpnXXXXXXXX");
         let keys = wg_keys::generate();
-        let mut body: IndexMap<&str, Value> = IndexMap::from([("username", acct.clone().into()), ("force", false.into()), ("wg_public_key", keys.public.clone().into())]);
+        let mut body: IndexMap<&str, Value> = IndexMap::from([
+            ("username", acct.clone().into()),
+            ("force", false.into()),
+            ("wg_public_key", keys.public.clone().into()),
+        ]);
         // The answers to an earlier reply's two-factor or captcha question.
         for k in [CODE, CAPTCHA, CAPTCHA_ID] {
-            let answer: String = input.get(k).map_or("", String::as_str).chars().filter(|c| !c.is_whitespace()).collect();
+            let answer: String =
+                input.get(k).map_or("", String::as_str).chars().filter(|c| !c.is_whitespace()).collect();
             if !answer.is_empty() {
                 body.insert(k, answer.into());
             }
@@ -298,12 +323,16 @@ impl Provider for Ivpn {
     }
 
     fn sign_out(&self, blob: &str) -> bool {
-        account(blob).and_then(|a| post_json_raw(&format!("{API}/v4/session/delete"), &session_body(&a.session_token), &[])).is_ok_and(|(code, _)| (200..=299).contains(&code))
+        account(blob)
+            .and_then(|a| post_json_raw(&format!("{API}/v4/session/delete"), &session_body(&a.session_token), &[]))
+            .is_ok_and(|(code, _)| (200..=299).contains(&code))
     }
 
     /// IVPN's session status answers 601 (session not found) once the session was logged out elsewhere.
     fn revoked(&self, blob: &str) -> bool {
-        account(blob).and_then(|a| post_json_raw(&format!("{API}/v4/session/status"), &session_body(&a.session_token), &[])).is_ok_and(|reply| session_gone(&reply))
+        account(blob)
+            .and_then(|a| post_json_raw(&format!("{API}/v4/session/status"), &session_body(&a.session_token), &[]))
+            .is_ok_and(|reply| session_gone(&reply))
     }
 
     fn countries(&self, _account: &str) -> Result<Vec<Country>> {
@@ -329,17 +358,27 @@ fn session_body(token: &str) -> String {
 }
 
 pub(crate) fn options(l: &ServerList) -> Vec<Opt> {
-    let lists: Vec<(String, String)> = l.config.antitracker.lists.iter().map(|b| (format!("{}|{}", b.normal, b.hardcore), b.name.clone())).collect();
+    let lists: Vec<(String, String)> =
+        l.config.antitracker.lists.iter().map(|b| (format!("{}|{}", b.normal, b.hardcore), b.name.clone())).collect();
     let mut ports = l.ports();
     ports.sort();
-    let ports = std::iter::once((AUTO.to_string(), "Automatic".to_string())).chain(ports.into_iter().map(|p| (p.to_string(), format!("UDP {p}")))).collect();
+    let ports = std::iter::once((AUTO.to_string(), "Automatic".to_string()))
+        .chain(ports.into_iter().map(|p| (p.to_string(), format!("UDP {p}"))))
+        .collect();
     let list = Opt { choices: lists, ..Opt::new(LIST, "Block list", "What AntiTracker blocks, from IVPN's own lists") };
     (!list.choices.is_empty())
         .then_some(list)
         .into_iter()
         .chain([
-            Opt { advanced: true, ..Opt::new(HARDCORE, "Hardcore mode", "Also blocks Google and Facebook, and sites that need them") },
-            Opt { choices: ports, advanced: true, ..Opt::new(PORT_OPT, "Port", "Automatic tries 2049 first, then other ports when a network blocks it") },
+            Opt {
+                advanced: true,
+                ..Opt::new(HARDCORE, "Hardcore mode", "Also blocks Google and Facebook, and sites that need them")
+            },
+            Opt {
+                choices: ports,
+                advanced: true,
+                ..Opt::new(PORT_OPT, "Port", "Automatic tries 2049 first, then other ports when a network blocks it")
+            },
         ])
         .collect()
 }
@@ -352,26 +391,68 @@ pub(crate) fn session_gone((code, body): &(u16, String)) -> bool {
 pub(crate) fn session((code, body): (u16, String), account: &str, private_key: &str) -> Result<String> {
     let o: SessionReply = http::parsed("IVPN", || serde_json::from_str(&body))?;
     let auth = |message: String, url: Option<&str>| Error::Auth { message, url: url.map(String::from) };
-    let challenge = |message: &str, field: Field, image: Option<Vec<u8>>, keep: IndexMap<String, String>| Error::Challenge(Box::new(Challenge { message: message.into(), field, image, keep }));
+    let challenge = |message: &str, field: Field, image: Option<Vec<u8>>, keep: IndexMap<String, String>| {
+        Error::Challenge(Box::new(Challenge { message: message.into(), field, image, keep }))
+    };
     match o.status.unwrap_or(code as i64) {
         200 => {}
         401 => return Err(auth("IVPN doesn't recognise that account ID".into(), None)),
-        602 => return Err(auth(limits::full("IVPN", o.data.as_ref().map(Status::device_limit).filter(|n| *n > 0), "device"), Some(CLIENT_AREA))),
+        602 => {
+            return Err(auth(
+                limits::full("IVPN", o.data.as_ref().map(Status::device_limit).filter(|n| *n > 0), "device"),
+                Some(CLIENT_AREA),
+            ));
+        }
         702 => return Err(auth("This IVPN account isn't active. Renew it first.".into(), None)),
         status @ (70001 | 70002) => {
             let Some(id) = o.captcha_id.filter(|id| CAPTCHA_KEY.is_match(id)) else {
-                return Err(auth("IVPN is asking for a captcha. Log in once on ivpn.net or in the IVPN app, then try again.".into(), None));
+                return Err(auth(
+                    "IVPN is asking for a captcha. Log in once on ivpn.net or in the IVPN app, then try again.".into(),
+                    None,
+                ));
             };
             let image = o.captcha_image.unwrap_or_default();
-            let b64: String = image.split_once("base64,").map_or(image.as_str(), |(_, b)| b).chars().take_while(|c| *c != '=').filter(|c| c.is_ascii_alphanumeric() || *c == '+' || *c == '/').collect();
-            let message = if status == 70001 { "IVPN wants to check you're a person. Type the characters in the picture." } else { "That didn't match. Try this picture." };
-            return Err(challenge(message, captcha_field(), B64.decode(b64).ok(), IndexMap::from([(CAPTCHA_ID.to_string(), id)])));
+            let b64: String = image
+                .split_once("base64,")
+                .map_or(image.as_str(), |(_, b)| b)
+                .chars()
+                .take_while(|c| *c != '=')
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '+' || *c == '/')
+                .collect();
+            let message = if status == 70001 {
+                "IVPN wants to check you're a person. Type the characters in the picture."
+            } else {
+                "That didn't match. Try this picture."
+            };
+            return Err(challenge(
+                message,
+                captcha_field(),
+                B64.decode(b64).ok(),
+                IndexMap::from([(CAPTCHA_ID.to_string(), id)]),
+            ));
         }
-        70011 => return Err(challenge("Two-factor authentication is on for this account. Enter the code from your authenticator app.", code_field(), None, IndexMap::new())),
-        70012 => return Err(challenge("That code didn't work. Enter the current one.", code_field(), None, IndexMap::new())),
+        70011 => {
+            return Err(challenge(
+                "Two-factor authentication is on for this account. Enter the code from your authenticator app.",
+                code_field(),
+                None,
+                IndexMap::new(),
+            ));
+        }
+        70012 => {
+            return Err(challenge(
+                "That code didn't work. Enter the current one.",
+                code_field(),
+                None,
+                IndexMap::new(),
+            ));
+        }
         status => return Err(Error::Status { code: u16::try_from(status).unwrap_or(u16::MAX) }),
     }
-    let ip = o.wireguard.and_then(|w| w.ip_address).ok_or_else(|| Error::Fail("IVPN didn't assign a WireGuard address. Try again later".into()))?;
+    let ip = o
+        .wireguard
+        .and_then(|w| w.ip_address)
+        .ok_or_else(|| Error::Fail("IVPN didn't assign a WireGuard address. Try again later".into()))?;
     let token = o.token.ok_or_else(|| Error::Fail("IVPN didn't return a session. Try again later".into()))?;
     encode(&Account {
         account_id: account.into(),
@@ -412,7 +493,10 @@ pub(crate) fn countries(l: &ServerList) -> Vec<Country> {
                 name: first.country.clone(),
                 code: first.country_code.to_uppercase(),
                 server_count: gs.iter().map(|g| g.hosts.len() as i32).sum(),
-                cities: gs.iter().map(|g| City { id: stable_id(&g.gateway), name: g.city.clone(), key: Some(g.gateway.clone()) }).collect(),
+                cities: gs
+                    .iter()
+                    .map(|g| City { id: stable_id(&g.gateway), name: g.city.clone(), key: Some(g.gateway.clone()) })
+                    .collect(),
             }
         })
         .collect()
@@ -425,20 +509,50 @@ pub(crate) fn link(l: Option<&ServerList>, loc: &Location, a: &Account) -> Resul
         (None, None) => return Err(Error::State(String::new())),
         (Some(l), pinned) => {
             let (g, h) = match pinned {
-                Some(p) => l.wireguard.iter().flat_map(|g| g.hosts.iter().map(move |h| (g, h))).find(|(_, h)| h.hostname == p.host).ok_or_else(|| Error::NoLongerOffered(p.name.clone()))?,
-                None => l.matching(loc).into_iter().min_by(|a, b| a.1.load.total_cmp(&b.1.load)).ok_or_else(|| Error::Io(format!("No IVPN server for {}", loc.label())))?,
+                Some(p) => l
+                    .wireguard
+                    .iter()
+                    .flat_map(|g| g.hosts.iter().map(move |h| (g, h)))
+                    .find(|(_, h)| h.hostname == p.host)
+                    .ok_or_else(|| Error::NoLongerOffered(p.name.clone()))?,
+                None => l
+                    .matching(loc)
+                    .into_iter()
+                    .min_by(|a, b| a.1.load.total_cmp(&b.1.load))
+                    .ok_or_else(|| Error::Io(format!("No IVPN server for {}", loc.label())))?,
             };
             (server(g, h), h.local_ip.split('/').next().unwrap_or_default().to_string())
         }
     };
-    let ports = l.map(|l| l.ports()).map(|listed| FALLBACK.into_iter().filter(|p| listed.contains(p)).collect()).unwrap_or_default();
+    let ports = l
+        .map(|l| l.ports())
+        .map(|listed| FALLBACK.into_iter().filter(|p| listed.contains(p)).collect())
+        .unwrap_or_default();
     let address = format!("{}/32", a.ip_address.split('/').next().unwrap_or_default());
-    let peer = WgPeer { dns: vec![dns], ..WgPeer::new(&sv.name, &a.private_key, vec![address], &sv.public_key, &format!("{}:{PORT}", sv.ip), vec!["0.0.0.0/0".into()]) };
+    let peer = WgPeer {
+        dns: vec![dns],
+        ..WgPeer::new(
+            &sv.name,
+            &a.private_key,
+            vec![address],
+            &sv.public_key,
+            &format!("{}:{PORT}", sv.ip),
+            vec!["0.0.0.0/0".into()],
+        )
+    };
     Ok(Link::Wg { server: sv, peer, ports, entries: vec![] })
 }
 
 fn server(g: &Gateway, h: &Host) -> Server {
-    Server { name: h.hostname.clone(), host: h.hostname.clone(), ip: h.host.clone(), public_key: h.public_key.clone(), load: h.load.round() as i32, city: g.city.clone(), country: String::new() }
+    Server {
+        name: h.hostname.clone(),
+        host: h.hostname.clone(),
+        ip: h.host.clone(),
+        public_key: h.public_key.clone(),
+        load: h.load.round() as i32,
+        city: g.city.clone(),
+        country: String::new(),
+    }
 }
 
 #[cfg(test)]
@@ -474,7 +588,10 @@ mod tests {
     fn countries_are_grouped_and_keyed() {
         let list = list();
         let cs = countries(&list);
-        assert_eq!(vec!["Argentina", "Netherlands", "Sweden", "United States"], cs.iter().map(|c| c.name.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["Argentina", "Netherlands", "Sweden", "United States"],
+            cs.iter().map(|c| c.name.as_str()).collect::<Vec<_>>()
+        );
         assert_eq!(vec!["AR", "NL", "SE", "US"], cs.iter().map(|c| c.code.as_str()).collect::<Vec<_>>());
         assert_eq!(cs.len(), cs.iter().map(|c| c.id).collect::<HashSet<_>>().len());
         let us = cs.iter().find(|c| c.code == "US").unwrap();
@@ -485,7 +602,10 @@ mod tests {
         sorted.sort();
         assert_eq!(sorted, names);
         assert_eq!(us.cities.len(), us.cities.iter().map(|c| c.key.clone()).collect::<HashSet<_>>().len());
-        assert_eq!(list.wireguard.iter().filter(|g| g.country_code == "US").map(|g| g.hosts.len() as i32).sum::<i32>(), us.server_count);
+        assert_eq!(
+            list.wireguard.iter().filter(|g| g.country_code == "US").map(|g| g.hosts.len() as i32).sum::<i32>(),
+            us.server_count
+        );
     }
 
     #[test]
@@ -500,7 +620,13 @@ mod tests {
     fn country_link_picks_the_least_loaded_host() {
         let (list, acct) = (list(), acct());
         let l = link(Some(&list), &by_code("ivpn", "NL"), &acct).unwrap();
-        let best = list.wireguard.iter().filter(|g| g.country_code == "NL").flat_map(|g| &g.hosts).min_by(|a, b| a.load.total_cmp(&b.load)).unwrap();
+        let best = list
+            .wireguard
+            .iter()
+            .filter(|g| g.country_code == "NL")
+            .flat_map(|g| &g.hosts)
+            .min_by(|a, b| a.load.total_cmp(&b.load))
+            .unwrap();
         assert_eq!(best.hostname, l.server().host);
         let p = peer(&l);
         assert_eq!(best.public_key, p.public_key);
@@ -521,7 +647,13 @@ mod tests {
         assert!(ports(&l).iter().all(|p| list.ports().contains(p)));
         assert!(ports(&link(None, &pinned_to("ivpn", l.server().clone()), &acct).unwrap()).is_empty());
         let port = |kind: &str, port: i32| Port { r#type: kind.into(), port: Some(port) };
-        let few = ServerList { config: Config { ports: Ports { wireguard: vec![port("UDP", 53), port("TCP", 443), port("UDP", 2049)] }, ..Config::default() }, ..list };
+        let few = ServerList {
+            config: Config {
+                ports: Ports { wireguard: vec![port("UDP", 53), port("TCP", 443), port("UDP", 2049)] },
+                ..Config::default()
+            },
+            ..list
+        };
         assert_eq!(&[2049, 53], ports(&link(Some(&few), &by_code("ivpn", "NL"), &acct).unwrap()));
     }
 
@@ -537,7 +669,13 @@ mod tests {
     #[test]
     fn anti_tracker_lists_and_hardcore() {
         fn dns(o: &[(&str, &str)]) -> String {
-            Ivpn.blocking_dns(&|k: &str| o.iter().find(|(key, _)| *key == k).map(|(_, v)| v.to_string()).or_else(|| Ivpn.defaults().get(k).cloned())).unwrap()
+            Ivpn.blocking_dns(&|k: &str| {
+                o.iter()
+                    .find(|(key, _)| *key == k)
+                    .map(|(_, v)| v.to_string())
+                    .or_else(|| Ivpn.defaults().get(k).cloned())
+            })
+            .unwrap()
         }
         let opts = options(&list());
         let lists = opts.iter().find(|o| o.key == "list").unwrap();
@@ -553,7 +691,12 @@ mod tests {
 
     #[test]
     fn city_link_stays_in_that_gateway() {
-        let l = link(Some(&list()), &Location { region: Some("us-ny.wg.ivpn.net".into()), ..by_code("ivpn", "US") }, &acct()).unwrap();
+        let l = link(
+            Some(&list()),
+            &Location { region: Some("us-ny.wg.ivpn.net".into()), ..by_code("ivpn", "US") },
+            &acct(),
+        )
+        .unwrap();
         assert_eq!("New York, NY", l.server().city);
         assert!(l.server().host.starts_with("us-ny"));
     }
@@ -596,14 +739,22 @@ mod tests {
     #[test]
     fn session_replies() {
         let ok = r#"{"status":200,"token":"tok","vpn_username":"u","vpn_password":"p","service_status":{"is_active":true},"wireguard":{"status":200,"message":"Success","ip_address":"172.16.1.2"}}"#;
-        let expected = Account { account_id: "i-ABCD-EFGH-IJKL".into(), session_token: "tok".into(), private_key: "priv".into(), ip_address: "172.16.1.2".into(), device: String::new(), limit: 0 };
+        let expected = Account {
+            account_id: "i-ABCD-EFGH-IJKL".into(),
+            session_token: "tok".into(),
+            private_key: "priv".into(),
+            ip_address: "172.16.1.2".into(),
+            device: String::new(),
+            limit: 0,
+        };
         assert_eq!(expected, account(&session((200, ok.into()), "i-ABCD-EFGH-IJKL", "priv").unwrap()).unwrap());
         // The device name and the plan's limit, for the IVPN page.
         let named = r#"{"status":200,"token":"tok","device_name":"Brave Owl","service_status":{"current_plan":"IVPN Standard","available_plans":[{"name":"Pro","device_limit":10},{"name":"Standard","device_limit":5}]},"wireguard":{"ip_address":"172.16.1.2"}}"#;
         let a = account(&session((200, named.into()), "a", "p").unwrap()).unwrap();
         assert_eq!(("Brave Owl", 5), (a.device.as_str(), a.limit));
         // A full account says how many devices and links to where they are listed.
-        let full = r#"{"status":602,"message":"You've reached the maximum number of connected devices","data":{"limit":5}}"#;
+        let full =
+            r#"{"status":602,"message":"You've reached the maximum number of connected devices","data":{"limit":5}}"#;
         match session((400, full.into()), "a", "p") {
             Err(Error::Auth { message, url }) => {
                 assert_eq!("All 5 IVPN devices are in use. Sign out another device, then try again.", message);
@@ -611,7 +762,11 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        for body in [r#"{"status":401,"message":"The provided Account ID is not valid"}"#, r#"{"status":702,"message":"inactive"}"#, r#"{"status":70001}"#] {
+        for body in [
+            r#"{"status":401,"message":"The provided Account ID is not valid"}"#,
+            r#"{"status":702,"message":"inactive"}"#,
+            r#"{"status":70001}"#,
+        ] {
             assert!(matches!(session((400, body.into()), "a", "p"), Err(Error::Auth { .. })), "{body}");
         }
         // Two-factor and captcha are one more question, then the same sign-in again.
@@ -622,7 +777,10 @@ mod tests {
             }
         }
         let png = [0x89, 80, 78, 71];
-        let captcha = format!(r#"{{"status":70002,"captcha_id":"c-1","captcha_image":"data:image/png;base64,{}"}}"#, B64.encode(png));
+        let captcha = format!(
+            r#"{{"status":70002,"captcha_id":"c-1","captcha_image":"data:image/png;base64,{}"}}"#,
+            B64.encode(png)
+        );
         match session((400, captcha), "a", "p") {
             Err(Error::Challenge(c)) => {
                 assert_eq!("captcha", c.field.key);
@@ -631,18 +789,30 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        assert!(session((502, "<html>".into()), "a", "p").is_err_and(|e| is_io(&e) && !matches!(e, Error::Auth { .. })));
+        assert!(
+            session((502, "<html>".into()), "a", "p").is_err_and(|e| is_io(&e) && !matches!(e, Error::Auth { .. }))
+        );
     }
 
     #[test]
     fn parse_failures_do_not_quote_the_reply() {
-        let failures = [session((200, r#"{"status":200,"token":"SECRET-TOKEN" "#.into()), "a", "p").err(), account(r#"{"sessionToken":"SECRET" "#).err(), parse("SECRET-LIST").err()];
+        let failures = [
+            session((200, r#"{"status":200,"token":"SECRET-TOKEN" "#.into()), "a", "p").err(),
+            account(r#"{"sessionToken":"SECRET" "#).err(),
+            parse("SECRET-LIST").err(),
+        ];
         for e in failures {
             let e = e.expect("refused");
             assert!(is_io(&e) && !e.to_string().contains("SECRET"), "{e}");
         }
-        assert!(session((200, r#"{"status":200,"token":"t"}"#.into()), "a", "p").is_err_and(|e| is_io(&e) && !matches!(e, Error::Auth { .. })));
-        assert!(session((400, r#"{"status":999,"message":"echoes SECRET"}"#.into()), "a", "p").is_err_and(|e| is_io(&e) && !e.to_string().contains("SECRET")));
+        assert!(
+            session((200, r#"{"status":200,"token":"t"}"#.into()), "a", "p")
+                .is_err_and(|e| is_io(&e) && !matches!(e, Error::Auth { .. }))
+        );
+        assert!(
+            session((400, r#"{"status":999,"message":"echoes SECRET"}"#.into()), "a", "p")
+                .is_err_and(|e| is_io(&e) && !e.to_string().contains("SECRET"))
+        );
     }
 
     #[test]

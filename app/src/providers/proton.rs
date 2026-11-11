@@ -50,7 +50,11 @@ impl Provider for ProtonVpn {
     }
 
     fn fields(&self) -> Vec<Field> {
-        vec![Field { hint: "Paste the whole file, or the PrivateKey".into(), file: true, ..Field::new("key", "WireGuard key or .conf") }]
+        vec![Field {
+            hint: "Paste the whole file, or the PrivateKey".into(),
+            file: true,
+            ..Field::new("key", "WireGuard key or .conf")
+        }]
     }
 
     fn help(&self) -> String {
@@ -78,7 +82,10 @@ impl Provider for ProtonVpn {
     }
 
     fn config_help(&self) -> Option<(String, String)> {
-        Some(("Proton configs expire. Extend yours at account.protonvpn.com, Downloads".into(), "https://account.protonvpn.com/downloads".into()))
+        Some((
+            "Proton configs expire. Extend yours at account.protonvpn.com, Downloads".into(),
+            "https://account.protonvpn.com/downloads".into(),
+        ))
     }
 
     fn list_source(&self) -> Option<String> {

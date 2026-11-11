@@ -21,12 +21,17 @@ pub fn decode_image(img: &DynamicImage) -> Option<String> {
     while img.width().max(img.height()) / sample > MAX_SIDE {
         sample *= 2;
     }
-    let grey = if sample == 1 { img.to_luma8() } else { img.resize_exact(img.width() / sample, img.height() / sample, FilterType::Triangle).to_luma8() };
+    let grey = if sample == 1 {
+        img.to_luma8()
+    } else {
+        img.resize_exact(img.width() / sample, img.height() / sample, FilterType::Triangle).to_luma8()
+    };
     [false, true].into_iter().find_map(|invert| {
-        let mut prepared = rqrr::PreparedImage::prepare_from_greyscale(grey.width() as usize, grey.height() as usize, |x, y| {
-            let v = grey.get_pixel(x as u32, y as u32).0[0];
-            if invert { 255 - v } else { v }
-        });
+        let mut prepared =
+            rqrr::PreparedImage::prepare_from_greyscale(grey.width() as usize, grey.height() as usize, |x, y| {
+                let v = grey.get_pixel(x as u32, y as u32).0[0];
+                if invert { 255 - v } else { v }
+            });
         prepared.detect_grids().into_iter().find_map(|g| g.decode().ok().map(|(_, text)| text))
     })
 }

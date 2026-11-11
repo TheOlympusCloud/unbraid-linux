@@ -16,10 +16,10 @@
 
 use super::{Field, Provider, encode};
 use crate::error::{Error, Result};
+use crate::http;
 use crate::manual::{invalid, require};
 use crate::model::{City, Country, Link, Location, Server, WgPeer, eq_ignore_case, stable_id};
 use crate::wg_conf::{self, valid_wg_key};
-use crate::http;
 use indexmap::IndexMap;
 use rand::Rng;
 use rand::seq::SliceRandom;
@@ -116,10 +116,14 @@ pub(crate) type Hosts = Arc<dyn Fn() -> Option<HashSet<String>> + Send + Sync>;
 
 /// Host names of the ordinary locations (each group's WireGuard host, as generated configs name it, and its nodes),
 /// also of locations down right now; none if the list can't be read (then only the endpoint's form is checked).
-pub(crate) static NODE_HOSTS: LazyLock<RwLock<Hosts>> = LazyLock::new(|| RwLock::new(Arc::new(|| list().ok().map(|l| hosts(&l)))));
+pub(crate) static NODE_HOSTS: LazyLock<RwLock<Hosts>> =
+    LazyLock::new(|| RwLock::new(Arc::new(|| list().ok().map(|l| hosts(&l)))));
 
 pub(crate) fn hosts(l: &ServerList) -> HashSet<String> {
-    let names = l.data.iter().flat_map(|r| r.groups.iter().flat_map(|g| g.nodes.iter().map(|n| &n.hostname).chain([&g.wg_endpoint])));
+    let names = l
+        .data
+        .iter()
+        .flat_map(|r| r.groups.iter().flat_map(|g| g.nodes.iter().map(|n| &n.hostname).chain([&g.wg_endpoint])));
     names.filter(|h| !h.trim().is_empty()).map(|h| h.to_lowercase()).collect()
 }
 
@@ -127,7 +131,10 @@ pub(crate) fn hosts(l: &ServerList) -> HashSet<String> {
 fn is_static(endpoint: &str) -> bool {
     let host = endpoint.rsplit_once(':').map_or(endpoint, |(host, _)| host);
     let node_hosts = NODE_HOSTS.read().unwrap_or_else(PoisonError::into_inner).clone();
-    IPV4.is_match(host) || !HOST.is_match(host) || host.to_lowercase().contains("static") || node_hosts().is_some_and(|known| !known.contains(&host.to_lowercase()))
+    IPV4.is_match(host)
+        || !HOST.is_match(host)
+        || host.to_lowercase().contains("static")
+        || node_hosts().is_some_and(|known| !known.contains(&host.to_lowercase()))
 }
 
 pub struct Windscribe;
@@ -151,10 +158,28 @@ impl Provider for Windscribe {
 
     fn sign_in(&self, input: &IndexMap<String, String>) -> Result<String> {
         let p = wg_conf::parse(input.get("config").map_or("", |c| c.trim()), self.name())?;
-        require!(!is_static(&p.endpoint), "This looks like a Static IP config, which is tied to one server. Import it under \"Your own servers\" instead.");
-        let psk = p.preshared_key.ok_or_else(|| invalid("This config has no PresharedKey. Generate a WireGuard config at windscribe.com and paste that"))?;
-        let port = p.endpoint.rsplit(':').next().and_then(|port| port.parse().ok()).filter(|port| PORTS.contains(port)).unwrap_or(DEFAULT_PORT);
-        encode(&Account { private_key: p.private_key, address: p.address, preshared_key: psk, dns: p.dns, mtu: p.mtu, port })
+        require!(
+            !is_static(&p.endpoint),
+            "This looks like a Static IP config, which is tied to one server. Import it under \"Your own servers\" instead."
+        );
+        let psk = p.preshared_key.ok_or_else(|| {
+            invalid("This config has no PresharedKey. Generate a WireGuard config at windscribe.com and paste that")
+        })?;
+        let port = p
+            .endpoint
+            .rsplit(':')
+            .next()
+            .and_then(|port| port.parse().ok())
+            .filter(|port| PORTS.contains(port))
+            .unwrap_or(DEFAULT_PORT);
+        encode(&Account {
+            private_key: p.private_key,
+            address: p.address,
+            preshared_key: psk,
+            dns: p.dns,
+            mtu: p.mtu,
+            port,
+        })
     }
 
     fn countries(&self, _account: &str) -> Result<Vec<Country>> {
@@ -228,7 +253,10 @@ pub(crate) fn countries(rows: &[Row]) -> Vec<Country> {
                 name: region.into(),
                 code: rs[0].code.clone(),
                 server_count: rs.len() as i32,
-                cities: cities.into_iter().map(|c| City { id: stable_id(c), name: c.into(), key: Some(c.into()) }).collect(),
+                cities: cities
+                    .into_iter()
+                    .map(|c| City { id: stable_id(c), name: c.into(), key: Some(c.into()) })
+                    .collect(),
             }
         })
         .collect()
@@ -254,7 +282,11 @@ pub(crate) fn link(rows: Option<&[Row]>, loc: &Location, a: &Account, rnd: &mut 
         (None, Some(pinned)) => pinned.clone(),
         // A list is always read when nothing is pinned.
         (None, None) => return Err(Error::State(String::new())),
-        (Some(rows), Some(pinned)) => rows.iter().find(|r| r.node.hostname == pinned.host).map(server).ok_or_else(|| Error::NoLongerOffered(pinned.name.clone()))?,
+        (Some(rows), Some(pinned)) => rows
+            .iter()
+            .find(|r| r.node.hostname == pinned.host)
+            .map(server)
+            .ok_or_else(|| Error::NoLongerOffered(pinned.name.clone()))?,
         (Some(rows), None) => {
             let mut rs = matching(rows, loc);
             if rs.is_empty() {
@@ -268,7 +300,14 @@ pub(crate) fn link(rows: Option<&[Row]>, loc: &Location, a: &Account, rnd: &mut 
         preshared_key: Some(a.preshared_key.clone()),
         dns: a.dns.clone(),
         mtu: a.mtu,
-        ..WgPeer::new(&sv.name, &a.private_key, a.address.clone(), &sv.public_key, &format!("{}:{}", sv.ip, a.port), vec!["0.0.0.0/0".into()])
+        ..WgPeer::new(
+            &sv.name,
+            &a.private_key,
+            a.address.clone(),
+            &sv.public_key,
+            &format!("{}:{}", sv.ip, a.port),
+            vec!["0.0.0.0/0".into()],
+        )
     };
     Ok(Link::Wg { server: sv, peer, ports: vec![], entries: vec![] })
 }

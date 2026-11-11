@@ -35,11 +35,21 @@ pub struct WelcomeView {
 
 /// The welcome for a new install (`fresh`: not signed in and no disclosure accepted yet) or for someone updating.
 pub fn view(fresh: bool) -> WelcomeView {
-    let step = |overline: &str, title: &str, lead: String| WelcomeStep { overline: overline.into(), title: title.into(), lead };
+    let step = |overline: &str, title: &str, lead: String| WelcomeStep {
+        overline: overline.into(),
+        title: title.into(),
+        lead,
+    };
     let terms = if fresh {
         step("Terms", "Before you start", String::new())
     } else {
-        step("Updated", "One thing first", format!("{APP} now has Terms of use. Accept them once to go on; your routes and your connection stay as they are."))
+        step(
+            "Updated",
+            "One thing first",
+            format!(
+                "{APP} now has Terms of use. Accept them once to go on; your routes and your connection stay as they are."
+            ),
+        )
     };
     WelcomeView {
         fresh,
@@ -74,7 +84,14 @@ pub fn braid() -> Vec<Strand> {
     let xs: Vec<f32> = (0..=320).map(|i| x0 + i as f32).collect();
     let last = xs.len() - 1;
     let ys: Vec<Vec<f32>> = (0..3)
-        .map(|i| xs.iter().map(|&x| cy + (1.0 - smooth(xb - 10.0, xb + 34.0, x)) * raw(i, x) + smooth(xb, xb + 150.0, x) * (target[i] - cy)).collect())
+        .map(|i| {
+            xs.iter()
+                .map(|&x| {
+                    cy + (1.0 - smooth(xb - 10.0, xb + 34.0, x)) * raw(i, x)
+                        + smooth(xb, xb + 150.0, x) * (target[i] - cy)
+                })
+                .collect()
+        })
         .collect();
     let path = |i: usize, from: isize, to: usize| {
         let (a, b) = (from.max(0) as usize, to.min(last));
@@ -84,7 +101,8 @@ pub fn braid() -> Vec<Strand> {
         }
         d.trim_end().to_string()
     };
-    let mut out: Vec<Strand> = (0..3).map(|i| Strand { path: path(i, 0, last), colour: colour[i], front: false }).collect();
+    let mut out: Vec<Strand> =
+        (0..3).map(|i| Strand { path: path(i, 0, last), colour: colour[i], front: false }).collect();
     // At every crossing the strand moving towards the third goes over: a real three-strand plait.
     for (a, b) in [(0, 1), (0, 2), (1, 2)] {
         let c = 3 - a - b;
@@ -109,14 +127,24 @@ mod tests {
         let fresh = view(true);
         assert!(fresh.fresh);
         let heads: Vec<_> = fresh.steps.iter().map(|s| (s.overline.as_str(), s.title.as_str())).collect();
-        assert_eq!(vec![("Welcome", "Every app, its own exit"), ("Four places", "Find your way"), ("Terms", "Before you start")], heads);
+        assert_eq!(
+            vec![
+                ("Welcome", "Every app, its own exit"),
+                ("Four places", "Find your way"),
+                ("Terms", "Before you start")
+            ],
+            heads
+        );
         assert_eq!("Everything unbraid does lives in one of four places.", fresh.steps[1].lead);
         assert_eq!("", fresh.steps[2].lead);
 
         let update = view(false);
         assert!(!update.fresh);
         assert_eq!(("Updated", "One thing first"), (update.steps[2].overline.as_str(), update.steps[2].title.as_str()));
-        assert_eq!("unbraid now has Terms of use. Accept them once to go on; your routes and your connection stay as they are.", update.steps[2].lead);
+        assert_eq!(
+            "unbraid now has Terms of use. Accept them once to go on; your routes and your connection stay as they are.",
+            update.steps[2].lead
+        );
     }
 
     fn points(path: &str) -> Vec<(f32, f32)> {
@@ -149,6 +177,8 @@ mod tests {
         assert_eq!(vec![(0, (342.0, 34.0)), (1, (342.0, 115.0)), (2, (342.0, 196.0))], ends);
         let fronts = &strands[3..];
         assert!(fronts.len() > 10 && fronts.iter().all(|s| s.front), "{} crossings", fronts.len());
-        assert!(fronts.iter().all(|s| (11..=21).contains(&points(&s.path).len()) && points(&s.path)[0].0 < 150.0 + 34.0));
+        assert!(
+            fronts.iter().all(|s| (11..=21).contains(&points(&s.path).len()) && points(&s.path)[0].0 < 150.0 + 34.0)
+        );
     }
 }

@@ -42,8 +42,9 @@ pub(crate) fn lines(s: &str) -> impl Iterator<Item = &str> {
 
 const MAX_OVPN: usize = 256 * 1024;
 const DEFAULT_CIPHERS: [&str; 3] = ["AES-256-GCM", "AES-128-GCM", "CHACHA20-POLY1305"];
-static CIPHERS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(?:AES-(128|192|256)-(CBC|GCM)|CHACHA20-POLY1305|(CAMELLIA|ARIA)-(128|192|256)-CBC)$").unwrap());
+static CIPHERS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:AES-(128|192|256)-(CBC|GCM)|CHACHA20-POLY1305|(CAMELLIA|ARIA)-(128|192|256)-CBC)$").unwrap()
+});
 const DIGESTS: &[&str] = &["SHA1", "SHA224", "SHA256", "SHA384", "SHA512"];
 static PEM_BEGIN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"-----BEGIN ([A-Za-z0-9 ]+)-----").unwrap());
 const TLS_VERSIONS: &[&str] = &["1.0", "1.1", "1.2", "1.3"];
@@ -112,14 +113,28 @@ const REJECTED: &[(&str, &str)] = &[
     ("capath", "capath isn't supported; embed the CA in a <ca> block"),
     ("cryptoapicert", "Windows certificate store isn't supported"),
     ("management", "Management interface isn't supported"),
-    ("tls-ciphersuites", "tls-ciphersuites (a TLS 1.3 cipher restriction) can't be enforced; remove it from the profile"),
+    (
+        "tls-ciphersuites",
+        "tls-ciphersuites (a TLS 1.3 cipher restriction) can't be enforced; remove it from the profile",
+    ),
 ];
 
 fn rejected(k: &str) -> Option<&'static str> {
     REJECTED.iter().find(|(name, _)| *name == k).map(|(_, why)| *why)
 }
 
-const BLOCKS: &[&str] = &["ca", "cert", "key", "tls-auth", "tls-crypt", "tls-crypt-v2", "dh", "extra-certs", "auth-user-pass", "peer-fingerprint"];
+const BLOCKS: &[&str] = &[
+    "ca",
+    "cert",
+    "key",
+    "tls-auth",
+    "tls-crypt",
+    "tls-crypt-v2",
+    "dh",
+    "extra-certs",
+    "auth-user-pass",
+    "peer-fingerprint",
+];
 
 const PULL_ACTIONS: &[&str] = &["accept", "ignore", "reject"];
 const SERVER_EKU: &[&str] = &["serverauth", "tls web server authentication", "1.3.6.1.5.5.7.3.1"];
@@ -250,7 +265,8 @@ fn pem_sections(block: &str) -> Vec<&str> {
 
 fn pems(name: &str, block: &str) -> Result<String> {
     require!(!block.contains("ENCRYPTED") && !block.contains("Proc-Type"), "Encrypted private keys aren't supported");
-    let found: Vec<String> = pem_sections(block).into_iter().map(|p| lines(p).map(str::trim).collect::<Vec<_>>().join("\n")).collect();
+    let found: Vec<String> =
+        pem_sections(block).into_iter().map(|p| lines(p).map(str::trim).collect::<Vec<_>>().join("\n")).collect();
     require!(!found.is_empty(), "The <{name}> block is empty or malformed");
     Ok(found.join("\n"))
 }
@@ -274,7 +290,10 @@ fn ciphers(k: &str, v: &str) -> Result<Vec<String>> {
         .split(':')
         .filter(|c| !c.is_empty())
         .map(|c| {
-            require!(CIPHERS.is_match(c), "Unsupported cipher in {k}: {c} (use AES-GCM, ChaCha20 or an AES/Camellia/ARIA CBC cipher)");
+            require!(
+                CIPHERS.is_match(c),
+                "Unsupported cipher in {k}: {c} (use AES-GCM, ChaCha20 or an AES/Camellia/ARIA CBC cipher)"
+            );
             Ok(c.to_string())
         })
         .collect()
@@ -286,7 +305,8 @@ fn put(o: &mut Map<String, Value>, k: &str, v: impl Into<Value>) {
 
 /// Validates a .ovpn and keeps it with its login.
 pub fn parse_ovpn(text: &str, name: &str, username: &str, password: &str) -> Result<OvpnProfile> {
-    let p = OvpnProfile { name: name.into(), config: text.into(), username: username.into(), password: password.into() };
+    let p =
+        OvpnProfile { name: name.into(), config: text.into(), username: username.into(), password: password.into() };
     build("check", &p)?;
     Ok(p)
 }
@@ -327,7 +347,11 @@ fn checks_server(c: &Cfg) -> bool {
 
 /// Stream ciphers have no integrity check (see [`ovpn_weakness`] for OpenVPN).
 pub fn ss_weakness(p: &SsProfile) -> Option<String> {
-    if p.method.contains("gcm") || p.method.contains("poly1305") { None } else { Some(format!("{} has no integrity check.{RISK}", p.method)) }
+    if p.method.contains("gcm") || p.method.contains("poly1305") {
+        None
+    } else {
+        Some(format!("{} has no integrity check.{RISK}", p.method))
+    }
 }
 
 /// A sing-box `openvpn-client` endpoint for `p`.
@@ -404,17 +428,32 @@ fn build(tag: &str, p: &OvpnProfile) -> Result<Map<String, Value>> {
         require!(!c.has(k) || c.blocks.contains_key(k), "{k} must be inline (<{k}> block), not a file path");
     }
     let mut fingerprints: Vec<String> = c.all("peer-fingerprint").filter_map(|a| a.first().cloned()).collect();
-    fingerprints.extend(lines(c.blocks.get("peer-fingerprint").map_or("", String::as_str)).map(str::trim).filter(|l| !l.is_empty()).map(String::from));
+    fingerprints.extend(
+        lines(c.blocks.get("peer-fingerprint").map_or("", String::as_str))
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(String::from),
+    );
     require!(c.blocks.contains_key("ca") || !fingerprints.is_empty(), "The profile has no <ca> block");
-    require!(c.blocks.contains_key("cert") == c.blocks.contains_key("key"), "The profile needs both <cert> and <key>, or neither");
-    let wraps: Vec<&str> = ["tls-auth", "tls-crypt", "tls-crypt-v2"].into_iter().filter(|w| c.blocks.contains_key(*w)).collect();
+    require!(
+        c.blocks.contains_key("cert") == c.blocks.contains_key("key"),
+        "The profile needs both <cert> and <key>, or neither"
+    );
+    let wraps: Vec<&str> =
+        ["tls-auth", "tls-crypt", "tls-crypt-v2"].into_iter().filter(|w| c.blocks.contains_key(*w)).collect();
     require!(wraps.len() <= 1, "Use only one of tls-auth, tls-crypt and tls-crypt-v2");
 
-    require!(!c.blocks.contains_key("extra-certs") || c.blocks.contains_key("cert"), "<extra-certs> needs a <cert> block");
+    require!(
+        !c.blocks.contains_key("extra-certs") || c.blocks.contains_key("cert"),
+        "<extra-certs> needs a <cert> block"
+    );
 
     let needs_login = c.has("auth-user-pass") || c.blocks.contains_key("auth-user-pass");
     let (user, pass) = login(p, c.blocks.get("auth-user-pass").map(String::as_str));
-    require!(!needs_login || (!user.trim().is_empty() && !pass.is_empty()), "This profile needs a username and password");
+    require!(
+        !needs_login || (!user.trim().is_empty() && !pass.is_empty()),
+        "This profile needs a username and password"
+    );
 
     let compat = match c.arg("compat-mode") {
         Some(v) => match COMPAT.captures(v) {
@@ -449,7 +488,10 @@ fn build(tag: &str, p: &OvpnProfile) -> Result<Map<String, Value>> {
     } else {
         None
     };
-    require!(!before24 || named.is_some(), "compat-mode below 2.4.0 needs a cipher line (the old BF-CBC default isn't supported)");
+    require!(
+        !before24 || named.is_some(),
+        "compat-mode below 2.4.0 needs a cipher line (the old BF-CBC default isn't supported)"
+    );
     // OpenVPN 2.6 negotiates only from data-ciphers; a lone `cipher` is the fallback only for compat-mode < 2.4.0 or data-ciphers-fallback.
     let fallback = match &pinned {
         Some(p) => Some(p[0].clone()),
@@ -468,7 +510,9 @@ fn build(tag: &str, p: &OvpnProfile) -> Result<Map<String, Value>> {
     };
     let tls_cipher = c.arg("tls-cipher");
     if let Some(bad) = tls_cipher.and_then(|v| v.split(':').find(|s| !TLS_CIPHERS.split(' ').any(|t| t == *s))) {
-        return Err(invalid(format!("Unsupported tls-cipher: {bad} (only the TLS 1.2 suites sing-box implements, by OpenSSL or IANA name)")));
+        return Err(invalid(format!(
+            "Unsupported tls-cipher: {bad} (only the TLS 1.2 suites sing-box implements, by OpenSSL or IANA name)"
+        )));
     }
     let auth = c.arg("auth").map(str::to_uppercase);
     if let Some(a) = &auth {
@@ -489,18 +533,29 @@ fn build(tag: &str, p: &OvpnProfile) -> Result<Map<String, Value>> {
     } else {
         None
     };
-    let compressing = lzo.as_deref().is_some_and(|l| l != "no") || compress.as_deref().is_some_and(|v| v.starts_with("lz4"));
+    let compressing =
+        lzo.as_deref().is_some_and(|l| l != "no") || compress.as_deref().is_some_and(|v| v.starts_with("lz4"));
     let allow = c.arg("allow-compression");
     if let Some(a) = allow {
         require!(["no", "asym", "yes"].contains(&a), "Invalid allow-compression");
     }
-    require!(!compressing || allow != Some("no"), "allow-compression no conflicts with the compression in this profile");
+    require!(
+        !compressing || allow != Some("no"),
+        "allow-compression no conflicts with the compression in this profile"
+    );
 
     let tcp = remotes.iter().any(|(_, _, net)| net.starts_with("tcp"));
-    let fragment = c.arg("fragment").map(|f| f.parse::<i32>().ok().filter(|n| *n >= 68).ok_or_else(|| invalid("Invalid fragment value"))).transpose()?;
+    let fragment = c
+        .arg("fragment")
+        .map(|f| f.parse::<i32>().ok().filter(|n| *n >= 68).ok_or_else(|| invalid("Invalid fragment value")))
+        .transpose()?;
     require!(fragment.is_none() || !tcp, "fragment only works over UDP");
-    let mtu =
-        c.arg("tun-mtu").map(|m| m.parse::<i32>().ok().filter(|n| (576..=9000).contains(n)).ok_or_else(|| invalid("Invalid tun-mtu value"))).transpose()?;
+    let mtu = c
+        .arg("tun-mtu")
+        .map(|m| {
+            m.parse::<i32>().ok().filter(|n| (576..=9000).contains(n)).ok_or_else(|| invalid("Invalid tun-mtu value"))
+        })
+        .transpose()?;
 
     let mut o = Map::new();
     put(&mut o, "type", "openvpn-client");
@@ -510,7 +565,14 @@ fn build(tag: &str, p: &OvpnProfile) -> Result<Map<String, Value>> {
         put(&mut o, "server_port", *port);
         put(&mut o, "network", net.as_str());
     } else {
-        put(&mut o, "servers", remotes.iter().map(|(host, port, net)| json!({"server": host, "server_port": port, "network": net})).collect::<Vec<_>>());
+        put(
+            &mut o,
+            "servers",
+            remotes
+                .iter()
+                .map(|(host, port, net)| json!({"server": host, "server_port": port, "network": net}))
+                .collect::<Vec<_>>(),
+        );
         if c.has("remote-random") {
             put(&mut o, "remote_random", true);
         }
@@ -602,7 +664,9 @@ fn build(tag: &str, p: &OvpnProfile) -> Result<Map<String, Value>> {
     }
     // Alone, a bare remote-cert-ku only demands that a key-usage extension exist: no engine field says that.
     if ku.is_some_and(|k| k.is_empty()) && role.is_none() {
-        return Err(invalid("A bare remote-cert-ku isn't supported on its own; list the key usages (remote-cert-ku a0 88) or add remote-cert-tls server"));
+        return Err(invalid(
+            "A bare remote-cert-ku isn't supported on its own; list the key usages (remote-cert-ku a0 88) or add remote-cert-tls server",
+        ));
     }
     if let Some(v) = c.arg("ns-cert-type") {
         require!(v == "server" || v == "client", "Invalid ns-cert-type");
@@ -660,7 +724,10 @@ fn build(tag: &str, p: &OvpnProfile) -> Result<Map<String, Value>> {
         put(&mut o, "allow_compression", "asym");
     }
     if let Some(a) = c.d.get("mssfix").and_then(|v| v.last()) {
-        let n = a.first().map(|v| v.parse::<i32>().ok().filter(|n| *n >= 0).ok_or_else(|| invalid("Invalid mssfix value"))).transpose()?;
+        let n = a
+            .first()
+            .map(|v| v.parse::<i32>().ok().filter(|n| *n >= 0).ok_or_else(|| invalid("Invalid mssfix value")))
+            .transpose()?;
         if n == Some(0) {
             put(&mut o, "mss_fix_disabled", true);
         } else if let Some(n) = n {
@@ -685,10 +752,18 @@ fn build(tag: &str, p: &OvpnProfile) -> Result<Map<String, Value>> {
         }
     }
     if let Some(b) = c.arg("reneg-bytes") {
-        put(&mut o, "renegotiate_bytes", b.parse::<i64>().ok().filter(|n| *n >= 0).ok_or_else(|| invalid("Invalid reneg-bytes"))?);
+        put(
+            &mut o,
+            "renegotiate_bytes",
+            b.parse::<i64>().ok().filter(|n| *n >= 0).ok_or_else(|| invalid("Invalid reneg-bytes"))?,
+        );
     }
     if let Some(b) = c.arg("reneg-pkts") {
-        put(&mut o, "renegotiate_packets", b.parse::<i64>().ok().filter(|n| *n >= 0).ok_or_else(|| invalid("Invalid reneg-pkts"))?);
+        put(
+            &mut o,
+            "renegotiate_packets",
+            b.parse::<i64>().ok().filter(|n| *n >= 0).ok_or_else(|| invalid("Invalid reneg-pkts"))?,
+        );
     }
     let ka = c.d.get("keepalive").and_then(|v| v.last());
     if let Some(v) = c.arg("ping").or(ka.and_then(|k| k.first()).map(String::as_str)).filter(|v| *v != "0") {
@@ -712,7 +787,14 @@ fn build(tag: &str, p: &OvpnProfile) -> Result<Map<String, Value>> {
         put(&mut o, "explicit_exit_notify", n.ok_or_else(|| invalid("Invalid explicit-exit-notify"))?);
     }
     if let Some(w) = c.arg("replay-window") {
-        put(&mut o, "replay_window", w.parse::<i32>().ok().filter(|n| (1..=65536).contains(n)).ok_or_else(|| invalid("Invalid replay-window"))?);
+        put(
+            &mut o,
+            "replay_window",
+            w.parse::<i32>()
+                .ok()
+                .filter(|n| (1..=65536).contains(n))
+                .ok_or_else(|| invalid("Invalid replay-window"))?,
+        );
         if let Some(v) = c.arg_at("replay-window", 1) {
             put(&mut o, "replay_window_time", seconds("replay-window", v)?);
         }
@@ -767,8 +849,12 @@ fn unpercent(s: &str) -> Result<String> {
 }
 
 /// Base64 of either alphabet, padded or not; bits left over at the end are ignored.
-const B64: GeneralPurpose =
-    GeneralPurpose::new(&URL_SAFE, GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::RequireNone).with_decode_allow_trailing_bits(true));
+const B64: GeneralPurpose = GeneralPurpose::new(
+    &URL_SAFE,
+    GeneralPurposeConfig::new()
+        .with_decode_padding_mode(DecodePaddingMode::RequireNone)
+        .with_decode_allow_trailing_bits(true),
+);
 
 fn b64(s: &str) -> Option<String> {
     let bytes = B64.decode(s.replace('+', "-").replace('/', "_").trim_end_matches('=')).ok()?;
@@ -795,17 +881,25 @@ pub fn parse_ss(link: &str, name: &str) -> Result<SsProfile> {
     let (userinfo, host_port) = match body.rsplit_once('@') {
         Some((userinfo, host_port)) => {
             let userinfo = unpercent(userinfo)?;
-            let userinfo = if userinfo.contains(':') { userinfo } else { b64(&userinfo).ok_or_else(|| invalid("Can't decode the link's credentials"))? };
+            let userinfo = if userinfo.contains(':') {
+                userinfo
+            } else {
+                b64(&userinfo).ok_or_else(|| invalid("Can't decode the link's credentials"))?
+            };
             (userinfo, host_port.to_string())
         }
         None => {
             let decoded = b64(&unpercent(body)?).ok_or_else(|| invalid("Can't decode the link"))?;
-            let Some((userinfo, host_port)) = decoded.rsplit_once('@') else { return Err(invalid("The link has no server address")) };
+            let Some((userinfo, host_port)) = decoded.rsplit_once('@') else {
+                return Err(invalid("The link has no server address"));
+            };
             (userinfo.to_string(), host_port.to_string())
         }
     };
     require!(length(&userinfo) <= MAX_SS_USERINFO, "The link's credentials are too long");
-    let Some((method, password)) = userinfo.split_once(':') else { return Err(invalid("The link has no method or password")) };
+    let Some((method, password)) = userinfo.split_once(':') else {
+        return Err(invalid("The link has no method or password"));
+    };
     let method = method.to_lowercase();
     require!(SS_METHODS.contains(&method.as_str()), "Unsupported Shadowsocks cipher: {method}");
     require!(!password.is_empty(), "The link has an empty password");
@@ -815,9 +909,14 @@ pub fn parse_ss(link: &str, name: &str) -> Result<SsProfile> {
         None => host_port.rsplit_once(':').map_or(host_port.as_str(), |(h, _)| h),
     };
     let port = host_port.rsplit_once(':').map_or("", |(_, p)| p).parse::<i32>().ok();
-    require!(!host.trim().is_empty() && !host.chars().any(|c| c.is_whitespace() || c == '/'), "The link has no server host");
+    require!(
+        !host.trim().is_empty() && !host.chars().any(|c| c.is_whitespace() || c == '/'),
+        "The link has no server host"
+    );
     require!(length(host) <= MAX_HOST, "The link's server host is too long");
-    let Some(port) = port.filter(|p| (1..=65535).contains(p)) else { return Err(invalid("The link has an invalid port")) };
+    let Some(port) = port.filter(|p| (1..=65535).contains(p)) else {
+        return Err(invalid("The link has an invalid port"));
+    };
 
     let mut params = HashMap::new();
     for p in query.split('&').filter(|p| !p.is_empty()) {
@@ -829,17 +928,25 @@ pub fn parse_ss(link: &str, name: &str) -> Result<SsProfile> {
     let plugin = match spec {
         Some(s) => {
             let n = s.split_once(';').map_or(s.as_str(), |(n, _)| n);
-            Some(ss_plugin(n).ok_or_else(|| invalid(format!("Unsupported Shadowsocks plugin: {n} (only obfs-local and v2ray-plugin)")))?)
+            Some(ss_plugin(n).ok_or_else(|| {
+                invalid(format!("Unsupported Shadowsocks plugin: {n} (only obfs-local and v2ray-plugin)"))
+            })?)
         }
         None => None,
     };
     let label = [name, tag.as_str()].into_iter().find(|l| !l.trim().is_empty()).unwrap_or(host);
-    require!(length(label) <= MAX_SS_NAME || label == host, "The server name is too long (at most {MAX_SS_NAME} characters)");
+    require!(
+        length(label) <= MAX_SS_NAME || label == host,
+        "The server name is too long (at most {MAX_SS_NAME} characters)"
+    );
     let opts = spec.and_then(|s| s.split_once(';')).map(|(_, o)| o).filter(|o| !o.is_empty());
     // v2ray-plugin's cert= names a file on this computer, which the engine would read: only an inline certificate is
     // taken. SIP003 escapes with backslashes; they're dropped first so "c\ert=" can't slip past.
     require!(
-        opts.is_none_or(|o| !o.replace('\\', "").split(';').any(|it| it.split_once('=').map_or(it, |(k, _)| k).trim() == "cert")),
+        opts.is_none_or(|o| !o
+            .replace('\\', "")
+            .split(';')
+            .any(|it| it.split_once('=').map_or(it, |(k, _)| k).trim() == "cert")),
         "The plugin's cert= option reads a file on this computer; paste the certificate as certRaw= instead"
     );
     Ok(SsProfile {
@@ -921,7 +1028,9 @@ mod tests {
 
     fn rejects<T: std::fmt::Debug>(why: &str, r: Result<T>) {
         match r {
-            Err(Error::Invalid(m)) => assert!(m.to_lowercase().contains(&why.to_lowercase()), "'{m}' should mention '{why}'"),
+            Err(Error::Invalid(m)) => {
+                assert!(m.to_lowercase().contains(&why.to_lowercase()), "'{m}' should mention '{why}'")
+            }
             other => panic!("expected rejection mentioning '{why}', got {other:?}"),
         }
     }
@@ -984,8 +1093,12 @@ mod tests {
     fn self_hosted() {
         let e = ovpn("selfhosted", &fixture("selfhosted.ovpn"));
         assert_eq!(None, e.get("server"));
-        let servers: Vec<&Map<String, Value>> = e["servers"].as_array().unwrap().iter().map(|s| s.as_object().unwrap()).collect();
-        assert_eq!(vec!["vpn.example.net", "vpn2.example.net", "203.0.113.10"], servers.iter().map(|s| str(s, "server")).collect::<Vec<_>>());
+        let servers: Vec<&Map<String, Value>> =
+            e["servers"].as_array().unwrap().iter().map(|s| s.as_object().unwrap()).collect();
+        assert_eq!(
+            vec!["vpn.example.net", "vpn2.example.net", "203.0.113.10"],
+            servers.iter().map(|s| str(s, "server")).collect::<Vec<_>>()
+        );
         assert_eq!(vec!["443", "8443", "1194"], servers.iter().map(|s| str(s, "server_port")).collect::<Vec<_>>());
         assert_eq!(vec!["tcp", "tcp", "udp"], servers.iter().map(|s| str(s, "network")).collect::<Vec<_>>());
         assert_eq!("true", str(&e, "remote_random"));
@@ -1021,7 +1134,10 @@ mod tests {
         rejects("PKCS#12", parse(&with("pkcs12 client.p12")));
         rejects("inline", parse(&(without("(?s)<ca>.*?</ca>\\n") + "\nca ca.crt")));
         rejects("inline", parse(&with("cert client.crt")));
-        rejects("both <cert> and <key>", parse(&with("<cert>\n-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n</cert>")));
+        rejects(
+            "both <cert> and <key>",
+            parse(&with("<cert>\n-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n</cert>")),
+        );
         rejects("compress lzo", parse(&with("compress lzo")));
         rejects("proxy", parse(&with("http-proxy 10.0.0.1 8080")));
         rejects("2FA", parse(&with("static-challenge \"Code\" 1")));
@@ -1039,26 +1155,49 @@ mod tests {
     #[test]
     fn tls_cipher_is_enforced_and_tls13_suites_are_refused() {
         let ex = fixture("expressvpn.ovpn");
-        let e = ovpn("tls-cipher", &format!("{ex}\ntls-cipher ECDHE-RSA-AES256-GCM-SHA384:TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"));
-        assert_eq!("ECDHE-RSA-AES256-GCM-SHA384:TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256", str(obj(&e, "tls"), "cipher"));
+        let e = ovpn(
+            "tls-cipher",
+            &format!("{ex}\ntls-cipher ECDHE-RSA-AES256-GCM-SHA384:TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"),
+        );
+        assert_eq!(
+            "ECDHE-RSA-AES256-GCM-SHA384:TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+            str(obj(&e, "tls"), "cipher")
+        );
         assert_eq!(None, obj(&ovpn("no-tls-cipher", &ex), "tls").get("cipher"));
         rejects("tls-cipher", parse_ovpn(&format!("{ex}\ntls-cipher DEFAULT"), "x", "u", "p"));
-        rejects("tls-cipher", parse_ovpn(&format!("{ex}\ntls-cipher TLS-DHE-RSA-WITH-AES-256-GCM-SHA384"), "x", "u", "p"));
-        rejects("tls-ciphersuites", parse_ovpn(&format!("{ex}\ntls-ciphersuites TLS_AES_256_GCM_SHA384"), "x", "u", "p"));
+        rejects(
+            "tls-cipher",
+            parse_ovpn(&format!("{ex}\ntls-cipher TLS-DHE-RSA-WITH-AES-256-GCM-SHA384"), "x", "u", "p"),
+        );
+        rejects(
+            "tls-ciphersuites",
+            parse_ovpn(&format!("{ex}\ntls-ciphersuites TLS_AES_256_GCM_SHA384"), "x", "u", "p"),
+        );
     }
 
     #[test]
     fn ncp_disable_wins_over_an_explicit_cipher_list() {
         let ex = fixture("expressvpn.ovpn");
-        let e = ovpn("ncp-disable", &format!("{ex}\nncp-disable\ndata-ciphers AES-128-GCM:CHACHA20-POLY1305\ndata-ciphers-fallback AES-128-CBC"));
+        let e = ovpn(
+            "ncp-disable",
+            &format!(
+                "{ex}\nncp-disable\ndata-ciphers AES-128-GCM:CHACHA20-POLY1305\ndata-ciphers-fallback AES-128-CBC"
+            ),
+        );
         assert_eq!(vec!["AES-256-CBC"], strings(&e, "data_ciphers"));
         assert_eq!("AES-256-CBC", str(&e, "data_ciphers_fallback"));
-        let gcm = ovpn("ncp-disable-gcm", &format!("{}\nncp-disable\nncp-ciphers AES-128-GCM", fixture("cyberghost.ovpn")));
+        let gcm =
+            ovpn("ncp-disable-gcm", &format!("{}\nncp-disable\nncp-ciphers AES-128-GCM", fixture("cyberghost.ovpn")));
         assert_eq!(vec!["AES-256-GCM"], strings(&gcm, "data_ciphers"));
         assert_eq!("AES-256-GCM", str(&gcm, "data_ciphers_fallback"));
         rejects(
             "ncp-disable needs a cipher",
-            parse_ovpn(&format!("{}\nncp-disable", Regex::new("cipher AES-256-CBC\\n").unwrap().replace_all(&ex, "")), "x", "u", "p"),
+            parse_ovpn(
+                &format!("{}\nncp-disable", Regex::new("cipher AES-256-CBC\\n").unwrap().replace_all(&ex, "")),
+                "x",
+                "u",
+                "p",
+            ),
         );
     }
 
@@ -1093,7 +1232,10 @@ mod tests {
         let typed = ovpn_endpoint("t", &parse_ovpn(&text, "x", "bob", " s p ").unwrap()).unwrap();
         assert_eq!("bob", str(&typed, "username"));
         assert_eq!(" s p ", str(&typed, "password"));
-        rejects("username and password", parse_ovpn(&base.replace("auth-user-pass\n", "<auth-user-pass>\nalice\n</auth-user-pass>\n"), "x", "", ""));
+        rejects(
+            "username and password",
+            parse_ovpn(&base.replace("auth-user-pass\n", "<auth-user-pass>\nalice\n</auth-user-pass>\n"), "x", "", ""),
+        );
         rejects("username and password", parse_ovpn(&base, "x", "", ""));
     }
 
@@ -1105,7 +1247,10 @@ mod tests {
         let chain = str(obj(&e, "tls"), "client_certificate");
         assert_eq!(2, chain.matches("BEGIN CERTIFICATE").count());
         assert!(chain.ends_with(lines(&ca).last().unwrap().trim()));
-        assert_eq!(1, str(obj(&ovpn("no-extra-certs", &base), "tls"), "client_certificate").matches("BEGIN CERTIFICATE").count());
+        assert_eq!(
+            1,
+            str(obj(&ovpn("no-extra-certs", &base), "tls"), "client_certificate").matches("BEGIN CERTIFICATE").count()
+        );
         let ex = fixture("expressvpn.ovpn");
         rejects("extra-certs", parse_ovpn(&format!("{ex}\n<extra-certs>\n{ca}\n</extra-certs>"), "x", "u", "p"));
     }
@@ -1143,10 +1288,21 @@ mod tests {
         let tls_plus_eku = tls("tls-eku", "remote-cert-tls client\nremote-cert-eku clientAuth");
         assert_eq!("client", str(&tls_plus_eku, "remote_certificate_tls"));
         assert_eq!(None, tls_plus_eku.get("remote_certificate_eku"));
-        rejects("can't be combined", parse_ovpn(&format!("{}\nremote-cert-ku\nremote-cert-eku 1.3.6.1.5.5.7.3.3", base()), "x", "u", "p"));
+        rejects(
+            "can't be combined",
+            parse_ovpn(&format!("{}\nremote-cert-ku\nremote-cert-eku 1.3.6.1.5.5.7.3.3", base()), "x", "u", "p"),
+        );
         // Alone, a bare remote-cert-ku demands a key-usage extension the engine can't express: refused, not dropped.
         rejects("bare remote-cert-ku", parse_ovpn(&format!("{}\nremote-cert-ku", base()), "x", "u", "p"));
-        rejects("can't be combined", parse_ovpn(&format!("{}\nremote-cert-tls server\nremote-cert-eku 1.3.6.1.5.5.7.3.3", base()), "x", "u", "p"));
+        rejects(
+            "can't be combined",
+            parse_ovpn(
+                &format!("{}\nremote-cert-tls server\nremote-cert-eku 1.3.6.1.5.5.7.3.3", base()),
+                "x",
+                "u",
+                "p",
+            ),
+        );
         let values = tls("ku-values-eku", "remote-cert-ku a0 88\nremote-cert-eku 1.3.6.1.5.5.7.3.3");
         assert_eq!(vec!["a0", "88"], strings(&values, "remote_certificate_ku"));
         assert_eq!("1.3.6.1.5.5.7.3.3", str(&values, "remote_certificate_eku"));
@@ -1156,7 +1312,13 @@ mod tests {
         assert_eq!("server", str(&tls("tls-only", "remote-cert-tls server"), "remote_certificate_tls"));
         assert_eq!(
             "1.3.6.1.5.5.7.3.3",
-            str(&tls("eku-after-tls-ku", "remote-cert-tls server\nremote-cert-ku a0\nremote-cert-eku 1.3.6.1.5.5.7.3.3"), "remote_certificate_eku")
+            str(
+                &tls(
+                    "eku-after-tls-ku",
+                    "remote-cert-tls server\nremote-cert-ku a0\nremote-cert-eku 1.3.6.1.5.5.7.3.3"
+                ),
+                "remote_certificate_eku"
+            )
         );
     }
 
@@ -1171,41 +1333,70 @@ mod tests {
         let fb = ovpn("cipher-fallback", &format!("{}\ndata-ciphers-fallback AES-128-CBC", base()));
         assert_eq!(None, fb.get("data_ciphers"));
         assert_eq!("AES-128-CBC", str(&fb, "data_ciphers_fallback"));
-        let flipped =
-            ovpn("fallback-then-cipher", &format!("{}\ndata-ciphers-fallback AES-128-CBC\ncipher AES-192-CBC", base().replace("cipher AES-256-CBC\n", "")));
+        let flipped = ovpn(
+            "fallback-then-cipher",
+            &format!(
+                "{}\ndata-ciphers-fallback AES-128-CBC\ncipher AES-192-CBC",
+                base().replace("cipher AES-256-CBC\n", "")
+            ),
+        );
         assert_eq!("AES-192-CBC", str(&flipped, "data_ciphers_fallback"));
-        let only_fallback = ovpn("fallback-only", &format!("{}\ndata-ciphers-fallback AES-128-CBC", base().replace("cipher AES-256-CBC\n", "")));
+        let only_fallback = ovpn(
+            "fallback-only",
+            &format!("{}\ndata-ciphers-fallback AES-128-CBC", base().replace("cipher AES-256-CBC\n", "")),
+        );
         assert_eq!("AES-128-CBC", str(&only_fallback, "data_ciphers_fallback"));
     }
 
     #[test]
     fn compat_mode_restores_the_legacy_cipher_only_where_open_vpn_does() {
         let c24 = ovpn("compat-2.4.0", &format!("{}\ncompat-mode 2.4.0", base()));
-        assert_eq!(vec!["AES-256-GCM", "AES-128-GCM", "CHACHA20-POLY1305", "AES-256-CBC"], strings(&c24, "data_ciphers"));
+        assert_eq!(
+            vec!["AES-256-GCM", "AES-128-GCM", "CHACHA20-POLY1305", "AES-256-CBC"],
+            strings(&c24, "data_ciphers")
+        );
         assert_eq!(None, c24.get("data_ciphers_fallback"));
         let c24_fixed = ovpn("compat-2.4.0-list", &format!("{}\ncompat-mode 2.4.0\ndata-ciphers AES-128-GCM", base()));
         assert_eq!(vec!["AES-128-GCM", "AES-256-CBC"], strings(&c24_fixed, "data_ciphers"));
-        let c24_gcm = ovpn("compat-2.4.0-gcm", &format!("{}\ncompat-mode 2.4.0", base().replace("AES-256-CBC", "AES-256-GCM")));
+        let c24_gcm =
+            ovpn("compat-2.4.0-gcm", &format!("{}\ncompat-mode 2.4.0", base().replace("AES-256-CBC", "AES-256-GCM")));
         assert_eq!(None, c24_gcm.get("data_ciphers"));
         let c25 = ovpn("compat-2.5.0", &format!("{}\ncompat-mode 2.5.0", base()));
         assert_eq!(None, c25.get("data_ciphers"));
         assert_eq!(None, c25.get("data_ciphers_fallback"));
         let c23 = ovpn("compat-2.3.0", &format!("{}\ncompat-mode 2.3.0", base()));
         assert_eq!("AES-256-CBC", str(&c23, "data_ciphers_fallback"));
-        assert_eq!(vec!["AES-256-GCM", "AES-128-GCM", "CHACHA20-POLY1305", "AES-256-CBC"], strings(&c23, "data_ciphers"));
+        assert_eq!(
+            vec!["AES-256-GCM", "AES-128-GCM", "CHACHA20-POLY1305", "AES-256-CBC"],
+            strings(&c23, "data_ciphers")
+        );
         rejects("compat-mode", parse_ovpn(&format!("{}\ncompat-mode 2.4", base()), "x", "u", "p"));
-        rejects("needs a cipher", parse_ovpn(&format!("{}\ncompat-mode 2.3.0", base().replace("cipher AES-256-CBC\n", "")), "x", "u", "p"));
-        rejects("Invalid data-ciphers-fallback", parse_ovpn(&format!("{}\ndata-ciphers-fallback AES-128-CBC:AES-256-CBC", base()), "x", "u", "p"));
+        rejects(
+            "needs a cipher",
+            parse_ovpn(&format!("{}\ncompat-mode 2.3.0", base().replace("cipher AES-256-CBC\n", "")), "x", "u", "p"),
+        );
+        rejects(
+            "Invalid data-ciphers-fallback",
+            parse_ovpn(&format!("{}\ndata-ciphers-fallback AES-128-CBC:AES-256-CBC", base()), "x", "u", "p"),
+        );
     }
 
     #[test]
     fn pull_filters_keep_their_order_and_route_no_pull_stays_on() {
         let e = ovpn(
             "pull-filters",
-            &format!("{}\npull-filter accept \"dhcp-option DNS 10.\"\npull-filter ignore \"dhcp-option\"\npull-filter reject redirect-gateway", base()),
+            &format!(
+                "{}\npull-filter accept \"dhcp-option DNS 10.\"\npull-filter ignore \"dhcp-option\"\npull-filter reject redirect-gateway",
+                base()
+            ),
         );
-        let f: Vec<(String, String)> =
-            e["pull_filters"].as_array().unwrap().iter().map(|v| v.as_object().unwrap()).map(|o| (str(o, "action"), str(o, "text"))).collect();
+        let f: Vec<(String, String)> = e["pull_filters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_object().unwrap())
+            .map(|o| (str(o, "action"), str(o, "text")))
+            .collect();
         let expected = [("accept", "dhcp-option DNS 10."), ("ignore", "dhcp-option"), ("reject", "redirect-gateway")];
         assert_eq!(expected.map(|(a, t)| (a.to_string(), t.to_string())).to_vec(), f);
         assert_eq!("true", str(&e, "route_no_pull"));
@@ -1221,9 +1412,17 @@ mod tests {
 
     #[test]
     fn port_and_rport_follow_directive_order_for_remotes_without_a_port() {
-        let no_port = base().replace("remote usa-new-york-1-ca-version-2.expressnetw.com 1195", "remote a.example.net\nremote b.example.net 8443");
+        let no_port = base().replace(
+            "remote usa-new-york-1-ca-version-2.expressnetw.com 1195",
+            "remote a.example.net\nremote b.example.net 8443",
+        );
         let ports = |extra: &str| -> Vec<String> {
-            ovpn("ports", &format!("{no_port}\n{extra}"))["servers"].as_array().unwrap().iter().map(|s| str(s.as_object().unwrap(), "server_port")).collect()
+            ovpn("ports", &format!("{no_port}\n{extra}"))["servers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| str(s.as_object().unwrap(), "server_port"))
+                .collect()
         };
         assert_eq!(vec!["1194", "8443"], ports(""));
         assert_eq!(vec!["443", "8443"], ports("port 1194\nrport 443"));
@@ -1244,15 +1443,35 @@ mod tests {
         assert_eq!("chacha20-ietf-poly1305", str(&o, "method"));
         assert_eq!("pa:ss/w0rd+1", str(&o, "password"));
         assert_eq!(None, o.get("plugin"));
-        assert_eq!("Outline NL", parse_ss(&format!("ss://{userinfo}@ss.example.net:8388#Outline%20NL"), "").unwrap().name);
+        assert_eq!(
+            "Outline NL",
+            parse_ss(&format!("ss://{userinfo}@ss.example.net:8388#Outline%20NL"), "").unwrap().name
+        );
         assert_eq!("Mine", parse_ss(&format!("ss://{userinfo}@ss.example.net:8388#x"), "Mine").unwrap().name);
         assert_eq!("ss.example.net", parse_ss(&format!("ss://{userinfo}@ss.example.net:8388"), "").unwrap().name);
         // v2ray-plugin's cert= would make the engine read a file on this computer.
-        rejects("certRaw", parse_ss(&format!("ss://{userinfo}@ss.example.net:8388/?plugin=v2ray-plugin%3Btls%3Bcert%3D%2Fdev%2Fzero#x"), ""));
-        rejects("certRaw", parse_ss(&format!("ss://{userinfo}@ss.example.net:8388/?plugin=v2ray-plugin%3Btls%3Bc%5Cert%3D%2Fdev%2Fzero#x"), ""));
+        rejects(
+            "certRaw",
+            parse_ss(
+                &format!("ss://{userinfo}@ss.example.net:8388/?plugin=v2ray-plugin%3Btls%3Bcert%3D%2Fdev%2Fzero#x"),
+                "",
+            ),
+        );
+        rejects(
+            "certRaw",
+            parse_ss(
+                &format!("ss://{userinfo}@ss.example.net:8388/?plugin=v2ray-plugin%3Btls%3Bc%5Cert%3D%2Fdev%2Fzero#x"),
+                "",
+            ),
+        );
         assert_eq!(
             Some("tls;host=a.example".to_string()),
-            parse_ss(&format!("ss://{userinfo}@ss.example.net:8388/?plugin=v2ray-plugin%3Btls%3Bhost%3Da.example#x"), "").unwrap().plugin_opts
+            parse_ss(
+                &format!("ss://{userinfo}@ss.example.net:8388/?plugin=v2ray-plugin%3Btls%3Bhost%3Da.example#x"),
+                ""
+            )
+            .unwrap()
+            .plugin_opts
         );
     }
 
@@ -1261,7 +1480,9 @@ mod tests {
         let pw = crate::http::enc(&key32());
         let o = ss(
             "ss-sip002-plain",
-            &format!("ss://2022-blake3-aes-256-gcm:{pw}@[2001:db8::1]:443/?plugin=v2ray-plugin%3Bhost%3Dcdn.example.net%3Bpath%3D%2Fws#IPv6"),
+            &format!(
+                "ss://2022-blake3-aes-256-gcm:{pw}@[2001:db8::1]:443/?plugin=v2ray-plugin%3Bhost%3Dcdn.example.net%3Bpath%3D%2Fws#IPv6"
+            ),
         );
         assert_eq!("2001:db8::1", str(&o, "server"));
         assert_eq!("443", str(&o, "server_port"));
@@ -1285,10 +1506,16 @@ mod tests {
     #[test]
     fn ss_obfs() {
         let userinfo = STANDARD.encode(format!("2022-blake3-aes-128-gcm:{}", key16()));
-        let o = ss("ss-obfs", &format!("ss://{userinfo}@203.0.113.7:8388/?plugin=obfs-local%3Bobfs%3Dtls%3Bobfs-host%3Dcdn.example.com"));
+        let o = ss(
+            "ss-obfs",
+            &format!("ss://{userinfo}@203.0.113.7:8388/?plugin=obfs-local%3Bobfs%3Dtls%3Bobfs-host%3Dcdn.example.com"),
+        );
         assert_eq!("obfs-local", str(&o, "plugin"));
         assert_eq!("obfs=tls;obfs-host=cdn.example.com", str(&o, "plugin_opts"));
-        assert_eq!(Some("obfs-local".to_string()), parse_ss(&format!("ss://{userinfo}@h.example:1/?plugin=simple-obfs%3Bobfs%3Dhttp"), "").unwrap().plugin);
+        assert_eq!(
+            Some("obfs-local".to_string()),
+            parse_ss(&format!("ss://{userinfo}@h.example:1/?plugin=simple-obfs%3Bobfs%3Dhttp"), "").unwrap().plugin
+        );
     }
 
     #[test]
@@ -1315,7 +1542,10 @@ mod tests {
         rejects("too long", parse_ss(&format!("ss://{ok}@h.example:1/?plugin={}", "a".repeat(9000)), ""));
         let long_pw = STANDARD.encode(format!("aes-256-gcm:{}", "p".repeat(2000)));
         rejects("credentials are too long", parse_ss(&format!("ss://{long_pw}@h.example:1"), ""));
-        rejects("credentials are too long", parse_ss(&format!("ss://aes-256-gcm:{}@h.example:1", "p".repeat(2000)), ""));
+        rejects(
+            "credentials are too long",
+            parse_ss(&format!("ss://aes-256-gcm:{}@h.example:1", "p".repeat(2000)), ""),
+        );
         rejects("name is too long", parse_ss(&format!("ss://{ok}@h.example:1#{}", "n".repeat(200)), ""));
         rejects("name is too long", parse_ss(&format!("ss://{ok}@h.example:1"), &"n".repeat(200)));
         rejects("host is too long", parse_ss(&format!("ss://{ok}@{}:1", "h".repeat(300)), ""));
@@ -1326,10 +1556,15 @@ mod tests {
     #[test]
     fn a_profile_that_never_checks_the_server_is_flagged() {
         let no_check = lines(&base())
-            .filter(|l| !(l.starts_with("remote-cert-tls") || l.starts_with("verify-x509-name") || l.starts_with("ns-cert-type")))
+            .filter(|l| {
+                !(l.starts_with("remote-cert-tls")
+                    || l.starts_with("verify-x509-name")
+                    || l.starts_with("ns-cert-type"))
+            })
             .collect::<Vec<_>>()
             .join("\n");
-        let w = |extra: &str| ovpn_weakness(&parse_ovpn(&format!("{no_check}\n{extra}"), "x", "u", "p").unwrap()).unwrap();
+        let w =
+            |extra: &str| ovpn_weakness(&parse_ovpn(&format!("{no_check}\n{extra}"), "x", "u", "p").unwrap()).unwrap();
         assert!(w("").unwrap().contains("right server"));
         assert!(w("peer-fingerprint").unwrap().contains("right server")); // a bare directive checks nothing
         for ok in [
@@ -1343,7 +1578,11 @@ mod tests {
         }
         // The client's role, or a later EKU overriding a server check, is no server check.
         assert!(w("remote-cert-tls client").unwrap().contains("right server"));
-        assert!(w("remote-cert-tls server\nremote-cert-eku clientAuth\nremote-cert-ku a0").unwrap().contains("right server"));
+        assert!(
+            w("remote-cert-tls server\nremote-cert-eku clientAuth\nremote-cert-ku a0")
+                .unwrap()
+                .contains("right server")
+        );
         // Weak crypto and no server check are both named.
         assert!(w("tls-version-min 1.0").is_some_and(|m| m.contains("TLS 1.0") && m.contains("right server")));
     }
@@ -1356,7 +1595,10 @@ mod tests {
         parse_ovpn(&named, "x", "u", "p").unwrap();
         parse_ovpn(&format!("{named}\nx509-username-field CN"), "x", "u", "p").unwrap();
         for f in ["OU", "emailAddress", "ext:subjectAltName", "CN OU"] {
-            rejects("only the certificate's CN", parse_ovpn(&format!("{named}\nx509-username-field {f}"), "x", "u", "p"));
+            rejects(
+                "only the certificate's CN",
+                parse_ovpn(&format!("{named}\nx509-username-field {f}"), "x", "u", "p"),
+            );
         }
         // Without a name check the field changes nothing on the client.
         parse_ovpn(&format!("{unnamed}\nx509-username-field OU"), "x", "u", "p").unwrap();
@@ -1365,12 +1607,25 @@ mod tests {
     #[test]
     fn weak_encryption_is_flagged_but_still_imports() {
         assert_eq!(None, ovpn_weakness(&parse_ovpn(&base(), "x", "u", "p").unwrap()).unwrap());
-        for (extra, says) in [("tls-version-min 1.0", "TLS 1.0"), ("tls-cipher AES128-SHA:DES-CBC3-SHA", "3DES"), ("tls-cert-profile insecure", "certificates")]
-        {
-            assert!(ovpn_weakness(&parse_ovpn(&format!("{}\n{extra}", base()), "x", "u", "p").unwrap()).unwrap().unwrap().contains(says), "{extra}");
+        for (extra, says) in [
+            ("tls-version-min 1.0", "TLS 1.0"),
+            ("tls-cipher AES128-SHA:DES-CBC3-SHA", "3DES"),
+            ("tls-cert-profile insecure", "certificates"),
+        ] {
+            assert!(
+                ovpn_weakness(&parse_ovpn(&format!("{}\n{extra}", base()), "x", "u", "p").unwrap())
+                    .unwrap()
+                    .unwrap()
+                    .contains(says),
+                "{extra}"
+            );
         }
-        assert_eq!(None, ovpn_weakness(&parse_ovpn(&format!("{}\ntls-version-min 1.2", base()), "x", "u", "p").unwrap()).unwrap());
-        let link = |userinfo: &str| parse_ss(&format!("ss://{}@h.example:1", URL_SAFE_NO_PAD.encode(userinfo)), "").unwrap();
+        assert_eq!(
+            None,
+            ovpn_weakness(&parse_ovpn(&format!("{}\ntls-version-min 1.2", base()), "x", "u", "p").unwrap()).unwrap()
+        );
+        let link =
+            |userinfo: &str| parse_ss(&format!("ss://{}@h.example:1", URL_SAFE_NO_PAD.encode(userinfo)), "").unwrap();
         assert_eq!(None, ss_weakness(&link("chacha20-ietf-poly1305:pw")));
         assert_eq!(None, ss_weakness(&link(&format!("2022-blake3-aes-128-gcm:{}", key16()))));
         assert!(ss_weakness(&link("aes-256-cfb:pw")).unwrap().contains("aes-256-cfb"));

@@ -1,6 +1,8 @@
 //! Apps: the table of installed apps with its detail panel, and the disclosures that come before it.
 
-use super::{AlsoRow, AppDetail, AppRow, AppWindow, AppsPage, ColumnHead, ExitChip, RouteChoice, Win, list, post, text, with};
+use super::{
+    AlsoRow, AppDetail, AppRow, AppWindow, AppsPage, ColumnHead, ExitChip, RouteChoice, Win, list, post, text, with,
+};
 use crate::model::Setup;
 use crate::ui::apps::{self as logic, AppsView, Sort, Table};
 use crate::ui::stats::epoch_day;
@@ -54,10 +56,30 @@ fn detail(win: &Win, d: &logic::AppDetail) -> AppDetail {
         choices: list(
             d.choices
                 .iter()
-                .map(|c| RouteChoice { id: text(&c.id), name: text(&c.name), sub: text(&c.sub), menu: text(&c.menu), code: text(&c.code), hue: c.hue, direct: c.direct, on: c.on })
+                .map(|c| RouteChoice {
+                    id: text(&c.id),
+                    name: text(&c.name),
+                    sub: text(&c.sub),
+                    menu: text(&c.menu),
+                    code: text(&c.code),
+                    hue: c.hue,
+                    direct: c.direct,
+                    on: c.on,
+                })
                 .collect(),
         ),
-        also: list(d.also.iter().map(|a| AlsoRow { key: text(&a.key), label: text(&a.label), letter: text(&a.letter), icon: win.icon(&a.key), note: text(&a.note) }).collect()),
+        also: list(
+            d.also
+                .iter()
+                .map(|a| AlsoRow {
+                    key: text(&a.key),
+                    label: text(&a.label),
+                    letter: text(&a.letter),
+                    icon: win.icon(&a.key),
+                    note: text(&a.note),
+                })
+                .collect(),
+        ),
         lookups: d.lookups,
         lookups_sub: text(&d.lookups_sub),
         lookups_on: d.lookups_on,
@@ -174,11 +196,18 @@ pub(super) fn show(win: &Win, setup: &Setup) {
     }
     page.set_all(v.all);
     if old.is_none_or(|o| o.chips != v.chips) {
-        page.set_chips(list(v.chips.iter().map(|c| ExitChip { id: text(&c.id), label: text(&c.label), hue: c.hue, direct: c.direct, on: c.on }).collect()));
+        page.set_chips(list(
+            v.chips
+                .iter()
+                .map(|c| ExitChip { id: text(&c.id), label: text(&c.label), hue: c.hue, direct: c.direct, on: c.on })
+                .collect(),
+        ));
     }
     page.set_system(v.system);
     if old.is_none_or(|o| o.heads != v.heads) {
-        page.set_heads(list(v.heads.iter().map(|h| ColumnHead { text: text(&h.text), label: text(&h.label), on: h.on }).collect()));
+        page.set_heads(list(
+            v.heads.iter().map(|h| ColumnHead { text: text(&h.text), label: text(&h.label), on: h.on }).collect(),
+        ));
     }
     page.set_stats(v.stats);
     if old.is_none_or(|o| o.rows != v.rows) {
@@ -212,10 +241,13 @@ fn read_today(win: &Win, on: bool) {
     g.read_at = Some(Instant::now());
     app::runtime().spawn_blocking(|| {
         let d = epoch_day(chrono::Local::now().date_naive());
-        let today = stats::read(move |w| w.apps(d, d)).unwrap_or_default().into_iter().fold(HashMap::new(), |mut m, (app, _, b)| {
-            *m.entry(app).or_insert(0) += b;
-            m
-        });
+        let today = stats::read(move |w| w.apps(d, d)).unwrap_or_default().into_iter().fold(
+            HashMap::new(),
+            |mut m, (app, _, b)| {
+                *m.entry(app).or_insert(0) += b;
+                m
+            },
+        );
         post(move |win| win.apps.borrow_mut().today = today);
     });
 }

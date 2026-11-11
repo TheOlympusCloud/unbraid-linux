@@ -21,7 +21,10 @@ pub mod welcome;
 
 use crate::error::{Challenge, Error};
 use crate::exit_check::{self, ExitReport};
-use crate::model::{Country, DIRECT, Home, Location, MAX_PROFILES, OvpnProfile, OwnServer, Prefs, Profile, Route, Setup, SsProfile, WgPeer};
+use crate::model::{
+    Country, DIRECT, Home, Location, MAX_PROFILES, OvpnProfile, OwnServer, Prefs, Profile, Route, Setup, SsProfile,
+    WgPeer,
+};
 use crate::prefs::SharedPreferences;
 use crate::providers::{self, PROTECT, Provider, nord};
 use crate::store::Store;
@@ -235,10 +238,20 @@ fn raster(f: &Path) -> Option<RgbaImage> {
 impl Ui {
     /// The window's model on the app's store, runtime and connection: after [`app::init`].
     pub fn new() -> Arc<Ui> {
-        Ui::with(app::store().clone(), app::runtime().clone(), crate::vpn::live(), SharedPreferences::named("unbraid_ui").ok())
+        Ui::with(
+            app::store().clone(),
+            app::runtime().clone(),
+            crate::vpn::live(),
+            SharedPreferences::named("unbraid_ui").ok(),
+        )
     }
 
-    pub(crate) fn with(store: Arc<Store>, rt: Handle, live: &'static Live, ui_prefs: Option<&'static SharedPreferences>) -> Arc<Ui> {
+    pub(crate) fn with(
+        store: Arc<Store>,
+        rt: Handle,
+        live: &'static Live,
+        ui_prefs: Option<&'static SharedPreferences>,
+    ) -> Arc<Ui> {
         let s = store.current();
         // A running VPN keeps its controls, also after its last provider signed out (its routes' apps wait blocked).
         let signed_in = !store.accounts().borrow().is_empty()
@@ -280,7 +293,8 @@ impl Ui {
                 u.refresh_countries(id);
             }
             // Read off the window's thread, for the same reason. A list fetched meanwhile is newer and stays.
-            let saved: IndexMap<String, Vec<Country>> = providers::all().into_iter().map(|p| (p.id().to_string(), u.store.countries(p.id()))).collect();
+            let saved: IndexMap<String, Vec<Country>> =
+                providers::all().into_iter().map(|p| (p.id().to_string(), u.store.countries(p.id()))).collect();
             u.countries.send_modify(|c| {
                 let fetched = std::mem::replace(c, saved);
                 c.extend(fetched);
@@ -359,9 +373,20 @@ impl Ui {
             return true;
         }
         let Some(running) = self.live.running() else { return true };
-        let answered: HashSet<String> = self.exits.borrow().iter().filter(|(_, r)| r.engine == now.engine && r.ip.is_some()).map(|(id, _)| id.clone()).collect();
+        let answered: HashSet<String> = self
+            .exits
+            .borrow()
+            .iter()
+            .filter(|(_, r)| r.engine == now.engine && r.ip.is_some())
+            .map(|(id, _)| id.clone())
+            .collect();
         let active: HashSet<&str> = running.active_routes().into_iter().map(|r| r.id.as_str()).collect();
-        let tags: IndexMap<String, String> = self.live.tags().into_iter().filter(|(id, _)| !answered.contains(id) && active.contains(id.as_str())).collect();
+        let tags: IndexMap<String, String> = self
+            .live
+            .tags()
+            .into_iter()
+            .filter(|(id, _)| !answered.contains(id) && active.contains(id.as_str()))
+            .collect();
         if tags.is_empty() {
             return true;
         }
@@ -377,7 +402,17 @@ impl Ui {
         let at = now_ms();
         let reports: IndexMap<String, ExitReport> = tags
             .iter()
-            .map(|(id, t)| (id.clone(), ExitReport { ip: seen.get(t).cloned().flatten(), at, engine: now.engine, server: now.servers.get(id).cloned() }))
+            .map(|(id, t)| {
+                (
+                    id.clone(),
+                    ExitReport {
+                        ip: seen.get(t).cloned().flatten(),
+                        at,
+                        engine: now.engine,
+                        server: now.servers.get(id).cloned(),
+                    },
+                )
+            })
             .collect();
         let all = reports.values().all(|r| r.ip.is_some());
         // Held while they land, as the clearing above reads it: a restart while asking means these answers are stale.
@@ -451,7 +486,9 @@ impl Ui {
                 // A sign-in that broke down is explained as one that went wrong.
                 Err(_) => Some(Error::State(String::new())),
             };
-            let error = failure.as_ref().map(|e| if let Error::Challenge(c) = e { c.message.clone() } else { http::explain(e, p.name()) });
+            let error = failure
+                .as_ref()
+                .map(|e| if let Error::Challenge(c) = e { c.message.clone() } else { http::explain(e, p.name()) });
             // With the form's own changes, as Back makes them: a form closed now never gets this attempt's error.
             let mut pending = held(&ui.pending);
             ui.forms.send_modify(|f| {
@@ -483,7 +520,12 @@ impl Ui {
     }
 
     /// The sign-in itself: the account saved, a fresh install's default route pointed at it, its countries read.
-    fn signed_in_to(self: &Arc<Self>, p: &'static dyn Provider, input: &IndexMap<String, String>, asked: Option<&Challenge>) -> Result<(), Error> {
+    fn signed_in_to(
+        self: &Arc<Self>,
+        p: &'static dyn Provider,
+        input: &IndexMap<String, String>,
+        asked: Option<&Challenge>,
+    ) -> Result<(), Error> {
         let id = p.id();
         let mut fields = p.fields();
         fields.extend(asked.map(|c| c.field.clone()));
@@ -501,10 +543,22 @@ impl Ui {
         // First provider on a fresh install: point the default route at it.
         let accounts = self.store.current_accounts();
         self.store.update(|s| {
-            let d = s.route(Some(&s.default_route)).filter(|d| !d.imported() && !accounts.contains_key(&d.loc.provider));
+            let d =
+                s.route(Some(&s.default_route)).filter(|d| !d.imported() && !accounts.contains_key(&d.loc.provider));
             match d {
-                _ if s.routes.is_empty() => Setup { routes: vec![Route::new("main", Location::of(id))], default_route: "main".into(), ..s.clone() },
-                Some(d) => Setup { routes: s.routes.iter().map(|r| if r.id == d.id { Route { loc: Location::of(id), ..r.clone() } } else { r.clone() }).collect(), ..s.clone() },
+                _ if s.routes.is_empty() => Setup {
+                    routes: vec![Route::new("main", Location::of(id))],
+                    default_route: "main".into(),
+                    ..s.clone()
+                },
+                Some(d) => Setup {
+                    routes: s
+                        .routes
+                        .iter()
+                        .map(|r| if r.id == d.id { Route { loc: Location::of(id), ..r.clone() } } else { r.clone() })
+                        .collect(),
+                    ..s.clone()
+                },
                 None => s.clone(),
             }
         });
@@ -552,7 +606,10 @@ impl Ui {
             }
             ui.forms.send_modify(|f| match text {
                 None => {
-                    f.errors.insert(provider.clone(), "No QR code found in that picture. Try again closer, or type it in.".into());
+                    f.errors.insert(
+                        provider.clone(),
+                        "No QR code found in that picture. Try again closer, or type it in.".into(),
+                    );
                 }
                 Some(t) => {
                     f.form.insert(form_key, t.trim().chars().take(200).collect());
@@ -580,7 +637,10 @@ impl Ui {
 
     fn unreleased(&self, names: &[String]) {
         let all = names.join(", ");
-        self.warn(&format!("Couldn't release this computer's device slot at {all}. Remove it in your {all} account{}.", if names.len() > 1 { "s" } else { "" }));
+        self.warn(&format!(
+            "Couldn't release this computer's device slot at {all}. Remove it in your {all} account{}.",
+            if names.len() > 1 { "s" } else { "" }
+        ));
     }
 
     pub fn sign_out(self: &Arc<Self>, provider: &str) {
@@ -608,7 +668,11 @@ impl Ui {
 
     /// Runs `f` while the VPN is off and can't start, as deleting the engine's files needs; else asks the user to try
     /// `what` again.
-    async fn while_stopped<T: Send + 'static>(&self, what: &str, f: impl Future<Output = T> + Send + 'static) -> Option<T> {
+    async fn while_stopped<T: Send + 'static>(
+        &self,
+        what: &str,
+        f: impl Future<Output = T> + Send + 'static,
+    ) -> Option<T> {
         let done = ctl::while_stopped(f).await;
         if done.is_none() {
             self.notice.send_replace(Some(format!("Couldn't stop the VPN to {what}. Try again.")));
@@ -627,7 +691,12 @@ impl Ui {
     fn reset_if_empty(self: &Arc<Self>) {
         let s = self.store.current();
         let off = self.live.state.borrow().phase == Phase::Off;
-        if off && self.store.accounts().borrow().is_empty() && !s.routes.iter().any(Route::imported) && s.servers.is_empty() && !s.home.tailscale {
+        if off
+            && self.store.accounts().borrow().is_empty()
+            && !s.routes.iter().any(Route::imported)
+            && s.servers.is_empty()
+            && !s.home.tailscale
+        {
             self.sign_out_all();
         }
     }
@@ -647,7 +716,8 @@ impl Ui {
                     store.update(|s| {
                         let mut s = s.clone();
                         let h = &mut s.home;
-                        h.ts_auth_key = key.clone().or_else(|| h.ts_auth_key.clone().filter(|_| url == h.ts_control_url));
+                        h.ts_auth_key =
+                            key.clone().or_else(|| h.ts_auth_key.clone().filter(|_| url == h.ts_control_url));
                         h.ts_control_url = url;
                         h.ts_suffix_allowed = None;
                         s
@@ -703,11 +773,15 @@ impl Ui {
         self.rt.spawn(async move {
             let logged_out = ui.stop_vpn(tailscale).await;
             let store = ui.store.clone();
-            if ui.while_stopped("sign out", async move { blocking(move || store.sign_out_all()).await }).await.is_none() {
+            if ui.while_stopped("sign out", async move { blocking(move || store.sign_out_all()).await }).await.is_none()
+            {
                 return;
             }
             // Released only now: a running tunnel would lose its key while still carrying traffic.
-            let revoked: Vec<_> = accounts.into_iter().map(|(id, blob)| (provider_name(&id), tokio::task::spawn_blocking(move || release(&id, &blob)))).collect();
+            let revoked: Vec<_> = accounts
+                .into_iter()
+                .map(|(id, blob)| (provider_name(&id), tokio::task::spawn_blocking(move || release(&id, &blob))))
+                .collect();
             // Nothing a provider asked or linked to outlives signing out of everything.
             ui.forms.send_modify(|f| {
                 f.form.clear();
@@ -781,15 +855,29 @@ impl Ui {
             // Programs routed by their own path (no desktop entry) are listed too, while they are installed.
             let known: HashSet<&str> = entries.iter().map(|e| e.key.as_str()).collect();
             let s0 = ui.store.current();
-            let programs: IndexSet<String> =
-                s0.apps.keys().chain(s0.profiles.iter().flat_map(|p| p.apps.keys())).filter(|k| k.starts_with('/') && !known.contains(k.as_str()) && Path::new(k).exists()).cloned().collect();
+            let programs: IndexSet<String> = s0
+                .apps
+                .keys()
+                .chain(s0.profiles.iter().flat_map(|p| p.apps.keys()))
+                .filter(|k| k.starts_with('/') && !known.contains(k.as_str()) && Path::new(k).exists())
+                .cloned()
+                .collect();
             // A program one of the apps runs (added before that app was installed) joins that app's group, after its entries.
             let owned: Vec<(String, Vec<String>)> = programs
                 .iter()
-                .filter_map(|p| entries.iter().find(|e| crate::apps::matches(&e.matchers, p)).map(|o| (p.clone(), if o.group.is_empty() { vec![o.key.clone()] } else { o.group.clone() })))
+                .filter_map(|p| {
+                    entries
+                        .iter()
+                        .find(|e| crate::apps::matches(&e.matchers, p))
+                        .map(|o| (p.clone(), if o.group.is_empty() { vec![o.key.clone()] } else { o.group.clone() }))
+                })
                 .collect();
             let group = |g: &[String]| -> Vec<String> {
-                let all: Vec<String> = g.iter().cloned().chain(owned.iter().filter(|(_, o)| o.as_slice() == g).map(|(p, _)| p.clone())).collect();
+                let all: Vec<String> = g
+                    .iter()
+                    .cloned()
+                    .chain(owned.iter().filter(|(_, o)| o.as_slice() == g).map(|(p, _)| p.clone()))
+                    .collect();
                 if all.len() > 1 { all } else { vec![] }
             };
             let mut listed: Vec<AppInfo> = entries
@@ -821,23 +909,40 @@ impl Ui {
             let installed: HashSet<&str> = listed.iter().filter(|a| a.routable).map(|a| a.pkg.as_str()).collect();
             let groups: IndexSet<&Vec<String>> = listed.iter().map(|a| &a.group).filter(|g| !g.is_empty()).collect();
             // The one of `k`'s group that leads in `apps`: the first with a route there.
-            let lead = |k: &str, apps: &IndexMap<String, String>| groups.iter().find(|g| g.iter().any(|x| x == k)).and_then(|g| g.iter().find(|x| apps.contains_key(x.as_str()))).cloned();
+            let lead = |k: &str, apps: &IndexMap<String, String>| {
+                groups
+                    .iter()
+                    .find(|g| g.iter().any(|x| x == k))
+                    .and_then(|g| g.iter().find(|x| apps.contains_key(x.as_str())))
+                    .cloned()
+            };
             // An uninstalled app must not keep its route (and a tunnel) alive, nor one the engine can't tell apart (a
             // script or an AppImage), which would show on a route its traffic never takes; nor, of apps that run as one
             // program, a route after the group's first (it takes that one). Saved profiles too: one used later must not
             // bring such an exception back.
             let keep = |apps: &IndexMap<String, String>| -> IndexMap<String, String> {
-                apps.iter().filter(|(k, _)| installed.contains(k.as_str()) && lead(k, apps).is_none_or(|l| l == **k)).map(|(k, v)| (k.clone(), v.clone())).collect()
+                apps.iter()
+                    .filter(|(k, _)| installed.contains(k.as_str()) && lead(k, apps).is_none_or(|l| l == **k))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect()
             };
             let now = ui.store.current();
             // A route that loses to another of its group's is said, never dropped silently.
             let label: HashMap<&str, &str> = listed.iter().map(|a| (a.pkg.as_str(), a.label.as_str())).collect();
             let mut lost = vec![];
-            for (profile, a) in std::iter::once((None, &now.apps)).chain(now.profiles.iter().map(|p| (Some(p.name.as_str()), &p.apps))) {
+            for (profile, a) in
+                std::iter::once((None, &now.apps)).chain(now.profiles.iter().map(|p| (Some(p.name.as_str()), &p.apps)))
+            {
                 let kept = keep(a);
                 for k in a.keys().filter(|k| installed.contains(k.as_str()) && !kept.contains_key(*k)) {
-                    let (k, l) = (label.get(k.as_str()).copied().unwrap_or_default(), lead(k, a).map(|l| label.get(l.as_str()).copied().unwrap_or_default()).unwrap_or_default());
-                    lost.push(format!("{k} runs as {l}, so it takes {l}'s route now{}.", profile.map(|p| format!(" in {p}")).unwrap_or_default()));
+                    let (k, l) = (
+                        label.get(k.as_str()).copied().unwrap_or_default(),
+                        lead(k, a).map(|l| label.get(l.as_str()).copied().unwrap_or_default()).unwrap_or_default(),
+                    );
+                    lost.push(format!(
+                        "{k} runs as {l}, so it takes {l}'s route now{}.",
+                        profile.map(|p| format!(" in {p}")).unwrap_or_default()
+                    ));
                 }
             }
             if !lost.is_empty() {
@@ -845,7 +950,11 @@ impl Ui {
             }
             let gone = |s: &Setup| s.apps != keep(&s.apps) || s.profiles.iter().any(|p| p.apps != keep(&p.apps));
             if gone(&now) {
-                ui.store.edit(|s| Setup { apps: keep(&s.apps), profiles: s.profiles.iter().map(|p| Profile { apps: keep(&p.apps), ..p.clone() }).collect(), ..s.clone() });
+                ui.store.edit(|s| Setup {
+                    apps: keep(&s.apps),
+                    profiles: s.profiles.iter().map(|p| Profile { apps: keep(&p.apps), ..p.clone() }).collect(),
+                    ..s.clone()
+                });
             }
             drop(asked);
         });
@@ -894,7 +1003,13 @@ impl Ui {
             }
         }
         let key = pkg.to_string();
-        let drawn = Arc::new(self.rt.spawn_blocking(move || crate::apps::icon_file(&key).and_then(|f| raster(&f))).await.ok().flatten()?);
+        let drawn = Arc::new(
+            self.rt
+                .spawn_blocking(move || crate::apps::icon_file(&key).and_then(|f| raster(&f)))
+                .await
+                .ok()
+                .flatten()?,
+        );
         let mut icons = held(&self.icons);
         icons.insert(pkg.into(), drawn.clone());
         if icons.len() > 200 {
@@ -970,7 +1085,17 @@ impl Ui {
                         }
                         // A route's blocking choice belongs to its provider: another provider starts from its own page.
                         let filter = r.filter.filter(|_| r.loc.provider == loc.provider && !r.imported());
-                        Route { loc: loc.clone(), wg: None, ovpn: None, ss: None, ts_exit: None, ts_name: None, own: None, filter, ..r.clone() }
+                        Route {
+                            loc: loc.clone(),
+                            wg: None,
+                            ovpn: None,
+                            ss: None,
+                            ts_exit: None,
+                            ts_name: None,
+                            own: None,
+                            filter,
+                            ..r.clone()
+                        }
                     })
                     .collect();
                 Setup { routes, ..s.clone() }
@@ -983,7 +1108,12 @@ impl Ui {
     pub fn add_route_for(&self, pkg: &str, loc: &Location) {
         let (pkg, loc, viewing) = (pkg.to_string(), loc.clone(), self.viewing.subscribe());
         let f = move |s: &Setup| {
-            let r = s.routes.iter().find(|r| !r.imported() && r.loc.ident() == loc.ident()).cloned().unwrap_or_else(|| Route { hue: next_hue(s), ..Route::new(&new_id(s), loc.clone()) });
+            let r = s
+                .routes
+                .iter()
+                .find(|r| !r.imported() && r.loc.ident() == loc.ident())
+                .cloned()
+                .unwrap_or_else(|| Route { hue: next_hue(s), ..Route::new(&new_id(s), loc.clone()) });
             let mut n = s.clone();
             if !n.routes.contains(&r) {
                 n.routes.push(r.clone());
@@ -1015,7 +1145,9 @@ impl Ui {
     fn guarded(&self, after: impl Fn() + Send + Sync + 'static, f: impl Fn(&Setup) -> Setup + Send + Sync + 'static) {
         let old = self.store.current();
         let accounts = self.store.current_accounts();
-        let Some(o) = limits::over(&old, &f(&old), |p| accounts.get(p).and_then(|a| providers::get(p).map(|pr| pr.limit(a)))) else {
+        let Some(o) =
+            limits::over(&old, &f(&old), |p| accounts.get(p).and_then(|a| providers::get(p).map(|pr| pr.limit(a))))
+        else {
             self.store.edit(&f);
             after();
             return;
@@ -1025,7 +1157,8 @@ impl Ui {
         let running = self.live.running();
         let mut of = old.active_routes().into_iter().filter(|r| !r.imported() && r.loc.provider == o.provider);
         let anchor = match (of.next(), of.next()) {
-            (Some(a), None) => Some(a.clone()).filter(|a| running.as_ref().and_then(|s| s.route(Some(&a.id))).is_some_and(|r| r.loc == a.loc)),
+            (Some(a), None) => Some(a.clone())
+                .filter(|a| running.as_ref().and_then(|s| s.route(Some(&a.id))).is_some_and(|r| r.loc == a.loc)),
             _ => None,
         };
         let server = anchor.as_ref().and_then(|a| self.live.state.borrow().servers.get(&a.id).cloned());
@@ -1040,14 +1173,19 @@ impl Ui {
         let share = anchor.zip(server).map(|(anchor, sv)| {
             let (store, live, provider, name) = (self.store.clone(), self.live, o.provider.clone(), sv.name.clone());
             let share = move || {
-                let same = store.current().route(Some(&anchor.id)).is_some_and(|r| r.loc == anchor.loc) && live.state.borrow().servers.get(&anchor.id) == Some(&sv);
+                let same = store.current().route(Some(&anchor.id)).is_some_and(|r| r.loc == anchor.loc)
+                    && live.state.borrow().servers.get(&anchor.id) == Some(&sv);
                 if !same {
                     return;
                 }
                 store.edit(|s| {
                     let mut n = f(s);
                     let active: HashSet<String> = n.active_routes().into_iter().map(|r| r.id.clone()).collect();
-                    for r in n.routes.iter_mut().filter(|r| !r.imported() && r.loc.provider == provider && active.contains(&r.id)) {
+                    for r in n
+                        .routes
+                        .iter_mut()
+                        .filter(|r| !r.imported() && r.loc.provider == provider && active.contains(&r.id))
+                    {
                         r.loc = Location { pinned: Some(sv.clone()), ..anchor.loc.clone() };
                     }
                     n
@@ -1078,7 +1216,12 @@ impl Ui {
                 let id = match n.servers.iter().find(|v| v.wg == r.wg && v.ovpn == r.ovpn && v.ss == r.ss) {
                     Some(v) => v.id.clone(),
                     None => {
-                        let v = OwnServer { id: new_server_id(&n.servers), wg: r.wg.clone(), ovpn: r.ovpn.clone(), ss: r.ss.clone() };
+                        let v = OwnServer {
+                            id: new_server_id(&n.servers),
+                            wg: r.wg.clone(),
+                            ovpn: r.ovpn.clone(),
+                            ss: r.ss.clone(),
+                        };
                         let id = v.id.clone();
                         n.servers.push(v);
                         id
@@ -1092,7 +1235,11 @@ impl Ui {
 
     /// Saves one of the user's own servers; with a `target` ("" new route, "app:<key>" or a route id) that route uses
     /// it too. It applies at once; the future says whether it was written, so the window clears the clipboard only then.
-    pub fn import_server(&self, target: Option<&str>, server: OwnServer) -> impl Future<Output = bool> + Send + 'static {
+    pub fn import_server(
+        &self,
+        target: Option<&str>,
+        server: OwnServer,
+    ) -> impl Future<Output = bool> + Send + 'static {
         let s = OwnServer { id: new_server_id(&self.store.current().servers), ..server };
         let added = s.clone();
         self.store.edit(|c| {
@@ -1116,7 +1263,13 @@ impl Ui {
 
     /// Route `target` exits through saved server `s`; returns the route id.
     pub fn use_server(&self, target: &str, s: &OwnServer) -> String {
-        self.add_imported(target, |r| Route { wg: s.wg.clone(), ovpn: s.ovpn.clone(), ss: s.ss.clone(), own: Some(s.id.clone()), ..r })
+        self.add_imported(target, |r| Route {
+            wg: s.wg.clone(),
+            ovpn: s.ovpn.clone(),
+            ss: s.ss.clone(),
+            own: Some(s.id.clone()),
+            ..r
+        })
     }
 
     /// Renames a saved server and every route using it.
@@ -1159,7 +1312,16 @@ impl Ui {
         let viewing = self.viewing.borrow().clone();
         self.store.edit(|s| {
             let blank = match s.route(Some(&id)) {
-                Some(r) => Route { loc: Location::default(), wg: None, ovpn: None, ss: None, ts_exit: None, ts_name: None, own: None, ..r.clone() },
+                Some(r) => Route {
+                    loc: Location::default(),
+                    wg: None,
+                    ovpn: None,
+                    ss: None,
+                    ts_exit: None,
+                    ts_name: None,
+                    own: None,
+                    ..r.clone()
+                },
                 None => Route { hue: next_hue(s), ..Route::new(&id, Location::default()) },
             };
             let r = source(blank);
@@ -1228,10 +1390,19 @@ impl Ui {
     pub fn use_tailscale_only(&self) {
         let no_accounts = self.store.accounts().borrow().is_empty();
         self.store.edit(|s| {
-            let routes: Vec<Route> = if no_accounts { s.routes.iter().filter(|r| r.imported()).cloned().collect() } else { s.routes.clone() };
+            let routes: Vec<Route> = if no_accounts {
+                s.routes.iter().filter(|r| r.imported()).cloned().collect()
+            } else {
+                s.routes.clone()
+            };
             let has = |id: &str| routes.iter().any(|r| r.id == id);
-            let default_route = if has(&s.default_route) { s.default_route.clone() } else { routes.first().map_or_else(|| DIRECT.into(), |r| r.id.clone()) };
-            let apps = s.apps.iter().filter(|(_, v)| *v == DIRECT || has(v)).map(|(k, v)| (k.clone(), v.clone())).collect();
+            let default_route = if has(&s.default_route) {
+                s.default_route.clone()
+            } else {
+                routes.first().map_or_else(|| DIRECT.into(), |r| r.id.clone())
+            };
+            let apps =
+                s.apps.iter().filter(|(_, v)| *v == DIRECT || has(v)).map(|(k, v)| (k.clone(), v.clone())).collect();
             Setup { routes, default_route, apps, home: Home { tailscale: true, ..s.home.clone() }, ..s.clone() }
         });
         self.signed_in.send_replace(true);
@@ -1257,7 +1428,13 @@ impl Ui {
     }
 
     pub fn remove_route(&self, id: &str) {
-        self.store.edit(|s| if s.routes.len() <= 1 && s.default_route == id { s.clone() } else { without(s, &HashSet::from([id.to_string()]), None) });
+        self.store.edit(|s| {
+            if s.routes.len() <= 1 && s.default_route == id {
+                s.clone()
+            } else {
+                without(s, &HashSet::from([id.to_string()]), None)
+            }
+        });
     }
 
     /// Makes route `id` the default of the profile being viewed (saved only, nothing connects) or of the live setup.
@@ -1298,7 +1475,9 @@ impl Ui {
         let Some(d) = self.draft() else { return id.into() };
         let s = self.store.current();
         // Shared with the live setup or another profile: those keep theirs.
-        let shared = s.active_routes().iter().any(|r| r.id == id) || s.added.iter().any(|a| a == id) || s.saved().iter().any(|p| p.name != d && p.own().contains(id));
+        let shared = s.active_routes().iter().any(|r| r.id == id)
+            || s.added.iter().any(|a| a == id)
+            || s.saved().iter().any(|p| p.name != d && p.own().contains(id));
         let Some(r) = s.route(Some(id)).filter(|_| shared).cloned() else { return id.into() };
         let copy = new_id(&s);
         self.store.edit(|c| {
@@ -1338,7 +1517,9 @@ impl Ui {
         let s = self.store.current();
         let own = s.profiles.iter().find(|p| p.name == d).map(Profile::own).unwrap_or_default();
         // Replaces the route's whole source (a saved server's config goes), in place.
-        let via = |id: &str| self.add_imported(id, |r| Route { ts_exit: Some(ip.into()), ts_name: name.map(str::to_string), ..r });
+        let via = |id: &str| {
+            self.add_imported(id, |r| Route { ts_exit: Some(ip.into()), ts_name: name.map(str::to_string), ..r })
+        };
         let id = if let Some(r) = s.route(Some(target)) {
             via(&r.id);
             r.id.clone()
@@ -1354,7 +1535,12 @@ impl Ui {
         // Read again: a route copied above is the profile's now, the original no longer.
         let now = self.store.current();
         let mine = now.profiles.iter().find(|p| p.name == d).map(Profile::own).unwrap_or_default();
-        let others: Vec<String> = now.routes.iter().filter(|r| r.ts_exit.as_ref().is_some_and(|t| t != ip) && mine.contains(&r.id) && r.id != id).map(|r| r.id.clone()).collect();
+        let others: Vec<String> = now
+            .routes
+            .iter()
+            .filter(|r| r.ts_exit.as_ref().is_some_and(|t| t != ip) && mine.contains(&r.id) && r.id != id)
+            .map(|r| r.id.clone())
+            .collect();
         for o in others {
             via(&self.own_route(&o));
         }
@@ -1420,7 +1606,9 @@ impl Ui {
     pub fn new_profile(&self, raw: &str, empty: bool) {
         let mut added = None;
         self.store.edit(|s| {
-            let Some(n) = s.profile_name(raw, None).filter(|_| s.profiles.len() < MAX_PROFILES) else { return s.clone() };
+            let Some(n) = s.profile_name(raw, None).filter(|_| s.profiles.len() < MAX_PROFILES) else {
+                return s.clone();
+            };
             if s.profile.is_none() && !empty {
                 return s.save_as(&n);
             }
@@ -1677,7 +1865,8 @@ mod tests {
     }
 
     fn wg(name: &str) -> OwnServer {
-        let peer = WgPeer::new(name, "priv", vec!["10.0.0.2/32".into()], "pub", "192.0.2.1:51820", vec!["0.0.0.0/0".into()]);
+        let peer =
+            WgPeer::new(name, "priv", vec!["10.0.0.2/32".into()], "pub", "192.0.2.1:51820", vec!["0.0.0.0/0".into()]);
         OwnServer { id: String::new(), wg: Some(peer), ovpn: None, ss: None }
     }
 
@@ -1696,16 +1885,30 @@ mod tests {
         assert_eq!(("us", true), (w.setup().default_route.as_str(), w.ui.limit_ask.borrow().is_none()));
         w.ui.assign("firefox", Some("nl"));
         let ask = w.ui.limit_ask.borrow().clone().expect("asked");
-        assert_eq!("NordVPN allows 1 connection. This would make it 2. Over the limit, routes can stop working without an error.", ask.text);
+        assert_eq!(
+            "NordVPN allows 1 connection. This would make it 2. Over the limit, routes can stop working without an error.",
+            ask.text
+        );
         assert!(ask.share.is_none(), "nothing runs: no server to share");
         assert!(w.setup().apps.is_empty(), "nothing changes before the answer");
         (ask.apply)();
         assert_eq!(apps(&[("firefox", "nl")]), w.setup().apps);
 
         w.ui.assign("firefox", None);
-        let sv = Server { name: "us5".into(), host: "us5.nordvpn.com".into(), ip: "192.0.2.5".into(), public_key: "k".into(), load: 3, ..Server::default() };
+        let sv = Server {
+            name: "us5".into(),
+            host: "us5.nordvpn.com".into(),
+            ip: "192.0.2.5".into(),
+            public_key: "k".into(),
+            load: 3,
+            ..Server::default()
+        };
         *w.live.running.write().unwrap() = Some(w.setup());
-        w.live.state.send_replace(VpnState { phase: Phase::On, servers: IndexMap::from([("us".to_string(), sv.clone())]), ..VpnState::default() });
+        w.live.state.send_replace(VpnState {
+            phase: Phase::On,
+            servers: IndexMap::from([("us".to_string(), sv.clone())]),
+            ..VpnState::default()
+        });
         w.ui.assign("code", Some("nl"));
         let ask = w.ui.limit_ask.borrow().clone().expect("asked");
         let (name, share) = ask.share.as_ref().expect("a server to share");
@@ -1778,7 +1981,10 @@ mod tests {
         assert!(!*w.ui.signed_in.borrow());
         let id = w.ui.use_server("", &wg("Home VPS"));
         let s = w.setup();
-        assert_eq!((vec![id.as_str()], id.as_str(), apps(&[("bank", DIRECT)])), (ids(&s), s.default_route.as_str(), s.apps.clone()));
+        assert_eq!(
+            (vec![id.as_str()], id.as_str(), apps(&[("bank", DIRECT)])),
+            (ids(&s), s.default_route.as_str(), s.apps.clone())
+        );
         assert!(*w.ui.signed_in.borrow());
     }
 
@@ -1809,8 +2015,14 @@ mod tests {
         let notice = || w.ui.notice.borrow().clone();
         w.ui.sign_out("mullvad");
         until("Mullvad's slot", || notice().is_some());
-        assert_eq!(Some("Couldn't release this computer's device slot at Mullvad. Remove it in your Mullvad account."), notice().as_deref());
-        assert_eq!(vec!["nord", "ivpn", "airvpn"], w.ui.store.current_accounts().keys().map(String::as_str).collect::<Vec<_>>());
+        assert_eq!(
+            Some("Couldn't release this computer's device slot at Mullvad. Remove it in your Mullvad account."),
+            notice().as_deref()
+        );
+        assert_eq!(
+            vec!["nord", "ivpn", "airvpn"],
+            w.ui.store.current_accounts().keys().map(String::as_str).collect::<Vec<_>>()
+        );
         assert!(*w.ui.signed_in.borrow());
         w.ui.notice.send_replace(None);
 
@@ -1857,8 +2069,19 @@ mod tests {
         let s = w.setup();
         let travel = profile(&s, "Travel");
         assert_eq!((nl2.as_str(), Some(&us2)), (travel.default_route.as_str(), travel.apps.get("firefox")));
-        assert_eq!(("nl", Some(&"us".to_string())), (s.default_route.as_str(), s.apps.get("firefox")), "the live setup keeps its own");
-        assert_eq!((us().loc, 2, 3), (s.route(Some(&us2)).unwrap().loc.clone(), s.route(Some(&us2)).unwrap().hue, s.route(Some(&nl2)).unwrap().hue));
+        assert_eq!(
+            ("nl", Some(&"us".to_string())),
+            (s.default_route.as_str(), s.apps.get("firefox")),
+            "the live setup keeps its own"
+        );
+        assert_eq!(
+            (us().loc, 2, 3),
+            (
+                s.route(Some(&us2)).unwrap().loc.clone(),
+                s.route(Some(&us2)).unwrap().hue,
+                s.route(Some(&nl2)).unwrap().hue
+            )
+        );
         assert_eq!(us2, w.ui.own_route(&us2), "its own already");
         w.ui.drop_route(&us2);
         let s = w.setup();
@@ -1909,9 +2132,17 @@ mod tests {
         assert!(!w.ui.add_ts_exit("", "100.64.0.9", Some("nas")), "none to retarget: a new route");
         let s = w.setup();
         let r = s.routes.last().unwrap();
-        assert_eq!((Some("100.64.0.9"), "nas".to_string(), true), (r.ts_exit.as_deref(), r.name(), s.added.contains(&r.id)));
+        assert_eq!(
+            (Some("100.64.0.9"), "nas".to_string(), true),
+            (r.ts_exit.as_deref(), r.name(), s.added.contains(&r.id))
+        );
 
-        let ts = Route { ts_exit: Some("100.64.0.1".into()), ts_name: Some("pi".into()), hue: 2, ..Route::new("ts", Location::default()) };
+        let ts = Route {
+            ts_exit: Some("100.64.0.1".into()),
+            ts_name: Some("pi".into()),
+            hue: 2,
+            ..Route::new("ts", Location::default())
+        };
         let mut s = base();
         s.routes.push(ts);
         s.apps = apps(&[("firefox", "ts")]);
@@ -1920,7 +2151,10 @@ mod tests {
         assert!(w.ui.add_ts_exit("app:code", "100.64.0.2", Some("nas")));
         let s = w.setup();
         let r = s.route(Some("ts")).unwrap();
-        assert_eq!((3, Some("100.64.0.2"), Some("nas"), Some(&"ts".to_string())), (s.routes.len(), r.ts_exit.as_deref(), r.ts_name.as_deref(), s.apps.get("code")));
+        assert_eq!(
+            (3, Some("100.64.0.2"), Some("nas"), Some(&"ts".to_string())),
+            (s.routes.len(), r.ts_exit.as_deref(), r.ts_name.as_deref(), s.apps.get("code"))
+        );
         w.ui.view(Some("Travel"));
         assert_eq!("ts", w.ui.ts_lock("100.64.0.3").expect("locked").id);
         let before = w.setup();
@@ -1940,7 +2174,8 @@ mod tests {
         let w = world(base(), &[("nord", "{}")]);
         assert!(w.rt.block_on(w.ui.check_exits()), "nothing runs: nothing to ask");
         *w.live.running.write().unwrap() = Some(base());
-        *w.live.tags.write().unwrap() = IndexMap::from([("nl".to_string(), "nl-tag".to_string()), ("us".to_string(), "us-tag".to_string())]);
+        *w.live.tags.write().unwrap() =
+            IndexMap::from([("nl".to_string(), "nl-tag".to_string()), ("us".to_string(), "us-tag".to_string())]);
         w.live.state.send_replace(VpnState { phase: Phase::On, engine: 1, ..VpnState::default() });
         // There is no way into these tunnels here: they never answer.
         for _ in 0..4 {

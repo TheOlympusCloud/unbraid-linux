@@ -110,7 +110,17 @@ fn dialog(d: &logic::Dialog) -> SettingsDialog {
         sheet: d.sheet,
         title: text(&d.title),
         text: text(&d.text),
-        inputs: list(d.inputs.iter().map(|i| SettingsInput { label: text(&i.label), placeholder: text(&i.placeholder), value: text(&i.value), secret: i.secret }).collect()),
+        inputs: list(
+            d.inputs
+                .iter()
+                .map(|i| SettingsInput {
+                    label: text(&i.label),
+                    placeholder: text(&i.placeholder),
+                    value: text(&i.value),
+                    secret: i.secret,
+                })
+                .collect(),
+        ),
         hint: text(&d.hint),
         error: text(&d.error),
         rows: list(d.rows.iter().map(row).collect()),
@@ -124,7 +134,17 @@ fn dialog(d: &logic::Dialog) -> SettingsDialog {
 fn show(shot: &Shot, v: &logic::SettingsView) {
     let p = SettingsPage::get(shot);
     p.set_version(text(&v.version));
-    p.set_subjects(list(v.subjects.iter().map(|s| SettingsSubject { key: text(&s.key), title: text(&s.title), icon: glyph(s.icon), group: text(&s.group) }).collect()));
+    p.set_subjects(list(
+        v.subjects
+            .iter()
+            .map(|s| SettingsSubject {
+                key: text(&s.key),
+                title: text(&s.title),
+                icon: glyph(s.icon),
+                group: text(&s.group),
+            })
+            .collect(),
+    ));
     p.set_subject(text(&v.subject));
     p.set_page(text(&v.page));
     p.set_over(text(&v.over));
@@ -133,7 +153,9 @@ fn show(shot: &Shot, v: &logic::SettingsView) {
     p.set_provider(text(&v.provider));
     p.set_notice(text(&v.notice));
     p.set_groups(list(v.groups.iter().map(group).collect()));
-    p.set_licences(list(v.licences.iter().map(|l| SettingsLicence { title: text(&l.title), text: text(&l.text) }).collect()));
+    p.set_licences(list(
+        v.licences.iter().map(|l| SettingsLicence { title: text(&l.title), text: text(&l.text) }).collect(),
+    ));
     p.set_dialogs(list(v.dialogs.iter().map(dialog).collect()));
     p.on_valid(|key, typed| logic::valid(&key, &typed));
     p.on_clean(|key, typed| logic::clean(&key, &typed).into());
@@ -153,21 +175,44 @@ struct World {
 impl World {
     /// NordVPN with three routes, and a WireGuard server of the user's own on one more.
     fn new() -> World {
-        let lab = WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
+        let lab = WgPeer::new(
+            "Home lab",
+            KEY,
+            vec!["10.8.0.2/32".into()],
+            KEY,
+            "203.0.113.7:51820",
+            vec!["0.0.0.0/0".into()],
+        );
         let setup = Setup {
             routes: vec![
                 Route::new("nl", Location::country("nord", 153, "NL", "Netherlands")),
                 Route { hue: 1, ..Route::new("us", Location::country("nord", 228, "US", "United States")) },
                 Route { hue: 2, ..Route::new("it", Location::country("nord", 106, "IT", "Italy")) },
-                Route { wg: Some(lab.clone()), own: Some("s1".into()), hue: 3, ..Route::new("lab", Location::default()) },
+                Route {
+                    wg: Some(lab.clone()),
+                    own: Some("s1".into()),
+                    hue: 3,
+                    ..Route::new("lab", Location::default())
+                },
             ],
             default_route: "nl".into(),
-            apps: [("firefox", "us"), ("spotify", "it"), ("thunderbird", "us"), ("discord", "it")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            apps: [("firefox", "us"), ("spotify", "it"), ("thunderbird", "us"), ("discord", "it")]
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
             servers: vec![OwnServer { id: "s1".into(), wg: Some(lab), ovpn: None, ss: None }],
             ..Setup::default()
         };
         // As a computer without an autostart entry has it: off, its two choices showing what turning it on keeps.
-        World { setup, accounts: [("nord".to_string(), "{}".to_string())].into_iter().collect(), stack: vec![], vpn: VpnState::default(), opts: vec![], login: (false, true, true), theme: Theme::System }
+        World {
+            setup,
+            accounts: [("nord".to_string(), "{}".to_string())].into_iter().collect(),
+            stack: vec![],
+            vpn: VpnState::default(),
+            opts: vec![],
+            login: (false, true, true),
+            theme: Theme::System,
+        }
     }
 
     fn at(mut self, stack: &[&str]) -> World {
@@ -358,7 +403,11 @@ fn about_legal_and_licences() {
     let shot = World::new().at(&["legal", "notices"]).shot(false, true);
     let started = std::time::Instant::now();
     let px = render(&shot, 1280, 800, &dir.join("settings-licences.png"));
-    assert!(started.elapsed() < Duration::from_secs(5), "only the licences in view are laid out ({:?})", started.elapsed());
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "only the licences in view are laid out ({:?})",
+        started.elapsed()
+    );
     assert!((564..1260).any(|x| at(&px, 1280, x, 145) != GROUND), "the GPL's first lines");
     assert_eq!(GROUND, at(&px, 1280, 1275, 300), "nothing runs past the page's edge");
 }

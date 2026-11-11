@@ -23,19 +23,30 @@ pub fn line(name: &str, limit: Option<i32>, unit: &str, n: i32, all: Option<i32>
             if all == 1 { "1 is".to_string() } else { format!("{all} are") },
             if all == n { String::new() } else { format!("{n} of them ") }
         ),
-        (Some(limit), None) => format!("{name} allows {}. {APP} is using {n}. Your other devices aren't counted.", units(limit, unit)),
-        (None, _) => format!("{APP} is using {}. Check how many your plan allows: over the limit, routes can stop working without an error.", units(n, unit).replacen(' ', &format!(" {name} "), 1)),
+        (Some(limit), None) => {
+            format!("{name} allows {}. {APP} is using {n}. Your other devices aren't counted.", units(limit, unit))
+        }
+        (None, _) => format!(
+            "{APP} is using {}. Check how many your plan allows: over the limit, routes can stop working without an error.",
+            units(n, unit).replacen(' ', &format!(" {name} "), 1)
+        ),
     }
 }
 
 /// Before a change that would take `n` over `limit`.
 pub fn warning(name: &str, limit: i32, unit: &str, n: i32) -> String {
-    format!("{name} allows {}. This would make it {n}. Over the limit, routes can stop working without an error.", units(limit, unit))
+    format!(
+        "{name} allows {}. This would make it {n}. Over the limit, routes can stop working without an error.",
+        units(limit, unit)
+    )
 }
 
 /// A sign-in the provider refused because every slot is taken.
 pub fn full(name: &str, limit: Option<i32>, unit: &str) -> String {
-    format!("All {}{name} {unit}s are in use. Sign out another device, then try again.", limit.map(|l| format!("{l} ")).unwrap_or_default())
+    format!(
+        "All {}{name} {unit}s are in use. Sign out another device, then try again.",
+        limit.map(|l| format!("{l} ")).unwrap_or_default()
+    )
 }
 
 /// A route that fails on and off.
@@ -73,12 +84,18 @@ pub fn tunnels(s: &Setup, provider: &str) -> usize {
 
 /// The first provider counted per tunnel that `new` takes over its known limit with more tunnels than `old` had.
 pub fn over(old: &Setup, new: &Setup, limit: impl Fn(&str) -> Option<Limit>) -> Option<Over> {
-    let providers: IndexSet<String> = new.active_routes().into_iter().filter(|r| !r.imported()).map(|r| r.loc.provider.clone()).collect();
+    let providers: IndexSet<String> =
+        new.active_routes().into_iter().filter(|r| !r.imported()).map(|r| r.loc.provider.clone()).collect();
     providers.into_iter().find_map(|p| {
         let l = limit(&p).filter(|l| l.per_tunnel)?;
         let max = effective(&l, new.opt(&p, LIMIT_OPT).as_deref())?;
         let n = tunnels(new, &p);
-        (n as i64 > max as i64 && n > tunnels(old, &p)).then(|| Over { provider: p, limit: max, n, unit: l.unit.clone() })
+        (n as i64 > max as i64 && n > tunnels(old, &p)).then(|| Over {
+            provider: p,
+            limit: max,
+            n,
+            unit: l.unit.clone(),
+        })
     })
 }
 
@@ -95,16 +112,46 @@ mod tests {
     /// One wording for every provider: only the name, the numbers and the unit change.
     #[test]
     fn fixed_wording() {
-        assert_eq!("Proton VPN Free allows 1 connection. unbraid is using 2. Your other devices aren't counted.", line("Proton VPN Free", Some(1), "connection", 2, None));
-        assert_eq!("IVPN allows 5 devices. unbraid is using 1. Your other devices aren't counted.", line("IVPN", Some(5), "device", 1, None));
-        assert_eq!("Mullvad allows 5 devices. 1 is in use, by unbraid.", line("Mullvad", Some(5), "device", 1, Some(1)));
-        assert_eq!("Mullvad allows 5 devices. 3 are in use, 1 of them by unbraid.", line("Mullvad", Some(5), "device", 1, Some(3)));
-        assert_eq!("unbraid is using 2 PIA connections. Check how many your plan allows: over the limit, routes can stop working without an error.", line("PIA", None, "connection", 2, None));
-        assert_eq!("unbraid is using 1 Proton VPN connection. Check how many your plan allows: over the limit, routes can stop working without an error.", line("Proton VPN", None, "connection", 1, None));
-        assert_eq!("NordVPN allows 10 connections. This would make it 11. Over the limit, routes can stop working without an error.", warning("NordVPN", 10, "connection", 11));
-        assert_eq!("All 5 IVPN devices are in use. Sign out another device, then try again.", full("IVPN", Some(5), "device"));
-        assert_eq!("All IVPN devices are in use. Sign out another device, then try again.", full("IVPN", None, "device"));
-        assert_eq!("Netherlands keeps dropping. Proton VPN Free may be over its connection limit.", dropping("Netherlands", "Proton VPN Free", "connection"));
+        assert_eq!(
+            "Proton VPN Free allows 1 connection. unbraid is using 2. Your other devices aren't counted.",
+            line("Proton VPN Free", Some(1), "connection", 2, None)
+        );
+        assert_eq!(
+            "IVPN allows 5 devices. unbraid is using 1. Your other devices aren't counted.",
+            line("IVPN", Some(5), "device", 1, None)
+        );
+        assert_eq!(
+            "Mullvad allows 5 devices. 1 is in use, by unbraid.",
+            line("Mullvad", Some(5), "device", 1, Some(1))
+        );
+        assert_eq!(
+            "Mullvad allows 5 devices. 3 are in use, 1 of them by unbraid.",
+            line("Mullvad", Some(5), "device", 1, Some(3))
+        );
+        assert_eq!(
+            "unbraid is using 2 PIA connections. Check how many your plan allows: over the limit, routes can stop working without an error.",
+            line("PIA", None, "connection", 2, None)
+        );
+        assert_eq!(
+            "unbraid is using 1 Proton VPN connection. Check how many your plan allows: over the limit, routes can stop working without an error.",
+            line("Proton VPN", None, "connection", 1, None)
+        );
+        assert_eq!(
+            "NordVPN allows 10 connections. This would make it 11. Over the limit, routes can stop working without an error.",
+            warning("NordVPN", 10, "connection", 11)
+        );
+        assert_eq!(
+            "All 5 IVPN devices are in use. Sign out another device, then try again.",
+            full("IVPN", Some(5), "device")
+        );
+        assert_eq!(
+            "All IVPN devices are in use. Sign out another device, then try again.",
+            full("IVPN", None, "device")
+        );
+        assert_eq!(
+            "Netherlands keeps dropping. Proton VPN Free may be over its connection limit.",
+            dropping("Netherlands", "Proton VPN Free", "connection")
+        );
     }
 
     /// The user's own figure wins; empty or nonsense falls back to the provider's, which may be unknown.
@@ -124,7 +171,9 @@ mod tests {
     #[test]
     fn providers() {
         use crate::providers::Provider;
-        use crate::providers::{ivpn::Ivpn, mullvad::Mullvad, nord::Nord, pia::Pia, proton::PROTON, proton::PROTON_FREE};
+        use crate::providers::{
+            ivpn::Ivpn, mullvad::Mullvad, nord::Nord, pia::Pia, proton::PROTON, proton::PROTON_FREE,
+        };
         assert_eq!(limit("connection", true, Some(10)), Nord.limit(""));
         assert_eq!(limit("connection", true, Some(1)), PROTON_FREE.limit(""));
         assert_eq!(limit("connection", true, Some(10)), PROTON.limit(""));
@@ -132,15 +181,34 @@ mod tests {
         assert_eq!(limit("connection", true, None), Pia.limit(""));
         let ivpn = r#"{"accountId":"i-AAAA-BBBB-CCCC","sessionToken":"t","privateKey":"k","ipAddress":"10.0.0.2","device":"Tidy Falcon","limit":5}"#;
         assert_eq!(limit("device", false, Some(5)), Ivpn.limit(ivpn));
-        assert_eq!(limit("device", false, None), Ivpn.limit(r#"{"accountId":"a","sessionToken":"t","privateKey":"k","ipAddress":"10.0.0.2"}"#));
+        assert_eq!(
+            limit("device", false, None),
+            Ivpn.limit(r#"{"accountId":"a","sessionToken":"t","privateKey":"k","ipAddress":"10.0.0.2"}"#)
+        );
         assert_eq!(limit("device", false, None), Ivpn.limit("not json"));
     }
 
     fn no() -> Server {
-        Server { name: "NO-FREE#6".into(), host: "node-no-12.protonvpn.net".into(), ip: "1.2.3.4".into(), public_key: "k".into(), load: -1, ..Default::default() }
+        Server {
+            name: "NO-FREE#6".into(),
+            host: "node-no-12.protonvpn.net".into(),
+            ip: "1.2.3.4".into(),
+            public_key: "k".into(),
+            load: -1,
+            ..Default::default()
+        }
     }
     fn pf(id: &str, country: &str, pin: Option<Server>) -> Route {
-        Route::new(id, Location { provider: "proton-free".into(), country_code: Some(country.into()), country: Some(country.into()), pinned: pin, ..Default::default() })
+        Route::new(
+            id,
+            Location {
+                provider: "proton-free".into(),
+                country_code: Some(country.into()),
+                country: Some(country.into()),
+                pinned: pin,
+                ..Default::default()
+            },
+        )
     }
     fn nord() -> Route {
         Route::new("nl", Location::country("nord", 153, "NL", "Netherlands"))
@@ -159,16 +227,31 @@ mod tests {
     /// One tunnel per active route; routes pinned to one server share it; routes without apps open none.
     #[test]
     fn counts_tunnels() {
-        let s = Setup { routes: vec![nord(), pf("a", "NO", None), pf("b", "NL", None), pf("c", "JP", None)], default_route: "nl".into(), apps: apps(&[("x", "a"), ("y", "b")]), ..Setup::default() };
+        let s = Setup {
+            routes: vec![nord(), pf("a", "NO", None), pf("b", "NL", None), pf("c", "JP", None)],
+            default_route: "nl".into(),
+            apps: apps(&[("x", "a"), ("y", "b")]),
+            ..Setup::default()
+        };
         assert_eq!(2, tunnels(&s, "proton-free"));
         assert_eq!(1, tunnels(&s, "nord"));
         let pinned = Setup { routes: vec![nord(), pf("a", "NO", Some(no())), pf("b", "NO", Some(no()))], ..s.clone() };
         assert_eq!(1, tunnels(&pinned, "proton-free"));
-        let nord_pin = Server { name: "nl1302".into(), host: "nl1302.nordvpn.com".into(), ip: "1.1.1.1".into(), public_key: "k".into(), load: 4, ..Default::default() };
+        let nord_pin = Server {
+            name: "nl1302".into(),
+            host: "nl1302.nordvpn.com".into(),
+            ip: "1.1.1.1".into(),
+            public_key: "k".into(),
+            load: 4,
+            ..Default::default()
+        };
         let protocols = Setup {
             routes: vec![
                 Route::new("x", Location { pinned: Some(nord_pin.clone()), ..Location::of("nord") }),
-                Route::new("y", Location { pinned: Some(nord_pin), protocol: Some("openvpn_udp".into()), ..Location::of("nord") }),
+                Route::new(
+                    "y",
+                    Location { pinned: Some(nord_pin), protocol: Some("openvpn_udp".into()), ..Location::of("nord") },
+                ),
             ],
             default_route: "x".into(),
             apps: apps(&[("a", "y")]),
@@ -180,18 +263,27 @@ mod tests {
     /// Only a change that adds a tunnel over the limit asks; changes that keep or lower the count, or other providers, don't.
     #[test]
     fn asks_only_when_going_over() {
-        let one = Setup { routes: vec![nord(), pf("a", "NO", None), pf("b", "NL", None)], default_route: "nl".into(), apps: apps(&[("x", "a")]), ..Setup::default() };
+        let one = Setup {
+            routes: vec![nord(), pf("a", "NO", None), pf("b", "NL", None)],
+            default_route: "nl".into(),
+            apps: apps(&[("x", "a")]),
+            ..Setup::default()
+        };
         let with = |s: &Setup, k: &str, v: &str| {
             let mut s = s.clone();
             s.apps.insert(k.into(), v.into());
             s
         };
         let two = with(&one, "y", "b");
-        assert_eq!(Some(Over { provider: "proton-free".into(), limit: 1, n: 2, unit: "connection".into() }), over(&one, &two, limits));
+        assert_eq!(
+            Some(Over { provider: "proton-free".into(), limit: 1, n: 2, unit: "connection".into() }),
+            over(&one, &two, limits)
+        );
         assert_eq!(None, over(&two, &with(&two, "z", "b"), limits)); // already over: no new tunnel
         assert_eq!(None, over(&two, &one, limits)); // fewer
         assert_eq!(None, over(&one, &with(&one, "z", "a"), limits)); // same route
-        let shared = Setup { routes: vec![nord(), pf("a", "NO", Some(no())), pf("b", "NO", Some(no()))], ..one.clone() };
+        let shared =
+            Setup { routes: vec![nord(), pf("a", "NO", Some(no())), pf("b", "NO", Some(no()))], ..one.clone() };
         assert_eq!(None, over(&shared, &with(&shared, "y", "b"), limits)); // same server
         assert_eq!(None, over(&one, &two, |_| None)); // not signed in or unknown: never asks
         let mut own = two.clone();

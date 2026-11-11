@@ -1,12 +1,12 @@
 //! The location picker: a dialog over the page it was opened from, for a new route, the default route, a route's
 //! location or a new route for one app.
 
-use super::{sync, AppWindow, Blocking, Choice, Lead, PickKind, PickRow, PickerPage, SETTINGS, Win, post, text, with};
-use crate::model::{DIRECT, Location, Setup};
+use super::{AppWindow, Blocking, Choice, Lead, PickKind, PickRow, PickerPage, SETTINGS, Win, post, sync, text, with};
+use crate::app;
 use crate::model::Server;
+use crate::model::{DIRECT, Location, Setup};
 use crate::ui::picker::{self as logic, Picks, Sheet};
 use crate::vpn::VpnState;
-use crate::app;
 use indexmap::IndexSet;
 use slint::{Global, ModelRc, VecModel};
 use std::rc::Rc;
@@ -27,7 +27,6 @@ pub struct Glue {
     rows: Rc<VecModel<PickRow>>,
     panel: Rc<VecModel<PickRow>>,
 }
-
 
 fn row(r: &logic::PickRow) -> PickRow {
     PickRow {
@@ -66,7 +65,17 @@ fn row(r: &logic::PickRow) -> PickRow {
 }
 
 fn choices(c: &[logic::Choice]) -> ModelRc<Choice> {
-    super::list(c.iter().map(|c| Choice { key: text(&c.key), label: text(&c.label), sub: text(&c.sub), on: c.on, enabled: c.enabled }).collect())
+    super::list(
+        c.iter()
+            .map(|c| Choice {
+                key: text(&c.key),
+                label: text(&c.label),
+                sub: text(&c.sub),
+                on: c.on,
+                enabled: c.enabled,
+            })
+            .collect(),
+    )
 }
 
 /// The picker opens for `target`: its own state starts afresh.
@@ -209,7 +218,8 @@ pub(super) fn show(win: &Win, setup: &Setup, vpn: &VpnState) {
     let catalogs = ui.countries.borrow().clone();
     let mut g = win.picker.borrow_mut();
     let v = {
-        let allowed = g.allowed.as_ref().filter(|(group, _)| g.narrowing.as_deref() == Some(group.as_str())).map(|(_, a)| a);
+        let allowed =
+            g.allowed.as_ref().filter(|(group, _)| g.narrowing.as_deref() == Some(group.as_str())).map(|(_, a)| a);
         let servers = g.servers.as_ref().filter(|(l, _)| g.loading.as_ref() == Some(l)).map(|(_, s)| s.as_slice());
         logic::view(&logic::Inputs {
             setup,
@@ -287,6 +297,11 @@ pub(super) fn show(win: &Win, setup: &Setup, vpn: &VpnState) {
     if old.is_none_or(|o| o.groups != v.groups) {
         page.set_groups(choices(&v.groups));
     }
-    page.set_blocking(v.blocking.as_ref().map(|b| Blocking { title: text(&b.title), sub: text(&b.sub), on: b.on, enabled: b.enabled }).unwrap_or_default());
+    page.set_blocking(
+        v.blocking
+            .as_ref()
+            .map(|b| Blocking { title: text(&b.title), sub: text(&b.sub), on: b.on, enabled: b.enabled })
+            .unwrap_or_default(),
+    );
     g.last = Some(v);
 }

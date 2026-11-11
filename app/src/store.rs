@@ -87,11 +87,18 @@ impl Store {
                 writer: Mutex::new(tx),
             }
         });
-        let setup = store.load("setup.bin", |t| serde_json::from_str::<Setup>(t).ok().map(|s| s.migrated())).unwrap_or_else(|| Setup { version: VERSION, ..Setup::default() });
+        let setup = store
+            .load("setup.bin", |t| serde_json::from_str::<Setup>(t).ok().map(|s| s.migrated()))
+            .unwrap_or_else(|| Setup { version: VERSION, ..Setup::default() });
         store.setup.send_replace(setup);
-        let accounts = store.load("accounts.bin", |t| serde_json::from_str::<IndexMap<String, String>>(t).ok()).unwrap_or_else(|| store.migrate_nord());
+        let accounts = store
+            .load("accounts.bin", |t| serde_json::from_str::<IndexMap<String, String>>(t).ok())
+            .unwrap_or_else(|| store.migrate_nord());
         store.accounts.send_replace(accounts);
-        let dates = store.read("catalog-dates.json").and_then(|t| serde_json::from_str::<IndexMap<String, i64>>(&t).ok()).unwrap_or_default();
+        let dates = store
+            .read("catalog-dates.json")
+            .and_then(|t| serde_json::from_str::<IndexMap<String, i64>>(&t).ok())
+            .unwrap_or_default();
         store.catalog_dates.send_replace(dates);
         store
     }
@@ -315,7 +322,9 @@ impl Store {
 
     /// Which block of the fake-IP pool the engine's last domain table used ([`crate::compiler::fake_ranges`]).
     pub fn fake_block(&self) -> i32 {
-        self.read("fakeblock").and_then(|t| t.parse().ok()).unwrap_or_else(|| crate::compiler::block_after_half(self.read("fakehalf").and_then(|t| t.parse().ok())))
+        self.read("fakeblock")
+            .and_then(|t| t.parse().ok())
+            .unwrap_or_else(|| crate::compiler::block_after_half(self.read("fakehalf").and_then(|t| t.parse().ok())))
     }
 
     pub fn set_fake_block(&self, v: i32) -> Result<()> {
@@ -507,7 +516,10 @@ mod tests {
             assert!(s.update(|s| Setup { default_route: "x".into(), ..s.clone() }));
         }
         let again = store(dir.path());
-        assert_eq!(vec![("nord".to_string(), "blob-1".to_string())], again.current_accounts().into_iter().collect::<Vec<_>>());
+        assert_eq!(
+            vec![("nord".to_string(), "blob-1".to_string())],
+            again.current_accounts().into_iter().collect::<Vec<_>>()
+        );
         assert_eq!("x", again.current().default_route);
         assert!(fs::read_dir(dir.path()).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().ends_with(".tmp")));
         let raw = fs::read(dir.path().join("accounts.bin")).unwrap();

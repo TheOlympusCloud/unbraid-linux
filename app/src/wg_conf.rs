@@ -12,7 +12,8 @@ use regex::Regex;
 use std::sync::LazyLock;
 
 static KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9+/]{43}=$").unwrap());
-const AMNEZIA: &[&str] = &["jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "i1", "i2", "i3", "i4", "i5"];
+const AMNEZIA: &[&str] =
+    &["jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "i1", "i2", "i3", "i4", "i5"];
 // A [Peer] header at the start of a line (after \n, \r or \r\n), letter case aside.
 static PEER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?imR)^[[:space:]]*\[peer\]").unwrap());
 
@@ -46,20 +47,37 @@ pub fn parse(raw: &str, name: &str) -> Result<WgPeer> {
             }
         }
     }
-    let need = |k: &str| kv.get(k).cloned().ok_or_else(|| invalid(format!("Missing {} in the config", k.split_once('.').map_or(k, |(_, n)| n))));
-    let list =
-        |k: &str| -> Vec<String> { kv.get(k).map_or("", String::as_str).split(',').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect() };
+    let need = |k: &str| {
+        kv.get(k)
+            .cloned()
+            .ok_or_else(|| invalid(format!("Missing {} in the config", k.split_once('.').map_or(k, |(_, n)| n))))
+    };
+    let list = |k: &str| -> Vec<String> {
+        kv.get(k)
+            .map_or("", String::as_str)
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect()
+    };
     let key = |k: &str| -> Result<String> {
         let v = need(k)?;
         require!(KEY.is_match(&v), "Invalid key in the config");
         Ok(v)
     };
     let endpoint = need("[peer].endpoint")?;
-    require!(endpoint.rsplit(':').next().and_then(|p| p.parse::<i32>().ok()).is_some_and(|p| (1..=65535).contains(&p)), "Endpoint needs host:port");
+    require!(
+        endpoint.rsplit(':').next().and_then(|p| p.parse::<i32>().ok()).is_some_and(|p| (1..=65535).contains(&p)),
+        "Endpoint needs host:port"
+    );
     let private_key = key("[interface].privatekey")?;
     // A bare "10.0.0.2" is a host address; the engine needs the prefix.
-    let address: Vec<String> =
-        list("[interface].address").into_iter().filter(|a| !a.contains(':')).map(|a| if a.contains('/') { a } else { format!("{a}/32") }).collect();
+    let address: Vec<String> = list("[interface].address")
+        .into_iter()
+        .filter(|a| !a.contains(':'))
+        .map(|a| if a.contains('/') { a } else { format!("{a}/32") })
+        .collect();
     require!(!address.is_empty(), "Config has no IPv4 address");
     let public_key = key("[peer].publickey")?;
     let preshared_key = kv.get("[peer].presharedkey").cloned();
@@ -68,14 +86,33 @@ pub fn parse(raw: &str, name: &str) -> Result<WgPeer> {
     }
     let allowed_ips: Vec<String> = list("[peer].allowedips").into_iter().filter(|a| !a.contains(':')).collect();
     require!(!allowed_ips.is_empty(), "Config has no IPv4 AllowedIPs");
-    let dns = list("[interface].dns").into_iter().filter(|d| d.starts_with(|c: char| c.is_ascii_digit()) && !d.contains(':')).collect();
+    let dns = list("[interface].dns")
+        .into_iter()
+        .filter(|d| d.starts_with(|c: char| c.is_ascii_digit()) && !d.contains(':'))
+        .collect();
     let mtu = kv.get("[interface].mtu").and_then(|m| m.parse::<i32>().ok()).map_or(1420, |m| m.clamp(1280, 1500));
     let keepalive = match kv.get("[peer].persistentkeepalive") {
         None => None,
         Some(v) if v.eq_ignore_ascii_case("off") => Some(0),
-        Some(v) => Some(v.parse::<i32>().ok().filter(|n| (0..=65535).contains(n)).ok_or_else(|| invalid("Invalid PersistentKeepalive in the config"))?),
+        Some(v) => Some(
+            v.parse::<i32>()
+                .ok()
+                .filter(|n| (0..=65535).contains(n))
+                .ok_or_else(|| invalid("Invalid PersistentKeepalive in the config"))?,
+        ),
     };
-    Ok(WgPeer { name: name.into(), private_key, address, public_key, preshared_key, endpoint, allowed_ips, dns, mtu, keepalive })
+    Ok(WgPeer {
+        name: name.into(),
+        private_key,
+        address,
+        public_key,
+        preshared_key,
+        endpoint,
+        allowed_ips,
+        dns,
+        mtu,
+        keepalive,
+    })
 }
 
 /// Fails unless `p` sends all IPv4 traffic through its peer, as a route (an app's exit) must: 0.0.0.0/0, or ranges
@@ -110,8 +147,12 @@ pub fn require_full_tunnel(p: &WgPeer) -> Result<()> {
 }
 
 /// Standard Base64, padded or not; bits left over at the end are ignored.
-const B64: GeneralPurpose =
-    GeneralPurpose::new(&STANDARD, GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent).with_decode_allow_trailing_bits(true));
+const B64: GeneralPurpose = GeneralPurpose::new(
+    &STANDARD,
+    GeneralPurposeConfig::new()
+        .with_decode_padding_mode(DecodePaddingMode::Indifferent)
+        .with_decode_allow_trailing_bits(true),
+);
 
 /// A WireGuard key: 32 bytes in Base64.
 pub fn valid_wg_key(k: &str) -> bool {
@@ -125,7 +166,9 @@ mod tests {
 
     fn rejects<T: std::fmt::Debug>(why: &str, r: Result<T>) {
         match r {
-            Err(Error::Invalid(m)) => assert!(m.to_lowercase().contains(&why.to_lowercase()), "'{m}' should mention '{why}'"),
+            Err(Error::Invalid(m)) => {
+                assert!(m.to_lowercase().contains(&why.to_lowercase()), "'{m}' should mention '{why}'")
+            }
             other => panic!("expected rejection mentioning '{why}', got {other:?}"),
         }
     }
@@ -143,7 +186,10 @@ mod tests {
         assert_eq!(vec!["0.0.0.0/0"], full.allowed_ips);
         let subnet = parse(&conf("10.0.0.0/24, 192.168.1.0/24", ""), "x").unwrap();
         assert_eq!(vec!["10.0.0.0/24", "192.168.1.0/24"], subnet.allowed_ips);
-        rejects("only reaches 10.0.0.0/24, 192.168.1.0/24; import it under Settings → Home", require_full_tunnel(&subnet));
+        rejects(
+            "only reaches 10.0.0.0/24, 192.168.1.0/24; import it under Settings → Home",
+            require_full_tunnel(&subnet),
+        );
         // Ranges that together cover every IPv4 address are a full tunnel too, in any order, overlapping or not.
         for all in [
             "0.0.0.0/1, 128.0.0.0/1",
@@ -155,13 +201,19 @@ mod tests {
             require_full_tunnel(&parse(&conf(all, ""), "x").unwrap()).unwrap();
         }
         // A malformed range is refused, never silently dropped.
-        rejects("invalid range: 999.1.1.1/32", require_full_tunnel(&parse(&conf("0.0.0.0/1, 128.0.0.0/1, 999.1.1.1/32", ""), "x").unwrap()));
+        rejects(
+            "invalid range: 999.1.1.1/32",
+            require_full_tunnel(&parse(&conf("0.0.0.0/1, 128.0.0.0/1, 999.1.1.1/32", ""), "x").unwrap()),
+        );
         rejects("invalid range: 0.0.0.0/33", require_full_tunnel(&parse(&conf("0.0.0.0/33", ""), "x").unwrap()));
         // A gap of even one address, or the official app's "exclude private IPs" list, is not.
         rejects("leaves out some addresses", require_full_tunnel(&parse(&conf("0.0.0.0/1, 128.0.0.0/2, 192.0.0.0/3, 224.0.0.0/4, 240.0.0.0/5, 248.0.0.0/6, 252.0.0.0/7, 254.0.0.0/8, 255.0.0.0/9, 255.128.0.0/10, 255.192.0.0/11, 255.224.0.0/12, 255.240.0.0/13, 255.248.0.0/14, 255.252.0.0/15, 255.254.0.0/16, 255.255.0.0/17, 255.255.128.0/18, 255.255.192.0/19, 255.255.224.0/20, 255.255.240.0/21, 255.255.248.0/22, 255.255.252.0/23, 255.255.254.0/24, 255.255.255.0/25, 255.255.255.128/26, 255.255.255.192/27, 255.255.255.224/28, 255.255.255.240/29, 255.255.255.248/30, 255.255.255.252/31, 255.255.255.254/32", ""), "x").unwrap()));
         rejects("leaves out some addresses", require_full_tunnel(&parse(&conf("0.0.0.0/5, 8.0.0.0/7, 11.0.0.0/8, 12.0.0.0/6, 16.0.0.0/4, 32.0.0.0/3, 64.0.0.0/2, 128.0.0.0/3, 160.0.0.0/5, 168.0.0.0/6, 172.0.0.0/12, 172.32.0.0/11, 172.64.0.0/10, 172.128.0.0/9, 173.0.0.0/8, 174.0.0.0/7, 176.0.0.0/4, 192.0.0.0/9, 192.128.0.0/11, 192.160.0.0/13, 192.169.0.0/16, 192.170.0.0/15, 192.172.0.0/14, 192.176.0.0/12, 192.192.0.0/10, 193.0.0.0/8, 194.0.0.0/7, 196.0.0.0/6, 200.0.0.0/5, 208.0.0.0/4, 224.0.0.0/3", ""), "x").unwrap()));
         for k in ["Jc", "Jmin", "Jmax", "S1", "S2", "H1", "H2", "H3", "H4", "I1", "I5"] {
-            rejects("Obfuscated (AmneziaWG) configs aren't supported", parse(&conf("0.0.0.0/0", &format!("{k} = 5")), "x"));
+            rejects(
+                "Obfuscated (AmneziaWG) configs aren't supported",
+                parse(&conf("0.0.0.0/0", &format!("{k} = 5")), "x"),
+            );
         }
         rejects("AmneziaWG", parse(&conf("0.0.0.0/0", "").replace("Endpoint", "jc = 4\nEndpoint"), "x"));
     }

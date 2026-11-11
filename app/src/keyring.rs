@@ -27,16 +27,17 @@ pub fn key_using(dir: &Path, tool: &str, seconds: u64) -> Result<[u8; 32]> {
     let at = dir.join(WHERE);
     let kept = if at.exists() { Some(fs::read_to_string(&at)?) } else { None };
     match kept.as_deref().map(str::trim) {
-        Some("keyring") => decode(
-            &run(tool, &lookup, None, seconds).ok_or_else(|| Error::State("The desktop keyring didn't give unbraid its key. Unlock it and try again.".into()))?,
-        ),
+        Some("keyring") => decode(&run(tool, &lookup, None, seconds).ok_or_else(|| {
+            Error::State("The desktop keyring didn't give unbraid its key. Unlock it and try again.".into())
+        })?),
         Some("file") => decode(&fs::read_to_string(dir.join(FILE))?),
         _ => {
             let key: [u8; 32] = rand::random();
             let text = STANDARD.encode(key);
             // Stored, then read back: only a key the keyring really returns may seal anything.
             let store = [&["store", "--label", "unbraid storage key"][..], &ATTRS[..]].concat();
-            let in_keyring = run(tool, &store, Some(&text), seconds).is_some() && run(tool, &lookup, None, seconds).is_some_and(|t| t.trim() == text);
+            let in_keyring = run(tool, &store, Some(&text), seconds).is_some()
+                && run(tool, &lookup, None, seconds).is_some_and(|t| t.trim() == text);
             if !in_keyring {
                 private(&dir.join(FILE), &text)?;
             }
@@ -67,7 +68,8 @@ fn private(f: &Path, text: &str) -> Result<()> {
 /// `tool`'s output, or none if it is missing, fails, says nothing to a lookup or takes longer than `seconds`.
 fn run(tool: &str, args: &[&str], input: Option<&str>, seconds: u64) -> Option<String> {
     let cmd = [&[tool][..], args].concat();
-    crate::desktop::run(&cmd, input, Duration::from_secs(seconds)).filter(|out| input.is_some() || !out.trim().is_empty())
+    crate::desktop::run(&cmd, input, Duration::from_secs(seconds))
+        .filter(|out| input.is_some() || !out.trim().is_empty())
 }
 
 #[cfg(test)]
@@ -85,7 +87,10 @@ mod tests {
     /// A secret-tool that keeps the secret in `store`, or one that says no to everything (`fail`).
     fn fake_tool(root: &Path, store: &Path, fail: bool) -> String {
         let s = store.display();
-        let body = format!("#!/bin/sh\n{}case \"$1\" in store) cat > '{s}';; lookup) [ -s '{s}' ] && cat '{s}' || exit 1;; esac\n", if fail { "exit 1\n" } else { "" });
+        let body = format!(
+            "#!/bin/sh\n{}case \"$1\" in store) cat > '{s}';; lookup) [ -s '{s}' ] && cat '{s}' || exit 1;; esac\n",
+            if fail { "exit 1\n" } else { "" }
+        );
         tool(&root.join("secret-tool"), &body)
     }
 

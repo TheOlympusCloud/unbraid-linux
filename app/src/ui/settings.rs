@@ -31,8 +31,14 @@ const CREDITS: [(&str, &str); 16] = [
     ("Rust standard library", "Apache-2.0 or MIT · The Rust Project Developers"),
     ("About 350 more Rust crates", "MIT, Apache-2.0, Unicode-3.0, Zlib, BSD and ISC, each listed in the full texts"),
     ("Slint", "GPL-3.0 · SixtyFPS GmbH. Draws the app"),
-    ("tokio, tonic, prost", "MIT and Apache-2.0 · Tokio Contributors, gRPC authors, Dan Burkert and others. The app's line to its engine"),
-    ("rustls, ring", "Apache-2.0, ISC and MIT · Joseph Birr-Pixton, Brian Smith and the BoringSSL authors. Secures the app's connections"),
+    (
+        "tokio, tonic, prost",
+        "MIT and Apache-2.0 · Tokio Contributors, gRPC authors, Dan Burkert and others. The app's line to its engine",
+    ),
+    (
+        "rustls, ring",
+        "Apache-2.0, ISC and MIT · Joseph Birr-Pixton, Brian Smith and the BoringSSL authors. Secures the app's connections",
+    ),
     ("rusqlite", "MIT · The rusqlite developers. Keeps the local statistics (SQLite is public domain)"),
     ("rqrr", "MIT and ISC · Moritz Wanzenböck, Daniel Beer. Reads QR codes at sign-in"),
     ("Material Symbols", "Apache-2.0 · Google"),
@@ -284,7 +290,12 @@ fn advanced(summary: String, rows: Vec<Row>) -> Option<Group> {
         return None;
     }
     let head = row("Advanced settings", summary).act(Act::Advanced, "").icon(Glyph::Sliders).end(End::Expand);
-    Some(Group { rows: std::iter::once(head).chain(rows).collect(), advanced: true, open_sub: "For when something doesn't work. A wrong choice can stop connections".into(), ..Group::default() })
+    Some(Group {
+        rows: std::iter::once(head).chain(rows).collect(),
+        advanced: true,
+        open_sub: "For when something doesn't work. A wrong choice can stop connections".into(),
+        ..Group::default()
+    })
 }
 
 /// A subject on the left: its page's key, its name and icon, and the name of the group it starts ("" if none).
@@ -424,7 +435,10 @@ pub struct SettingsView {
 /// `stack` as it can show: a provider page whose account is gone falls back to the page under it.
 pub fn shown(stack: &[String], accounts: &IndexMap<String, String>) -> Vec<String> {
     let mut s = stack.to_vec();
-    if s.last().and_then(|p| p.strip_prefix("provider:")).is_some_and(|id| providers::get(id).is_none() || !accounts.contains_key(id)) {
+    if s.last()
+        .and_then(|p| p.strip_prefix("provider:"))
+        .is_some_and(|id| providers::get(id).is_none() || !accounts.contains_key(id))
+    {
         s.pop();
     }
     s
@@ -433,7 +447,11 @@ pub fn shown(stack: &[String], accounts: &IndexMap<String, String>) -> Vec<Strin
 /// A provider page's settings, in order: its own blocking, its options and, unless it's OpenVPN, the MTU. Blocks on
 /// the provider's server list: call it off the window's thread.
 pub fn provider_opts(p: &dyn Provider, account: &str) -> Vec<Opt> {
-    p.protection().into_iter().chain(p.options(account)).chain((p.protocol() != "OpenVPN").then(|| MTU.clone())).collect()
+    p.protection()
+        .into_iter()
+        .chain(p.options(account))
+        .chain((p.protocol() != "OpenVPN").then(|| MTU.clone()))
+        .collect()
 }
 
 fn routes_word(n: usize) -> String {
@@ -456,7 +474,9 @@ pub fn view(i: &Inputs) -> SettingsView {
     let named = |key: &str| SUBJECTS.iter().find(|s| s.1 == key).map_or("", |s| s.2).to_string();
     let (over, title) = match page.as_str() {
         "notices" => ("Legal".to_string(), "Licences".to_string()),
-        p if p.starts_with("provider:") => ("Providers & servers".into(), providers::get(&p[9..]).map_or_else(String::new, |pr| pr.name().into())),
+        p if p.starts_with("provider:") => {
+            ("Providers & servers".into(), providers::get(&p[9..]).map_or_else(String::new, |pr| pr.name().into()))
+        }
         p => ("Settings".into(), named(p)),
     };
     let (groups, dialogs) = match page.as_str() {
@@ -476,7 +496,15 @@ pub fn view(i: &Inputs) -> SettingsView {
     let quiet = ["legal", "notices", "desktop", "shortcuts"].contains(&page.as_str());
     SettingsView {
         version: format!("Version {VERSION_NAME}"),
-        subjects: SUBJECTS.iter().map(|(g, key, title, icon)| Subject { key: key.to_string(), title: title.to_string(), icon: *icon, group: g.to_string() }).collect(),
+        subjects: SUBJECTS
+            .iter()
+            .map(|(g, key, title, icon)| Subject {
+                key: key.to_string(),
+                title: title.to_string(),
+                icon: *icon,
+                group: g.to_string(),
+            })
+            .collect(),
         subject,
         back: stack.len() > 1,
         provider: page.strip_prefix("provider:").unwrap_or_default().into(),
@@ -498,15 +526,38 @@ fn providers_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
         .map(|pr| {
             let id = pr.id();
             let n = s.routes.iter().filter(|r| !r.imported() && r.loc.provider == id).count();
-            let active: Vec<&Route> = s.active_routes().into_iter().filter(|r| !r.imported() && r.loc.provider == id).collect();
+            let active: Vec<&Route> =
+                s.active_routes().into_iter().filter(|r| !r.imported() && r.loc.provider == id).collect();
             let on = on_phase && !active.is_empty();
             let stuck = i.vpn.stuck.get(id).copied();
             // Only the setup the engine runs counts: a route just moved to this provider isn't connected yet.
-            let connected = on && active.iter().all(|r| i.vpn.servers.contains_key(&r.id) && i.running.and_then(|run| run.route(Some(&r.id))).is_some_and(|x| x.loc == r.loc));
+            let connected = on
+                && active.iter().all(|r| {
+                    i.vpn.servers.contains_key(&r.id)
+                        && i.running.and_then(|run| run.route(Some(&r.id))).is_some_and(|x| x.loc == r.loc)
+                });
             let unit = i.accounts.get(id).map_or_else(|| "connection".into(), |a| pr.limit(a).unit);
-            let dropping = active.iter().find(|r| i.vpn.dropping.contains(&r.id)).filter(|_| on).map(|r| limits::dropping(&r.name(), pr.name(), &unit));
-            let old = pr.list_source().and_then(|c| i.list_dates.get(&c).copied()).filter(|t| i.now - t * 1000 > OLD_LIST_MS).map(published_on);
-            let (tone, words) = provider_status(pr.name(), n > 0, stuck == Some(true), on && i.setting_up.contains(id), on && stuck == Some(false), i.fresh.contains(id), connected, dropping.as_deref(), old.as_deref());
+            let dropping = active
+                .iter()
+                .find(|r| i.vpn.dropping.contains(&r.id))
+                .filter(|_| on)
+                .map(|r| limits::dropping(&r.name(), pr.name(), &unit));
+            let old = pr
+                .list_source()
+                .and_then(|c| i.list_dates.get(&c).copied())
+                .filter(|t| i.now - t * 1000 > OLD_LIST_MS)
+                .map(published_on);
+            let (tone, words) = provider_status(
+                pr.name(),
+                n > 0,
+                stuck == Some(true),
+                on && i.setting_up.contains(id),
+                on && stuck == Some(false),
+                i.fresh.contains(id),
+                connected,
+                dropping.as_deref(),
+                old.as_deref(),
+            );
             let used = if n > 0 { format!(" · used by {}", routes_word(n)) } else { String::new() };
             Row { tone, ..row(pr.name(), words + &used).act(Act::Open, format!("provider:{id}")).end(End::Dot) }
         })
@@ -519,7 +570,16 @@ fn providers_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
         .iter()
         .map(|sv| {
             let n = s.routes.iter().filter(|r| r.own.as_deref() == Some(&sv.id)).count();
-            row(sv.name(), format!("{} · {}", sv.kind(), if n == 0 { "not used".into() } else { format!("used by {}", routes_word(n)) })).act(Act::Dialog, format!("server:{}", sv.id)).end(End::Chevron)
+            row(
+                sv.name(),
+                format!(
+                    "{} · {}",
+                    sv.kind(),
+                    if n == 0 { "not used".into() } else { format!("used by {}", routes_word(n)) }
+                ),
+            )
+            .act(Act::Dialog, format!("server:{}", sv.id))
+            .end(End::Chevron)
         })
         .collect();
     let mine = Group {
@@ -532,7 +592,8 @@ fn providers_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
 
 fn providers_dialogs(i: &Inputs) -> Vec<Dialog> {
     let s = i.setup;
-    let others: Vec<&str> = providers::all().into_iter().filter(|p| !i.accounts.contains_key(p.id())).take(4).map(|p| p.name()).collect();
+    let others: Vec<&str> =
+        providers::all().into_iter().filter(|p| !i.accounts.contains_key(p.id())).take(4).map(|p| p.name()).collect();
     let guides: Vec<&str> = IMPORTS.iter().map(|g| g.name).collect();
     let mut d = vec![
         sheet(
@@ -540,13 +601,27 @@ fn providers_dialogs(i: &Inputs) -> Vec<Dialog> {
             "Add connection",
             "",
             vec![
-                row("Sign in to a provider", format!("{} and more", others.join(", "))).act(Act::AddProvider, "").end(End::Chevron),
-                row("WireGuard or OpenVPN file", ".conf or .ovpn, from any provider or your own server").act(Act::ImportFile, "any").end(End::Chevron),
+                row("Sign in to a provider", format!("{} and more", others.join(", ")))
+                    .act(Act::AddProvider, "")
+                    .end(End::Chevron),
+                row("WireGuard or OpenVPN file", ".conf or .ovpn, from any provider or your own server")
+                    .act(Act::ImportFile, "any")
+                    .end(End::Chevron),
                 row("Shadowsocks link", "Paste an ss:// access key").act(Act::Shadowsocks, "").end(End::Chevron),
-                row("Provider without an app here?", format!("{}: download, then import", guides.join(", "))).act(Act::Dialog, "guides").end(End::Chevron),
+                row("Provider without an app here?", format!("{}: download, then import", guides.join(", ")))
+                    .act(Act::Dialog, "guides")
+                    .end(End::Chevron),
             ],
         ),
-        sheet("guides", "From another provider", "", IMPORTS.iter().map(|g| row(g.name, g.r#where).act(Act::Dialog, format!("guide:{}", g.id)).end(End::Chevron)).collect()),
+        sheet(
+            "guides",
+            "From another provider",
+            "",
+            IMPORTS
+                .iter()
+                .map(|g| row(g.name, g.r#where).act(Act::Dialog, format!("guide:{}", g.id)).end(End::Chevron))
+                .collect(),
+        ),
     ];
     d.extend(IMPORTS.iter().map(|g| Dialog {
         confirm: row(format!("Download the config from {}", g.name), "").act(Act::Url, g.url),
@@ -560,10 +635,24 @@ fn providers_dialogs(i: &Inputs) -> Vec<Dialog> {
         d.push(Dialog {
             inputs: vec![input("Name", "e.g. Home VPS", sv.name())],
             other: row("Remove server", "").act(Act::Dialog, format!("remove:{}", sv.id)).danger(),
-            ..prompt(format!("server:{}", sv.id), sv.name(), format!("{}{line}", sv.kind()), row("Save", "").act(Act::RenameServer, &sv.id))
+            ..prompt(
+                format!("server:{}", sv.id),
+                sv.name(),
+                format!("{}{line}", sv.kind()),
+                row("Save", "").act(Act::RenameServer, &sv.id),
+            )
         });
-        let why = if used == 0 { "It isn't used by any route." } else { "The routes using it are removed too; their apps follow the default route." };
-        d.push(prompt(format!("remove:{}", sv.id), format!("Remove {}?", sv.name()), why, row("Remove", "").act(Act::RemoveServer, &sv.id).danger()));
+        let why = if used == 0 {
+            "It isn't used by any route."
+        } else {
+            "The routes using it are removed too; their apps follow the default route."
+        };
+        d.push(prompt(
+            format!("remove:{}", sv.id),
+            format!("Remove {}?", sv.name()),
+            why,
+            row("Remove", "").act(Act::RemoveServer, &sv.id).danger(),
+        ));
     }
     d
 }
@@ -576,7 +665,9 @@ fn provider_page(i: &Inputs, id: &str) -> (Vec<Group>, Vec<Dialog>) {
     let running = matches!(i.vpn.phase, Phase::On | Phase::Paused);
     // Providers that count connections, not devices: each separate tunnel to one of its servers is one.
     let tunnels = if running {
-        let mine = |route: &str| i.running.and_then(|run| run.route(Some(route))).is_some_and(|r| !r.imported() && r.loc.provider == id);
+        let mine = |route: &str| {
+            i.running.and_then(|run| run.route(Some(route))).is_some_and(|r| !r.imported() && r.loc.provider == id)
+        };
         i.tags.iter().filter(|(route, _)| mine(route)).map(|(_, tag)| tag).collect::<HashSet<_>>().len() as i32
     } else {
         0
@@ -585,7 +676,13 @@ fn provider_page(i: &Inputs, id: &str) -> (Vec<Group>, Vec<Dialog>) {
     let lim = pr.limit(acc);
     let counted = row(
         if lim.unit == "device" { "Devices" } else { "Connections" },
-        limits::line(name, limits::effective(&lim, s.opt(id, LIMIT_OPT).as_deref()), &lim.unit, if lim.per_tunnel { tunnels } else { 1 }, i.device.and_then(|d| d.used)),
+        limits::line(
+            name,
+            limits::effective(&lim, s.opt(id, LIMIT_OPT).as_deref()),
+            &lim.unit,
+            if lim.per_tunnel { tunnels } else { 1 },
+            i.device.and_then(|d| d.used),
+        ),
     )
     .act(Act::Dialog, format!("limit:{id}"))
     .icon(Glyph::Phone)
@@ -600,7 +697,10 @@ fn provider_page(i: &Inputs, id: &str) -> (Vec<Group>, Vec<Dialog>) {
         Some(u) => row("This computer", &d.line).act(Act::Url, u).icon(Glyph::Info).end(End::External),
         None => row("This computer", &d.line).icon(Glyph::Info),
     });
-    let mut groups = vec![group("", [Some(row("Account", plan).icon(Glyph::VpnKey)), Some(counted), list, device].into_iter().flatten().collect())];
+    let mut groups = vec![group(
+        "",
+        [Some(row("Account", plan).icon(Glyph::VpnKey)), Some(counted), list, device].into_iter().flatten().collect(),
+    )];
 
     let opt_row = |o: &Opt| {
         let v = s.opt(id, &o.key);
@@ -620,19 +720,34 @@ fn provider_page(i: &Inputs, id: &str) -> (Vec<Group>, Vec<Dialog>) {
             let on = s.opt(id, PROTECT).as_deref() == Some("on") && !custom;
             let mut first = p.sub.chars();
             let sub = first.next().map_or_else(String::new, |c| c.to_lowercase().chain(first).collect());
-            let r = row(format!("{name} blocking"), if custom { format!("Off while {APP}'s filter is on for VPN routes") } else { format!("{}: {sub}", p.label) }).act(Act::Opt, PROTECT).icon(Glyph::Shield).switch(on);
+            let r = row(
+                format!("{name} blocking"),
+                if custom {
+                    format!("Off while {APP}'s filter is on for VPN routes")
+                } else {
+                    format!("{}: {sub}", p.label)
+                },
+            )
+            .act(Act::Opt, PROTECT)
+            .icon(Glyph::Shield)
+            .switch(on);
             if custom { r.fixed() } else { r }
         }
         None => {
             let sub = if custom { format!("{APP}'s filter is on for VPN routes") } else { pr.blocking_note() };
             match pr.blocking_url().filter(|_| !custom) {
                 Some(u) => row(format!("{name} blocking"), sub).act(Act::Url, u).icon(Glyph::Shield).end(End::External),
-                None => row(format!("{name} blocking"), sub).act(Act::Open, "dns").icon(Glyph::Shield).end(End::Chevron),
+                None => {
+                    row(format!("{name} blocking"), sub).act(Act::Open, "dns").icon(Glyph::Shield).end(End::Chevron)
+                }
             }
         }
     };
     let shown_opts: Vec<&Opt> = i.opts.iter().filter(|o| o.key != PROTECT).collect();
-    groups.push(group(&format!("{name} settings"), std::iter::once(blocking).chain(shown_opts.iter().filter(|o| !o.advanced).map(|o| opt_row(o))).collect()));
+    groups.push(group(
+        &format!("{name} settings"),
+        std::iter::once(blocking).chain(shown_opts.iter().filter(|o| !o.advanced).map(|o| opt_row(o))).collect(),
+    ));
     if !routes.is_empty() {
         groups.push(group(
             "Used by",
@@ -641,9 +756,20 @@ fn provider_page(i: &Inputs, id: &str) -> (Vec<Group>, Vec<Dialog>) {
                 .map(|r| {
                     let apps = s.apps.values().filter(|v| **v == r.id).count();
                     // A route that turned the provider's blocking on or off for itself says so.
-                    let own = r.filter.zip(protect.as_ref()).map(|(on, p)| format!("{} {} here", p.label, if on { "on" } else { "off" }));
-                    let uses = if r.id == s.default_route { "Default route".to_string() } else { format!("{apps} {}", if apps == 1 { "app" } else { "apps" }) };
-                    let line = [Some(uses), i.vpn.servers.get(&r.id).map(|sv| sv.name.clone()), own].into_iter().flatten().collect::<Vec<_>>().join(" · ");
+                    let own = r
+                        .filter
+                        .zip(protect.as_ref())
+                        .map(|(on, p)| format!("{} {} here", p.label, if on { "on" } else { "off" }));
+                    let uses = if r.id == s.default_route {
+                        "Default route".to_string()
+                    } else {
+                        format!("{apps} {}", if apps == 1 { "app" } else { "apps" })
+                    };
+                    let line = [Some(uses), i.vpn.servers.get(&r.id).map(|sv| sv.name.clone()), own]
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>()
+                        .join(" · ");
                     Row { hue: r.hue, ..row(r.name(), line).end(End::Mark).value(r.code()) }
                 })
                 .collect(),
@@ -662,17 +788,27 @@ fn provider_page(i: &Inputs, id: &str) -> (Vec<Group>, Vec<Dialog>) {
         .collect::<Vec<_>>()
         .join(" · ");
     let extra = [
-        facts.as_ref().map(|f| row("Set in your config", if f.is_empty() { "Not known: sign in with the whole .conf to see them" } else { f })),
-        pr.config_help().map(|(text, url)| row(format!("In your {name} account"), text).act(Act::Url, url).end(End::External)),
+        facts.as_ref().map(|f| {
+            row(
+                "Set in your config",
+                if f.is_empty() { "Not known: sign in with the whole .conf to see them" } else { f },
+            )
+        }),
+        pr.config_help()
+            .map(|(text, url)| row(format!("In your {name} account"), text).act(Act::Url, url).end(End::External)),
     ];
     groups.extend(advanced(summary, adv.iter().map(|o| opt_row(o)).chain(extra.into_iter().flatten()).collect()));
-    let only = i.accounts.len() == 1 && s.servers.is_empty() && !s.routes.iter().any(Route::imported) && !s.home.tailscale;
+    let only =
+        i.accounts.len() == 1 && s.servers.is_empty() && !s.routes.iter().any(Route::imported) && !s.home.tailscale;
     let out_sub = match () {
         _ if only => "It's your only connection: you'll be back at sign-in",
         _ if routes.is_empty() => "No route uses it",
         _ => "Apps on its routes are blocked until you sign in again or move them; other routes keep running",
     };
-    groups.push(group("", vec![row(format!("Sign out of {name}"), out_sub).act(Act::Dialog, format!("signout:{id}")).danger()]));
+    groups.push(group(
+        "",
+        vec![row(format!("Sign out of {name}"), out_sub).act(Act::Dialog, format!("signout:{id}")).danger()],
+    ));
 
     let mut dialogs: Vec<Dialog> = i
         .opts
@@ -680,12 +816,29 @@ fn provider_page(i: &Inputs, id: &str) -> (Vec<Group>, Vec<Dialog>) {
         .filter(|o| !o.choices.is_empty())
         .map(|o| {
             let v = s.opt(id, &o.key);
-            sheet(format!("opt:{id}:{}", o.key), &o.label, &o.sub, o.choices.iter().map(|(value, label)| row(label, "").act(Act::Opt, &o.key).value(value).choice(Some(value) == v.as_ref())).collect())
+            sheet(
+                format!("opt:{id}:{}", o.key),
+                &o.label,
+                &o.sub,
+                o.choices
+                    .iter()
+                    .map(|(value, label)| {
+                        row(label, "").act(Act::Opt, &o.key).value(value).choice(Some(value) == v.as_ref())
+                    })
+                    .collect(),
+            )
         })
         .collect();
     let unit = &lim.unit;
-    let plural = format!("{}{}s", unit.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default(), unit.chars().skip(1).collect::<String>());
-    let leave = lim.value.map_or_else(|| format!("{name} doesn't tell {APP}, so leave empty if you don't know."), |v| format!("Leave empty for {name}'s own figure, {v}."));
+    let plural = format!(
+        "{}{}s",
+        unit.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default(),
+        unit.chars().skip(1).collect::<String>()
+    );
+    let leave = lim.value.map_or_else(
+        || format!("{name} doesn't tell {APP}, so leave empty if you don't know."),
+        |v| format!("Leave empty for {name}'s own figure, {v}."),
+    );
     dialogs.push(Dialog {
         inputs: vec![input(&plural, &lim.value.map_or_else(|| "e.g. 5".into(), |v| v.to_string()), s.opt(id, LIMIT_OPT).unwrap_or_default())],
         ..prompt(
@@ -708,9 +861,25 @@ fn tailscale_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
     let s = i.setup;
     let h = &s.home;
     let status = tailscale_sub(h.tailscale, i.vpn.phase == Phase::On, i.vpn.ts_state.as_deref());
-    let reach_sub = if h.tailscale { status } else if s.ts_exit().is_some() { "Off · Tailscale still runs for your exit-node route".into() } else { "From apps routed through unbraid".into() };
-    let login = i.vpn.ts_login_url.as_ref().filter(|_| s.tailscale()).map(|u| Row { cta: true, ..row("Sign in to Tailscale", "Opens your browser").act(Act::TsLogin, u).end(End::External) });
-    let mut groups = vec![group("", std::iter::once(row("Reach your tailnet", reach_sub).act(Act::Tailscale, "").icon(Glyph::Hub).switch(h.tailscale)).chain(login).collect())];
+    let reach_sub = if h.tailscale {
+        status
+    } else if s.ts_exit().is_some() {
+        "Off · Tailscale still runs for your exit-node route".into()
+    } else {
+        "From apps routed through unbraid".into()
+    };
+    let login = i.vpn.ts_login_url.as_ref().filter(|_| s.tailscale()).map(|u| Row {
+        cta: true,
+        ..row("Sign in to Tailscale", "Opens your browser").act(Act::TsLogin, u).end(End::External)
+    });
+    let mut groups = vec![group(
+        "",
+        std::iter::once(
+            row("Reach your tailnet", reach_sub).act(Act::Tailscale, "").icon(Glyph::Hub).switch(h.tailscale),
+        )
+        .chain(login)
+        .collect(),
+    )];
     if s.tailscale() && !i.vpn.ts_exit_nodes.is_empty() {
         let mut nodes = i.vpn.ts_exit_nodes.clone();
         nodes.sort_by_key(|n| !n.online);
@@ -718,7 +887,14 @@ fn tailscale_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
             .iter()
             .map(|n| {
                 let used = s.routes.iter().filter(|r| r.ts_exit.as_deref() == Some(&n.ip)).count();
-                row(&n.name, format!("{} · {}", if n.online { "Online" } else { "Offline" }, if used == 0 { "not used".into() } else { format!("used by {}", routes_word(used)) }))
+                row(
+                    &n.name,
+                    format!(
+                        "{} · {}",
+                        if n.online { "Online" } else { "Offline" },
+                        if used == 0 { "not used".into() } else { format!("used by {}", routes_word(used)) }
+                    ),
+                )
             })
             .collect();
         groups.push(group("Exit nodes", rows));
@@ -728,22 +904,52 @@ fn tailscale_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
         // A Headscale server can name any domain: its devices' names answer apps only once the user allows that suffix.
         let suffix = i.vpn.ts_suffix.as_ref().filter(|_| h.tailscale && !official_ts(h)).map(|d| {
             let on = h.ts_suffix_allowed.as_ref() == Some(d);
-            let sub = if on { format!("On · your server answers every lookup under {d}") } else { format!("Off · allow to reach devices by name; your server then answers every lookup under {d}") };
+            let sub = if on {
+                format!("On · your server answers every lookup under {d}")
+            } else {
+                format!("Off · allow to reach devices by name; your server then answers every lookup under {d}")
+            };
             row(format!("Device names under {d}"), sub).act(Act::Suffix, d).switch(on)
         });
-        let server = row("Control server", h.ts_control_url.clone().unwrap_or_else(|| "Tailscale (default)".into())).act(Act::Dialog, "tsserver").icon(Glyph::Dns).end(End::Chevron);
-        groups.extend(advanced(format!("Control server: {}", h.ts_control_url.as_deref().unwrap_or("Tailscale")), std::iter::once(server).chain(suffix).collect()));
+        let server = row("Control server", h.ts_control_url.clone().unwrap_or_else(|| "Tailscale (default)".into()))
+            .act(Act::Dialog, "tsserver")
+            .icon(Glyph::Dns)
+            .end(End::Chevron);
+        groups.extend(advanced(
+            format!("Control server: {}", h.ts_control_url.as_deref().unwrap_or("Tailscale")),
+            std::iter::once(server).chain(suffix).collect(),
+        ));
     }
     // Whatever the sign-in's state, and also with Tailscale off while its node is still kept on the computer.
     if s.tailscale() || i.ts_stored {
-        groups.push(group("", vec![row("Sign out of Tailscale", "Its exit routes are removed; their apps follow the default route").act(Act::Dialog, "tsout").danger()]));
+        groups.push(group(
+            "",
+            vec![
+                row("Sign out of Tailscale", "Its exit routes are removed; their apps follow the default route")
+                    .act(Act::Dialog, "tsout")
+                    .danger(),
+            ],
+        ));
     }
     let dialogs = vec![
-        prompt("tsout", "Sign out of Tailscale?", "Tailscale exit routes are removed. Their apps follow the default route.", row("Sign out", "").act(Act::SignOutTailscale, "").danger()),
+        prompt(
+            "tsout",
+            "Sign out of Tailscale?",
+            "Tailscale exit routes are removed. Their apps follow the default route.",
+            row("Sign out", "").act(Act::SignOutTailscale, "").danger(),
+        ),
         Dialog {
-            inputs: vec![input("Server URL", "https://headscale.example.com", h.ts_control_url.clone().unwrap_or_default()), Input { secret: true, ..input("Auth key (optional)", "Signs in without a browser", "") }],
+            inputs: vec![
+                input("Server URL", "https://headscale.example.com", h.ts_control_url.clone().unwrap_or_default()),
+                Input { secret: true, ..input("Auth key (optional)", "Signs in without a browser", "") },
+            ],
             error: "Use a full https:// address".into(),
-            ..prompt("tsserver", "Control server", "For a self-hosted Headscale. Changing it signs this computer out of the current tailnet.", row("Save", "").act(Act::TsServer, ""))
+            ..prompt(
+                "tsserver",
+                "Control server",
+                "For a self-hosted Headscale. Changing it signs this computer out of the current tailnet.",
+                row("Save", "").act(Act::TsServer, ""),
+            )
         },
     ];
     (groups, dialogs)
@@ -752,24 +958,54 @@ fn tailscale_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
 fn local_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
     let s = i.setup;
     let h = &s.home;
-    let status = if h.tailscale { tailscale_sub(h.tailscale, i.vpn.phase == Phase::On, i.vpn.ts_state.as_deref()) } else { "Off".into() };
+    let status = if h.tailscale {
+        tailscale_sub(h.tailscale, i.vpn.phase == Phase::On, i.vpn.ts_state.as_deref())
+    } else {
+        "Off".into()
+    };
     let wg = match &h.wg {
-        Some(w) => row("Home WireGuard tunnel", format!("{} · {}", w.name, w.endpoint)).end(End::Remove).value("Remove"),
+        Some(w) => {
+            row("Home WireGuard tunnel", format!("{} · {}", w.name, w.endpoint)).end(End::Remove).value("Remove")
+        }
         None => row("Home WireGuard tunnel", "Not set up · import your router's .conf").end(End::Chevron),
     };
     let subnets = h.subnets.join(", ");
     let mut groups = vec![
-        group("This network", vec![row("Local network bypasses the VPN", "Printers, casting and NAS on this network stay reachable").act(Act::Lan, "").icon(Glyph::Lan).switch(s.prefs.lan)]),
+        group(
+            "This network",
+            vec![
+                row("Local network bypasses the VPN", "Printers, casting and NAS on this network stay reachable")
+                    .act(Act::Lan, "")
+                    .icon(Glyph::Lan)
+                    .switch(s.prefs.lan),
+            ],
+        ),
         Group {
             error: i.wg_error.unwrap_or_default().into(),
-            caption: "Reach home from anywhere through Tailscale, or a WireGuard tunnel to your router (e.g. a FRITZ!Box).".into(),
-            ..group("Home, from anywhere", vec![row("Through Tailscale", status).act(Act::Open, "tailscale").icon(Glyph::Hub).end(End::Chevron), wg.act(Act::HomeConfig, "").icon(Glyph::Tunnel)])
+            caption:
+                "Reach home from anywhere through Tailscale, or a WireGuard tunnel to your router (e.g. a FRITZ!Box)."
+                    .into(),
+            ..group(
+                "Home, from anywhere",
+                vec![
+                    row("Through Tailscale", status).act(Act::Open, "tailscale").icon(Glyph::Hub).end(End::Chevron),
+                    wg.act(Act::HomeConfig, "").icon(Glyph::Tunnel),
+                ],
+            )
         },
     ];
-    let line = format!("{} · a WireGuard tunnel uses its own config's ranges", if subnets.is_empty() { "None" } else { &subnets });
+    let line = format!(
+        "{} · a WireGuard tunnel uses its own config's ranges",
+        if subnets.is_empty() { "None" } else { &subnets }
+    );
     groups.extend(advanced(
         format!("Home subnets through Tailscale: {}", if subnets.is_empty() { "none" } else { &subnets }),
-        vec![row("Home subnets through Tailscale", line).act(Act::Dialog, "subnets").icon(Glyph::Router).end(End::Chevron)],
+        vec![
+            row("Home subnets through Tailscale", line)
+                .act(Act::Dialog, "subnets")
+                .icon(Glyph::Router)
+                .end(End::Chevron),
+        ],
     ));
     let dialogs = vec![Dialog {
         inputs: vec![input("", "192.168.178.0/24", subnets)],
@@ -782,13 +1018,25 @@ fn local_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
 
 fn behaviour_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
     let (on, connects, _) = i.login;
-    let title = if on { format!("Starts at login{}", if connects { " and connects" } else { "" }) } else { "Doesn't start at login".into() };
+    let title = if on {
+        format!("Starts at login{}", if connects { " and connects" } else { "" })
+    } else {
+        "Doesn't start at login".into()
+    };
     let at_login = Group {
         caption: format!(
             "Linux has no switch that keeps apps offline whenever {APP} isn't running: before you log in, while paused and if {APP} stops, apps use \
              your normal connection. While {APP} is on, nothing goes around it, and Direct apps use your normal connection."
         ),
-        ..group("At login", vec![row(title, "Set in Desktop, with the tray and the window").act(Act::Pick, "desktop").icon(Glyph::Power).end(End::Chevron)])
+        ..group(
+            "At login",
+            vec![
+                row(title, "Set in Desktop, with the tray and the window")
+                    .act(Act::Pick, "desktop")
+                    .icon(Glyph::Power)
+                    .end(End::Chevron),
+            ],
+        )
     };
     (vec![at_login], vec![])
 }
@@ -798,7 +1046,11 @@ fn dns_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
     let f = &s.prefs.filter;
     let dns = f.server();
     // Each filter once, alphabetical, with what it blocks in its own words; none is suggested.
-    let mut rows = vec![row("None", "Each provider's own blocking, set on its page. Direct apps use the computer's DNS").act(Act::Filter, "").choice(f.id.is_none())];
+    let mut rows = vec![
+        row("None", "Each provider's own blocking, set on its page. Direct apps use the computer's DNS")
+            .act(Act::Filter, "")
+            .choice(f.id.is_none()),
+    ];
     rows.extend(filters().into_iter().map(|d| {
         let on = f.id.as_deref() == Some(&d.id);
         if d.id == "nextdns" {
@@ -810,13 +1062,25 @@ fn dns_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
     }));
     let own = f.id.as_deref() == Some(OWN);
     let plain = dns.as_ref().is_none_or(|d| d.tls.is_none() && d.path.is_none());
-    let own_sub = if own { format!("{}{}", f.value, if plain { " · not encrypted" } else { "" }) } else { "https://… (DNS over HTTPS) or tls://… (DNS over TLS)".into() };
+    let own_sub = if own {
+        format!("{}{}", f.value, if plain { " · not encrypted" } else { "" })
+    } else {
+        "https://… (DNS over HTTPS) or tls://… (DNS over TLS)".into()
+    };
     rows.push(row("Your own server", own_sub).act(Act::Dialog, "filter:own").choice(own));
     let mut groups = vec![group("unbraid's filter", rows)];
     if dns.is_some() {
-        let blocking: Vec<String> = signed_in(i).into_iter().filter_map(|pr| pr.protection().filter(|_| s.opt(pr.id(), PROTECT).as_deref() == Some("on")).map(|p| p.label)).collect();
+        let blocking: Vec<String> = signed_in(i)
+            .into_iter()
+            .filter_map(|pr| {
+                pr.protection().filter(|_| s.opt(pr.id(), PROTECT).as_deref() == Some("on")).map(|p| p.label)
+            })
+            .collect();
         let routes_sub = if f.routes {
-            format!("Replaces each provider's own blocking{}", if blocking.is_empty() { String::new() } else { format!(" ({})", blocking.join(", ")) })
+            format!(
+                "Replaces each provider's own blocking{}",
+                if blocking.is_empty() { String::new() } else { format!(" ({})", blocking.join(", ")) }
+            )
         } else {
             "Off · each route uses its provider's own DNS and blocking".into()
         };
@@ -824,12 +1088,15 @@ fn dns_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
             "Where it applies",
             vec![
                 row("VPN routes", routes_sub).act(Act::FilterRoutes, "").switch(f.routes),
-                row(format!("Direct traffic through {APP}"), "Apps that follow a Direct default route").act(Act::FilterDirect, "").switch(f.direct),
+                row(format!("Direct traffic through {APP}"), "Apps that follow a Direct default route")
+                    .act(Act::FilterDirect, "")
+                    .switch(f.direct),
             ],
         ));
         let notes = [
             f.routes.then_some("On VPN routes the filter is asked inside each route's own tunnel."),
-            f.direct_apps.then_some("Apps that pass through can see a VPN is on, which some banking and streaming apps refuse."),
+            f.direct_apps
+                .then_some("Apps that pass through can see a VPN is on, which some banking and streaming apps refuse."),
             Some("Each Direct app can be set on its own in Apps."),
         ];
         groups.push(Group {
@@ -837,18 +1104,32 @@ fn dns_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
             ..group(
                 "Apps set to Direct",
                 vec![
-                    row(format!("Outside {APP}"), "They never touch the VPN and use the computer's DNS").act(Act::Outside, "").choice(!f.direct_apps),
-                    row(format!("Through {APP}"), "Traffic still goes straight out; lookups use this filter").act(Act::Through, "").choice(f.direct_apps),
+                    row(format!("Outside {APP}"), "They never touch the VPN and use the computer's DNS")
+                        .act(Act::Outside, "")
+                        .choice(!f.direct_apps),
+                    row(format!("Through {APP}"), "Traffic still goes straight out; lookups use this filter")
+                        .act(Act::Through, "")
+                        .choice(f.direct_apps),
                 ],
             )
         });
     }
     let filter_prompt = |id: &str, title: &str, text: &str, label: &str, placeholder: &str| Dialog {
-        inputs: vec![input(label, placeholder, if f.id.as_deref() == Some(id) { f.value.clone() } else { String::new() })],
+        inputs: vec![input(
+            label,
+            placeholder,
+            if f.id.as_deref() == Some(id) { f.value.clone() } else { String::new() },
+        )],
         ..prompt(format!("filter:{id}"), title, text, row("Save", "").act(Act::SaveFilter, id))
     };
     let dialogs = vec![
-        filter_prompt("nextdns", "NextDNS profile", "The ID of your profile, as on my.nextdns.io (6 characters).", "Profile ID", "abc123"),
+        filter_prompt(
+            "nextdns",
+            "NextDNS profile",
+            "The ID of your profile, as on my.nextdns.io (6 characters).",
+            "Profile ID",
+            "abc123",
+        ),
         filter_prompt(
             OWN,
             "Your own server",
@@ -862,13 +1143,37 @@ fn dns_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
 
 fn stats_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
     let on = i.setup.prefs.stats;
-    let mut rows = vec![row("Record usage statistics", "Only on this computer, never uploaded. Turning it off keeps what's saved.").act(Act::Stats, "").icon(Glyph::Stats).switch(on)];
+    let mut rows = vec![
+        row("Record usage statistics", "Only on this computer, never uploaded. Turning it off keeps what's saved.")
+            .act(Act::Stats, "")
+            .icon(Glyph::Stats)
+            .switch(on),
+    ];
     if i.stats_size > 0 {
-        rows.push(row("Saved history", format!("{:.1} MB · hourly for a week, daily for about a year", i.stats_size as f64 / 1e6)));
-        rows.push(row("Delete saved history", "Erase everything recorded so far").act(Act::Dialog, "statsDelete").end(End::Delete).danger());
+        rows.push(row(
+            "Saved history",
+            format!("{:.1} MB · hourly for a week, daily for about a year", i.stats_size as f64 / 1e6),
+        ));
+        rows.push(
+            row("Delete saved history", "Erase everything recorded so far")
+                .act(Act::Dialog, "statsDelete")
+                .end(End::Delete)
+                .danger(),
+        );
     }
-    let text = format!("All recorded data, sessions and speed tests are erased from this computer. This can't be undone.{}", if on { " Recording stays on." } else { "" });
-    (vec![group("", rows)], vec![prompt("statsDelete", "Delete statistics?", text, row("Delete statistics", "").act(Act::DeleteStats, "").danger())])
+    let text = format!(
+        "All recorded data, sessions and speed tests are erased from this computer. This can't be undone.{}",
+        if on { " Recording stays on." } else { "" }
+    );
+    (
+        vec![group("", rows)],
+        vec![prompt(
+            "statsDelete",
+            "Delete statistics?",
+            text,
+            row("Delete statistics", "").act(Act::DeleteStats, "").danger(),
+        )],
+    )
 }
 
 fn link(title: &str, url: &str) -> Row {
@@ -881,40 +1186,73 @@ fn legal_page() -> Vec<Group> {
         group(
             "",
             vec![
-                row("Licence", "GNU GPL v3.0 or later: free to use, share and change. No warranty.").act(Act::Open, "notices").icon(Glyph::File).end(End::Chevron),
+                row("Licence", "GNU GPL v3.0 or later: free to use, share and change. No warranty.")
+                    .act(Act::Open, "notices")
+                    .icon(Glyph::File)
+                    .end(End::Chevron),
                 link("Source code", SOURCE),
                 link("Terms of use", TERMS_URL),
                 link("Privacy policy", PRIVACY),
             ],
         ),
-        Group { caption: trademarks(), ..group("Built with", credits.chain([row("All licence texts", "In full, as the licences require").act(Act::Open, "notices").end(End::Chevron)]).collect()) },
+        Group {
+            caption: trademarks(),
+            ..group(
+                "Built with",
+                credits
+                    .chain([row("All licence texts", "In full, as the licences require")
+                        .act(Act::Open, "notices")
+                        .end(End::Chevron)])
+                    .collect(),
+            )
+        },
     ]
 }
 
 fn desktop_page(i: &Inputs) -> Vec<Group> {
     let (on, connects, minimised) = i.login;
     let unless_off = |r: Row| if on { r } else { r.fixed() };
-    let minimised_sub = if minimised { "Only the tray icon at login; the window opens when you ask" } else { "The window opens at login too" };
-    let tray_sub = if i.close_to_tray { "The connection stays up; the tray or the launcher brings the window back" } else { "Closing quits, and the connection ends" };
+    let minimised_sub = if minimised {
+        "Only the tray icon at login; the window opens when you ask"
+    } else {
+        "The window opens at login too"
+    };
+    let tray_sub = if i.close_to_tray {
+        "The connection stays up; the tray or the launcher brings the window back"
+    } else {
+        "Closing quits, and the connection ends"
+    };
     let theme = |t: Theme, name: &str, sub: String| row(name, sub).act(Act::Theme, name).choice(i.theme == t);
     vec![
         group(
             "At login",
             vec![
-                row(format!("Start {APP} when I log in"), "In the background, before your apps go online").act(Act::Login, "").switch(on),
-                unless_off(row("Connect when it starts", "The routes of the profile in use").act(Act::Connect, "").switch(connects)),
+                row(format!("Start {APP} when I log in"), "In the background, before your apps go online")
+                    .act(Act::Login, "")
+                    .switch(on),
+                unless_off(
+                    row("Connect when it starts", "The routes of the profile in use")
+                        .act(Act::Connect, "")
+                        .switch(connects),
+                ),
                 unless_off(row("Start minimised to the tray", minimised_sub).act(Act::Minimised, "").switch(minimised)),
             ],
         ),
         group(
             "Window",
             vec![
-                row(format!("Closing the window keeps {APP} in the tray"), tray_sub).act(Act::CloseToTray, "").switch(i.close_to_tray),
-                row("Remember the window's size and place", "It opens where you left it").act(Act::RememberWindow, "").switch(i.remember_window),
+                row(format!("Closing the window keeps {APP} in the tray"), tray_sub)
+                    .act(Act::CloseToTray, "")
+                    .switch(i.close_to_tray),
+                row("Remember the window's size and place", "It opens where you left it")
+                    .act(Act::RememberWindow, "")
+                    .switch(i.remember_window),
             ],
         ),
         Group {
-            caption: format!("The tray needs a desktop with a system tray. On GNOME, that's the AppIndicator extension; without one, the launcher's menu and \"{APP} connect\" do its job."),
+            caption: format!(
+                "The tray needs a desktop with a system tray. On GNOME, that's the AppIndicator extension; without one, the launcher's menu and \"{APP} connect\" do its job."
+            ),
             ..group(
                 "Theme",
                 vec![
@@ -937,9 +1275,16 @@ fn about_page(i: &Inputs) -> Vec<Group> {
         .icon(Glyph::VpnKey)
     });
     let first = [
-        Some(row("Take the tour", format!("How {APP} works, in eight stops")).act(Act::Tour, "").icon(Glyph::Routes).end(End::Chevron)),
+        Some(
+            row("Take the tour", format!("How {APP} works, in eight stops"))
+                .act(Act::Tour, "")
+                .icon(Glyph::Routes)
+                .end(End::Chevron),
+        ),
         Some(row(format!("{TITLE} {VERSION_NAME}"), "sing-box 1.14 · GPL-3.0").icon(Glyph::Info)),
-        Some(row("Privacy policy", "No analytics, no ads, no account with us").act(Act::Url, PRIVACY).end(End::External)),
+        Some(
+            row("Privacy policy", "No analytics, no ads, no account with us").act(Act::Url, PRIVACY).end(End::External),
+        ),
         key,
         Some(link("Terms of use", TERMS_URL)),
     ];
@@ -965,7 +1310,12 @@ fn notices() -> Vec<Licence> {
             .flat_map(|n| {
                 let n = n.strip_prefix("=== ").unwrap_or(n);
                 let (title, text) = n.split_once('\n').unwrap_or((n, ""));
-                let paragraphs: Vec<Licence> = reflow(text.trim()).split("\n\n").map(str::trim_end).filter(|p| !p.trim().is_empty()).map(|p| line("", p)).collect();
+                let paragraphs: Vec<Licence> = reflow(text.trim())
+                    .split("\n\n")
+                    .map(str::trim_end)
+                    .filter(|p| !p.trim().is_empty())
+                    .map(|p| line("", p))
+                    .collect();
                 std::iter::once(line(title, "")).chain(paragraphs)
             })
             .collect()
@@ -1023,7 +1373,8 @@ fn keeps_break(rest: &[char]) -> bool {
 }
 
 static OCTET: &str = r"(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)";
-static CIDR: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"^{OCTET}(\.{OCTET}){{3}}/([12]?\d|3[0-2])$")).unwrap());
+static CIDR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!(r"^{OCTET}(\.{OCTET}){{3}}/([12]?\d|3[0-2])$")).unwrap());
 static HTTPS_URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^https://[A-Za-z0-9.-]+(:\d{1,5})?(/.*)?$").unwrap());
 
 /// The home subnets typed, as they're saved (each range's own start, once), or none while one isn't a private range in
@@ -1040,7 +1391,9 @@ pub fn home_subnets(text: &str) -> Option<Vec<String>> {
 pub fn valid(key: &str, a: &str) -> bool {
     match key {
         "filter:own" => own_dns(a).is_some(),
-        "filter:nextdns" => Filter { id: Some("nextdns".into()), value: a.into(), ..Filter::default() }.server().is_some(),
+        "filter:nextdns" => {
+            Filter { id: Some("nextdns".into()), value: a.into(), ..Filter::default() }.server().is_some()
+        }
         "tsserver" => a.trim().is_empty() || HTTPS_URL.is_match(a.trim()),
         "subnets" => home_subnets(a).is_some(),
         k if k.starts_with("limit:") => a.is_empty() || a.parse::<i32>().is_ok_and(|n| (1..=999).contains(&n)),
@@ -1154,20 +1507,43 @@ mod tests {
 
     impl World {
         fn new() -> World {
-            let lab = WgPeer::new("Home lab", "k", vec!["10.8.0.2/32".into()], "k", "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
+            let lab = WgPeer::new(
+                "Home lab",
+                "k",
+                vec!["10.8.0.2/32".into()],
+                "k",
+                "203.0.113.7:51820",
+                vec!["0.0.0.0/0".into()],
+            );
             let setup = Setup {
                 routes: vec![
                     Route::new("nl", Location::country("nord", 153, "NL", "Netherlands")),
                     Route { hue: 1, ..Route::new("us", Location::country("nord", 228, "US", "United States")) },
                     Route { hue: 2, ..Route::new("it", Location::country("nord", 106, "IT", "Italy")) },
-                    Route { wg: Some(lab.clone()), own: Some("s1".into()), hue: 3, ..Route::new("lab", Location::default()) },
+                    Route {
+                        wg: Some(lab.clone()),
+                        own: Some("s1".into()),
+                        hue: 3,
+                        ..Route::new("lab", Location::default())
+                    },
                 ],
                 default_route: "nl".into(),
-                apps: [("firefox", "us"), ("spotify", "it")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+                apps: [("firefox", "us"), ("spotify", "it")]
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
                 servers: vec![OwnServer { id: "s1".into(), wg: Some(lab), ovpn: None, ss: None }],
                 ..Setup::default()
             };
-            World { setup, accounts: [("nord".to_string(), "{}".to_string())].into_iter().collect(), stack: vec![], vpn: VpnState::default(), opts: vec![], login: (false, true, true), size: 0 }
+            World {
+                setup,
+                accounts: [("nord".to_string(), "{}".to_string())].into_iter().collect(),
+                stack: vec![],
+                vpn: VpnState::default(),
+                opts: vec![],
+                login: (false, true, true),
+                size: 0,
+            }
         }
 
         fn at(mut self, stack: &[&str]) -> World {
@@ -1176,7 +1552,8 @@ mod tests {
         }
 
         fn view(&self) -> SettingsView {
-            let (fresh, dates, setting_up, tags) = (["nord".to_string()].into_iter().collect(), IndexMap::new(), HashSet::new(), IndexMap::new());
+            let (fresh, dates, setting_up, tags) =
+                (["nord".to_string()].into_iter().collect(), IndexMap::new(), HashSet::new(), IndexMap::new());
             view(&Inputs {
                 setup: &self.setup,
                 vpn: &self.vpn,
@@ -1212,11 +1589,17 @@ mod tests {
     #[test]
     fn hub_lists_providers_and_servers() {
         let v = World::new().view();
-        assert_eq!(("providers", "providers", "Settings", "Providers & servers", false), (v.page.as_str(), v.subject.as_str(), v.over.as_str(), v.title.as_str(), v.back));
+        assert_eq!(
+            ("providers", "providers", "Settings", "Providers & servers", false),
+            (v.page.as_str(), v.subject.as_str(), v.over.as_str(), v.title.as_str(), v.back)
+        );
         assert_eq!("Version 2.8.2", v.version);
         assert_eq!(["VPN providers", "My servers"], [v.groups[0].label.as_str(), v.groups[1].label.as_str()]);
         let nord = &v.groups[0].rows[0];
-        assert_eq!(("NordVPN", "Server list up to date · used by 3 routes", Tone::Good, Act::Open, "provider:nord"), (nord.title.as_str(), nord.sub.as_str(), nord.tone, nord.act, nord.arg.as_str()));
+        assert_eq!(
+            ("NordVPN", "Server list up to date · used by 3 routes", Tone::Good, Act::Open, "provider:nord"),
+            (nord.title.as_str(), nord.sub.as_str(), nord.tone, nord.act, nord.arg.as_str())
+        );
         assert_eq!("WireGuard · used by 1 route", v.groups[1].rows[0].sub);
         assert_eq!("Add connection", v.groups[1].button);
         assert_eq!("Couldn't reach the control server", v.notice);
@@ -1235,7 +1618,10 @@ mod tests {
         let v = w.view();
         assert_eq!("No provider yet", v.groups[0].rows[0].title);
         assert_eq!(Act::None, v.groups[0].rows[0].act);
-        assert_eq!(("", 0, "Add connection"), (v.groups[1].label.as_str(), v.groups[1].rows.len(), v.groups[1].button.as_str()));
+        assert_eq!(
+            ("", 0, "Add connection"),
+            (v.groups[1].label.as_str(), v.groups[1].rows.len(), v.groups[1].button.as_str())
+        );
     }
 
     /// Desktop: login's two choices grey out while it doesn't start at login, and the theme is one of three.
@@ -1244,15 +1630,25 @@ mod tests {
         let v = World::new().at(&["desktop"]).view();
         assert_eq!(("Desktop", "", false), (v.title.as_str(), v.notice.as_str(), v.back));
         let login = &v.groups[0].rows;
-        assert_eq!(("Start unbraid when I log in", Act::Login, false), (login[0].title.as_str(), login[0].act, login[0].checked));
-        assert_eq!((Act::None, End::Toggle, true), (login[1].act, login[1].end, login[1].checked), "connecting can't change while it doesn't start");
+        assert_eq!(
+            ("Start unbraid when I log in", Act::Login, false),
+            (login[0].title.as_str(), login[0].act, login[0].checked)
+        );
+        assert_eq!(
+            (Act::None, End::Toggle, true),
+            (login[1].act, login[1].end, login[1].checked),
+            "connecting can't change while it doesn't start"
+        );
         assert_eq!(["System", "Dark", "Light"], titles(&v.groups[2])[..]);
         assert!(v.groups[2].rows[0].checked && !v.groups[2].rows[2].checked);
         assert_eq!("unbraid's own look", v.groups[2].rows[1].sub);
         let mut w = World::new().at(&["desktop"]);
         w.login = (true, false, false);
         let v = w.view();
-        assert_eq!((Act::Connect, "The window opens at login too"), (v.groups[0].rows[1].act, v.groups[0].rows[2].sub.as_str()));
+        assert_eq!(
+            (Act::Connect, "The window opens at login too"),
+            (v.groups[0].rows[1].act, v.groups[0].rows[2].sub.as_str())
+        );
     }
 
     /// A provider's page: its account, limit and blocking; the routes on it with their marks; Advanced settings; and
@@ -1262,20 +1658,39 @@ mod tests {
         let mut w = World::new().at(&["providers", "provider:nord"]);
         w.opts = provider_opts(providers::get("nord").unwrap(), "{}");
         let v = w.view();
-        assert_eq!(("Providers & servers", "NordVPN", true, "nord"), (v.over.as_str(), v.title.as_str(), v.back, v.provider.as_str()));
+        assert_eq!(
+            ("Providers & servers", "NordVPN", true, "nord"),
+            (v.over.as_str(), v.title.as_str(), v.back, v.provider.as_str())
+        );
         assert_eq!(["Account", "Connections"], titles(&v.groups[0])[..]);
         assert_eq!("Signed in", v.groups[0].rows[0].sub);
         assert!(v.groups[0].rows[1].sub.starts_with("NordVPN allows 10 connections."), "{}", v.groups[0].rows[1].sub);
         assert_eq!("NordVPN settings", v.groups[1].label);
-        assert_eq!(("NordVPN blocking", Act::Opt, "protect"), (v.groups[1].rows[0].title.as_str(), v.groups[1].rows[0].act, v.groups[1].rows[0].arg.as_str()));
+        assert_eq!(
+            ("NordVPN blocking", Act::Opt, "protect"),
+            (v.groups[1].rows[0].title.as_str(), v.groups[1].rows[0].act, v.groups[1].rows[0].arg.as_str())
+        );
         let used = &v.groups[2];
-        assert_eq!(("Used by", ["Netherlands", "United States", "Italy"].as_slice()), (used.label.as_str(), &titles(used)[..]));
-        assert_eq!(("Default route", "1 app", "US", 1), (used.rows[0].sub.as_str(), used.rows[1].sub.as_str(), used.rows[1].value.as_str(), used.rows[1].hue));
+        assert_eq!(
+            ("Used by", ["Netherlands", "United States", "Italy"].as_slice()),
+            (used.label.as_str(), &titles(used)[..])
+        );
+        assert_eq!(
+            ("Default route", "1 app", "US", 1),
+            (used.rows[0].sub.as_str(), used.rows[1].sub.as_str(), used.rows[1].value.as_str(), used.rows[1].hue)
+        );
         let adv = v.groups.iter().find(|g| g.advanced).expect("Advanced settings");
         assert_eq!("Advanced settings", adv.rows[0].title);
         assert!(adv.rows[0].sub.contains("MTU: Default (1280)"), "{}", adv.rows[0].sub);
         let out = v.groups.last().unwrap();
-        assert_eq!(("Sign out of NordVPN", "Apps on its routes are blocked until you sign in again or move them; other routes keep running", true), (out.rows[0].title.as_str(), out.rows[0].sub.as_str(), out.rows[0].danger));
+        assert_eq!(
+            (
+                "Sign out of NordVPN",
+                "Apps on its routes are blocked until you sign in again or move them; other routes keep running",
+                true
+            ),
+            (out.rows[0].title.as_str(), out.rows[0].sub.as_str(), out.rows[0].danger)
+        );
         assert!(v.dialogs.iter().any(|d| d.key == "limit:nord" && d.inputs[0].label == "Connections"));
         assert!(v.dialogs.iter().any(|d| d.key == "opt:nord:mtu" && d.rows.len() == 6));
         // Signed out meanwhile: the page under it shows.
@@ -1288,7 +1703,11 @@ mod tests {
     fn device_row() {
         let w = World::new().at(&["providers", "provider:nord"]);
         let (fresh, dates, setting_up, tags) = (HashSet::new(), IndexMap::new(), HashSet::new(), IndexMap::new());
-        let device = Device { line: "Named unbraid-7f3a in your account".into(), url: Some("https://my.example/devices".into()), used: Some(3) };
+        let device = Device {
+            line: "Named unbraid-7f3a in your account".into(),
+            url: Some("https://my.example/devices".into()),
+            used: Some(3),
+        };
         let v = view(&Inputs {
             setup: &w.setup,
             vpn: &w.vpn,
@@ -1327,11 +1746,20 @@ mod tests {
         w.setup = save_filter(&set_filter_routes(&w.setup, true), "quad9", "");
         w.setup = set_filter(&w.setup, Some("quad9"));
         let row = &w.view().groups[1].rows[0];
-        assert_eq!((Act::None, false, "Off while unbraid's filter is on for VPN routes"), (row.act, row.checked, row.sub.as_str()));
+        assert_eq!(
+            (Act::None, false, "Off while unbraid's filter is on for VPN routes"),
+            (row.act, row.checked, row.sub.as_str())
+        );
         let dns = w.at(&["dns"]).view();
-        assert_eq!(["unbraid's filter", "Where it applies", "Apps set to Direct"], dns.groups.iter().map(|g| g.label.as_str()).collect::<Vec<_>>()[..]);
+        assert_eq!(
+            ["unbraid's filter", "Where it applies", "Apps set to Direct"],
+            dns.groups.iter().map(|g| g.label.as_str()).collect::<Vec<_>>()[..]
+        );
         assert!(dns.groups[0].rows.iter().any(|r| r.title == "Quad9" && r.checked));
-        assert_eq!("On VPN routes the filter is asked inside each route's own tunnel. Each Direct app can be set on its own in Apps.", dns.groups[2].caption);
+        assert_eq!(
+            "On VPN routes the filter is asked inside each route's own tunnel. Each Direct app can be set on its own in Apps.",
+            dns.groups[2].caption
+        );
     }
 
     /// Saved statistics show their size and can be deleted; the stats page says nothing of them before there are any.
@@ -1342,7 +1770,10 @@ mod tests {
         w.size = 2_345_678;
         let v = w.view();
         assert_eq!("2.3 MB · hourly for a week, daily for about a year", v.groups[0].rows[1].sub);
-        assert_eq!((Act::Dialog, "statsDelete", End::Delete), (v.groups[0].rows[2].act, v.groups[0].rows[2].arg.as_str(), v.groups[0].rows[2].end));
+        assert_eq!(
+            (Act::Dialog, "statsDelete", End::Delete),
+            (v.groups[0].rows[2].act, v.groups[0].rows[2].arg.as_str(), v.groups[0].rows[2].end)
+        );
     }
 
     /// About names the app as Unbraid by TheOlympus and keeps the Quiet Crafts credit; Legal credits what this app is
@@ -1354,14 +1785,28 @@ mod tests {
         assert!(v.groups[1].rows[0].wordmark && v.groups[1].rows[0].title == " by Quiet Crafts");
         let legal = World::new().at(&["legal"]).view();
         let built = titles(&legal.groups[1]);
-        assert!(built.contains(&"Slint") && built.contains(&"rqrr") && built.contains(&"sing-box 1.14.4") && !built.iter().any(|t| t.contains("Compose")));
+        assert!(
+            built.contains(&"Slint")
+                && built.contains(&"rqrr")
+                && built.contains(&"sing-box 1.14.4")
+                && !built.iter().any(|t| t.contains("Compose"))
+        );
         assert_eq!(Some(&"All licence texts"), built.last());
         let notices = World::new().at(&["legal", "notices"]).view();
         assert_eq!(("Legal", "Licences", true), (notices.over.as_str(), notices.title.as_str(), notices.back));
         assert_eq!(("unbraid", ""), (notices.licences[0].title.as_str(), notices.licences[0].text.as_str()));
-        assert!(notices.licences.iter().filter(|l| !l.title.is_empty()).count() > 400 && notices.licences.iter().any(|l| l.title.starts_with("slint ")));
-        assert!(notices.licences[1].text.contains("GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007"), "the GPL's head is one line");
-        assert!(notices.licences.iter().all(|l| l.title.is_empty() != l.text.is_empty()), "each line is a title or a paragraph");
+        assert!(
+            notices.licences.iter().filter(|l| !l.title.is_empty()).count() > 400
+                && notices.licences.iter().any(|l| l.title.starts_with("slint "))
+        );
+        assert!(
+            notices.licences[1].text.contains("GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007"),
+            "the GPL's head is one line"
+        );
+        assert!(
+            notices.licences.iter().all(|l| l.title.is_empty() != l.text.is_empty()),
+            "each line is a title or a paragraph"
+        );
     }
 
     /// Single line breaks inside a paragraph become a space; blank lines and list items keep theirs.
@@ -1378,7 +1823,10 @@ mod tests {
     /// Home subnets: private ranges in CIDR notation only, saved as each range's start, once.
     #[test]
     fn home_subnets_typed() {
-        assert_eq!(Some(vec!["192.168.178.0/24".to_string(), "10.0.0.0/8".to_string()]), home_subnets("192.168.178.7/24, 10.1.2.3/8 192.168.178.0/24"));
+        assert_eq!(
+            Some(vec!["192.168.178.0/24".to_string(), "10.0.0.0/8".to_string()]),
+            home_subnets("192.168.178.7/24, 10.1.2.3/8 192.168.178.0/24")
+        );
         assert_eq!(Some(vec![]), home_subnets(" "));
         assert_eq!(None, home_subnets("8.8.8.0/24"));
         assert_eq!(None, home_subnets("192.168.1.0"));
@@ -1392,7 +1840,11 @@ mod tests {
     fn dialog_fields() {
         assert!(valid("limit:nord", "") && valid("limit:nord", "12") && !valid("limit:nord", "0"));
         assert_eq!("123", clean("limit:nord", "1a2b34"));
-        assert!(valid("tsserver", "") && valid("tsserver", " https://hs.example.com:8080/x ") && !valid("tsserver", "http://hs.example.com"));
+        assert!(
+            valid("tsserver", "")
+                && valid("tsserver", " https://hs.example.com:8080/x ")
+                && !valid("tsserver", "http://hs.example.com")
+        );
         assert!(valid("filter:own", "tls://dns.example.com") && !valid("filter:own", "dns.example.com"));
         assert!(valid("filter:nextdns", "abc123") && !valid("filter:nextdns", "abc 123"));
         assert!(!valid("server:s1", "  ") && valid("server:s1", "VPS"));
@@ -1406,7 +1858,10 @@ mod tests {
         assert!(set_tailscale(&s, true).home.tailscale);
         assert!(!set_lan(&s, false).prefs.lan);
         assert_eq!(Some("hs.example".to_string()), allow_suffix(&s, "hs.example", true).home.ts_suffix_allowed);
-        assert_eq!(None, allow_suffix(&allow_suffix(&s, "hs.example", true), "hs.example", false).home.ts_suffix_allowed);
+        assert_eq!(
+            None,
+            allow_suffix(&allow_suffix(&s, "hs.example", true), "hs.example", false).home.ts_suffix_allowed
+        );
         let f = save_filter(&s, "nextdns", " abc123 ").prefs.filter;
         assert_eq!((Some("nextdns"), "abc123"), (f.id.as_deref(), f.value.as_str()));
         assert!(set_filter_direct_apps(&set_filter_direct(&s, true), true).prefs.filter.direct_apps);

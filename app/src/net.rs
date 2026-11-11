@@ -27,7 +27,12 @@ impl Default for NetMonitor {
 
 impl NetMonitor {
     pub fn new(routes: impl Into<PathBuf>) -> Self {
-        NetMonitor { routes: routes.into(), network: Mutex::new(None), on_change: Mutex::new(None), job: Mutex::new(None) }
+        NetMonitor {
+            routes: routes.into(),
+            network: Mutex::new(None),
+            on_change: Mutex::new(None),
+            job: Mutex::new(None),
+        }
     }
 
     pub fn network(&self) -> Option<String> {
@@ -112,7 +117,8 @@ mod tests {
         let f = dir.path().join("route");
         std::fs::write(&f, format!("{HEADER}\ntun0\t00000000\t00000000\t0001\t0\t0\t0\t00000000\t0\t0\t0\nwlp2s0\t00000000\t0101A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0\nenp3s0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\nenp3s0\t0000000A\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0\n")).unwrap();
         assert_eq!(Some("enp3s0 10.0.0.1".to_string()), NetMonitor::new(&f).read());
-        std::fs::write(&f, format!("{HEADER}\nwlp2s0\t0001A8C0\t00000000\t0001\t0\t0\t600\t00FFFFFF\t0\t0\t0\n")).unwrap();
+        std::fs::write(&f, format!("{HEADER}\nwlp2s0\t0001A8C0\t00000000\t0001\t0\t0\t600\t00FFFFFF\t0\t0\t0\n"))
+            .unwrap();
         assert_eq!(None, NetMonitor::new(&f).read());
         assert_eq!(None, NetMonitor::new(dir.path().join("missing")).read());
     }

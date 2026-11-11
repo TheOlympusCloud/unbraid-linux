@@ -115,7 +115,11 @@ fn part(value: impl Into<String>, unit: impl Into<String>) -> NumPart {
 /// A duration as measurement parts: 3 h 20 m, or 45 m under an hour.
 fn hm_parts(ms: i64) -> Vec<NumPart> {
     let m = ms / 60_000;
-    if m >= 60 { vec![part((m / 60).to_string(), "h"), part((m % 60).to_string(), "m")] } else { vec![part(m.to_string(), "m")] }
+    if m >= 60 {
+        vec![part((m / 60).to_string(), "h"), part((m % 60).to_string(), "m")]
+    } else {
+        vec![part(m.to_string(), "m")]
+    }
 }
 
 /// The next round scale value at or above `x`: 1, 2, 2.5 or 5 times a power of ten.
@@ -164,7 +168,9 @@ fn days(d: NaiveDate, n: i64) -> NaiveDate {
 
 /// Local midnight of `d`, in epoch ms; where a clock change skips midnight, the first time the day has.
 pub fn start_ms(d: NaiveDate) -> i64 {
-    (0..3).find_map(|h| Local.from_local_datetime(&d.and_hms_opt(h, 0, 0)?).earliest()).map_or(0, |t| t.timestamp_millis())
+    (0..3)
+        .find_map(|h| Local.from_local_datetime(&d.and_hms_opt(h, 0, 0)?).earliest())
+        .map_or(0, |t| t.timestamp_millis())
 }
 
 fn monday(d: NaiveDate) -> NaiveDate {
@@ -363,7 +369,10 @@ fn provider_of(id: &str, ex: Option<&Ex>) -> String {
         None => "Other".into(),
         Some(e) if e.via.is_empty() => "Other".into(),
         Some(e) if ["WireGuard", "OpenVPN", "Shadowsocks"].contains(&e.via.as_str()) => "Own servers".into(),
-        Some(e) => providers::all().into_iter().find(|p| providers::short(p.id()) == e.via).map_or_else(|| e.via.clone(), |p| p.name().to_string()),
+        Some(e) => providers::all()
+            .into_iter()
+            .find(|p| providers::short(p.id()) == e.via)
+            .map_or_else(|| e.via.clone(), |p| p.name().to_string()),
     }
 }
 
@@ -384,9 +393,16 @@ fn load<'a>(d: &'a Data, i: &Inputs) -> Loaded<'a> {
             let hue = |s: &Exit| if s.hue < 0 { INK_TEXT } else { s.hue };
             let ex = match (current.get(&id), stored) {
                 (Some(r), _) => Ex { code: r.code(), name: r.name(), via: r.source(), hue: r.hue },
-                _ if id == DIRECT => Ex { code: "··".into(), name: "Direct".into(), via: "outside the VPN".into(), hue: INK_DIRECT },
+                _ if id == DIRECT => {
+                    Ex { code: "··".into(), name: "Direct".into(), via: "outside the VPN".into(), hue: INK_DIRECT }
+                }
                 // Older rows of a route sit beside its new history: their name says so, or both would read the same.
-                (None, Some(s)) if stats::legacy(&id) => Ex { code: s.code.clone(), name: format!("{} (older data)", s.name), via: "Unknown (older data)".into(), hue: hue(s) },
+                (None, Some(s)) if stats::legacy(&id) => Ex {
+                    code: s.code.clone(),
+                    name: format!("{} (older data)", s.name),
+                    via: "Unknown (older data)".into(),
+                    hue: hue(s),
+                },
                 (None, Some(s)) => Ex { code: s.code.clone(), name: s.name.clone(), via: s.via.clone(), hue: hue(s) },
                 (None, None) => Ex { code: "?".into(), name: id.clone(), via: String::new(), hue: INK_FAINT },
             };
@@ -404,8 +420,11 @@ fn load<'a>(d: &'a Data, i: &Inputs) -> Loaded<'a> {
     let total = by_exit.values().fold(Bytes::default(), |x, y| Bytes { up: x.up + y.up, down: x.down + y.down });
     let mut by_exit: Vec<(String, Bytes)> = by_exit.into_iter().collect();
     by_exit.sort_by_key(|e| std::cmp::Reverse(e.1.total()));
-    let columns =
-        if i.period == Period::Day { (0..24).map(|h| d.hours.get(&h).cloned().unwrap_or_default()).collect() } else { (from..=to).map(|e| d.days.get(&e).cloned().unwrap_or_default()).collect() };
+    let columns = if i.period == Period::Day {
+        (0..24).map(|h| d.hours.get(&h).cloned().unwrap_or_default()).collect()
+    } else {
+        (from..=to).map(|e| d.days.get(&e).cloned().unwrap_or_default()).collect()
+    };
     // Solo tests only: an exit sharing the line with others in a combined run reads lower than it is.
     let (lo, hi) = (start_ms(a), start_ms(days(b, 1)));
     let mut tests: IndexMap<String, &Test> = IndexMap::new();
@@ -887,7 +906,12 @@ fn off(saved: bool) -> OffView {
 
 fn share(name: &str, b: i64, total: i64) -> Share {
     let total = total.max(1);
-    Share { name: name.into(), value: format!("{}  {}%", bytes_text(b), 100 * b / total), pct: format!("{}%", 100 * b / total), frac: b as f32 / total as f32 }
+    Share {
+        name: name.into(),
+        value: format!("{}  {}%", bytes_text(b), 100 * b / total),
+        pct: format!("{}%", 100 * b / total),
+        frac: b as f32 / total as f32,
+    }
 }
 
 fn hub(i: &Inputs, v: &Loaded, div: f64) -> HubView {
@@ -897,7 +921,9 @@ fn hub(i: &Inputs, v: &Loaded, div: f64) -> HubView {
     let (rn, ru) = rate(i.live.down_now);
     // Each exit's fastest download test.
     let mut fastest: Vec<(&String, i64)> = v.tests.keys().map(|id| (id, v.fastest(id))).filter(|f| f.1 > 0).collect();
-    let best = fastest.iter().fold(None, |b: Option<(&String, i64)>, f| if b.is_none_or(|b| f.1 > b.1) { Some(*f) } else { b });
+    let best = fastest
+        .iter()
+        .fold(None, |b: Option<(&String, i64)>, f| if b.is_none_or(|b| f.1 > b.1) { Some(*f) } else { b });
     fastest.sort_by_key(|f| std::cmp::Reverse(f.1));
     let order: Vec<&String> = v.by_exit.iter().map(|e| &e.0).collect();
     // The apps by data, each with the exit that carried most of it.
@@ -913,28 +939,55 @@ fn hub(i: &Inputs, v: &Loaded, div: f64) -> HubView {
     by_app.sort_by_key(|a| std::cmp::Reverse(a.2));
     let most = by_app.first().map_or(1, |a| a.2.max(1));
     HubView {
-        overline: if i.setup.prefs.stats { range_label(i.period, i.now.date()) } else { "Recording off · saved statistics".into() },
+        overline: if i.setup.prefs.stats {
+            range_label(i.period, i.now.date())
+        } else {
+            "Recording off · saved statistics".into()
+        },
         usage: part(n, u),
         usage_line: format!("↓ {} · ↑ {}", bytes_text(v.total.down), bytes_text(v.total.up)),
         providers: v.by_provider().iter().take(2).map(|(name, b)| share(name, *b, t)).collect(),
         live: live_on,
         live_now: part(rn, ru),
-        spark: (0..60).map(|k| i.live.down.values().map(|s| s.get(k).copied().unwrap_or(0.0) as f64).sum::<f64>() as f32).collect(),
+        spark: (0..60)
+            .map(|k| i.live.down.values().map(|s| s.get(k).copied().unwrap_or(0.0) as f64).sum::<f64>() as f32)
+            .collect(),
         week: hm_parts(v.week_ms),
         week_hours: v.week.iter().map(|h| h.max(0.0)).collect(),
         today: i.now.date().weekday().num_days_from_monday() as i32,
         tested: best.is_some(),
         best: best.map(|b| mbps(b.1)).unwrap_or_default(),
         best_line: best.map(|b| format!("best test · {}", v.name(b.0))).unwrap_or_default(),
-        fastest: fastest.iter().take(2).map(|(id, b)| SpeedBar { code: v.code(id), hue: v.hue(id), frac: *b as f32 / best.map_or(1, |b| b.1) as f32 }).collect(),
+        fastest: fastest
+            .iter()
+            .take(2)
+            .map(|(id, b)| SpeedBar {
+                code: v.code(id),
+                hue: v.hue(id),
+                frac: *b as f32 / best.map_or(1, |b| b.1) as f32,
+            })
+            .collect(),
         legend: order.iter().take(5).map(|id| Legend { name: v.name(id), hue: v.hue(id) }).collect(),
-        columns: v.columns.iter().map(|c| order.iter().filter_map(|id| c.get(*id).map(|b| Part { value: (b.total() as f64 / div) as f32, hue: v.hue(id) })).collect()).collect(),
+        columns: v
+            .columns
+            .iter()
+            .map(|c| {
+                order
+                    .iter()
+                    .filter_map(|id| {
+                        c.get(*id).map(|b| Part { value: (b.total() as f64 / div) as f32, hue: v.hue(id) })
+                    })
+                    .collect()
+            })
+            .collect(),
         summary: format!("Data per {}, by exit", if i.period == Period::Day { "hour" } else { "day" }),
         apps: by_app
             .iter()
             .take(8)
             .map(|(app, exit, b)| AppBar {
-                name: i.labels.get(*app).cloned().unwrap_or_else(|| if *app == "?" { "Other".into() } else { app.rsplit('/').next().unwrap_or(app).to_string() }),
+                name: i.labels.get(*app).cloned().unwrap_or_else(|| {
+                    if *app == "?" { "Other".into() } else { app.rsplit('/').next().unwrap_or(app).to_string() }
+                }),
                 code: v.code(exit),
                 hue: v.hue(exit),
                 frac: *b as f32 / most as f32,
@@ -947,7 +1000,13 @@ fn hub(i: &Inputs, v: &Loaded, div: f64) -> HubView {
             .take(8)
             .map(|(id, b)| {
                 let n = v.apps.iter().filter(|a| a.1 == *id).map(|a| &a.0).collect::<IndexSet<_>>().len();
-                ExitBar { code: v.code(id), hue: v.hue(id), name: v.name(id), apps: plural(n, "app", "apps"), bytes: bytes_text(b.total()) }
+                ExitBar {
+                    code: v.code(id),
+                    hue: v.hue(id),
+                    name: v.name(id),
+                    apps: plural(n, "app", "apps"),
+                    bytes: bytes_text(b.total()),
+                }
             })
             .collect(),
     }
@@ -963,7 +1022,13 @@ fn usage(v: &Loaded, p: Period, div: f64) -> UsageView {
         sub: format!("↓ {} download · ↑ {} upload", bytes_text(v.total.down), bytes_text(v.total.up)),
         trailing: format!("{} {}", if p == Period::Day { "now" } else { "today" }, bytes_text(sel)),
         // In the text's ink: the chart dims all but today's bar.
-        columns: v.columns.iter().map(|c| vec![Part { value: (c.values().map(Bytes::total).sum::<i64>() as f64 / div) as f32, hue: INK_TEXT }]).collect(),
+        columns: v
+            .columns
+            .iter()
+            .map(|c| {
+                vec![Part { value: (c.values().map(Bytes::total).sum::<i64>() as f64 / div) as f32, hue: INK_TEXT }]
+            })
+            .collect(),
         summary: format!("Data per {per}"),
         label: format!("By provider · share of the {}", p.label().to_lowercase()),
         providers: v.by_provider().iter().map(|(name, b)| share(name, *b, v.total.total())).collect(),
@@ -984,7 +1049,9 @@ fn live(i: &Inputs, v: &Loaded) -> LiveView {
     };
     // Nothing measured: no chart and no rows, only why.
     let shown: Vec<&String> = if empty.is_empty() { ids.clone() } else { vec![] };
-    let max_total = (0..60).map(|k| ids.iter().map(|id| down[*id].get(k).copied().unwrap_or(0.0) as f64).sum::<f64>()).fold(0.0, f64::max);
+    let max_total = (0..60)
+        .map(|k| ids.iter().map(|id| down[*id].get(k).copied().unwrap_or(0.0) as f64).sum::<f64>())
+        .fold(0.0, f64::max);
     let (n, u) = rate(i.live.down_now);
     let (un, uu) = rate(i.live.up_now);
     LiveView {
@@ -992,14 +1059,26 @@ fn live(i: &Inputs, v: &Loaded) -> LiveView {
         empty: empty.into(),
         now: part(n, u),
         sub: format!("↑ {un} {uu} upload · every second"),
-        series: shown.iter().map(|id| Series { values: down[*id].iter().map(|s| s / 1e6).collect(), hue: v.hue(id) }).collect(),
+        series: shown
+            .iter()
+            .map(|id| Series { values: down[*id].iter().map(|s| s / 1e6).collect(), hue: v.hue(id) })
+            .collect(),
         cap: nice_ceil(max_total / 1e6).max(1.0) as f32,
-        summary: format!("Download per exit, last minute: {}", ids.iter().map(|id| format!("{} {} Mbps", v.name(id), mbps(last(id)))).collect::<Vec<_>>().join(", ")),
+        summary: format!(
+            "Download per exit, last minute: {}",
+            ids.iter().map(|id| format!("{} {} Mbps", v.name(id), mbps(last(id)))).collect::<Vec<_>>().join(", ")
+        ),
         rows: shown
             .iter()
             .map(|id| {
                 let (n, u) = rate(last(id));
-                LiveRow { code: v.code(id), hue: v.hue(id), name: v.name(id), via: v.ex(id).map(|e| e.via.clone()).unwrap_or_default(), now: part(n, u) }
+                LiveRow {
+                    code: v.code(id),
+                    hue: v.hue(id),
+                    name: v.name(id),
+                    via: v.ex(id).map(|e| e.via.clone()).unwrap_or_default(),
+                    now: part(n, u),
+                }
             })
             .collect(),
     }
@@ -1027,7 +1106,13 @@ fn flows(i: &Inputs, v: &Loaded) -> FlowsView {
     let shown: Vec<&&(String, String, i64)> = apps.iter().filter(|a| only.is_none_or(|o| a.1 == o)).collect();
     let first = shown.first().map_or(1, |a| a.2.max(1));
     let list = if i.flows_all { shown.len() } else { shown.len().min(LIST) };
-    let mut pills = vec![Pill { id: String::new(), code: String::new(), hue: INK_ACCENT, text: format!("All {}", distinct(&apps)), on: only.is_none() }];
+    let mut pills = vec![Pill {
+        id: String::new(),
+        code: String::new(),
+        hue: INK_ACCENT,
+        text: format!("All {}", distinct(&apps)),
+        on: only.is_none(),
+    }];
     pills.extend(exits.iter().map(|(e, _)| Pill {
         id: e.clone(),
         code: v.code(e),
@@ -1044,7 +1129,12 @@ fn flows(i: &Inputs, v: &Loaded) -> FlowsView {
             .map(|(e, b)| {
                 let mine: Vec<&&(String, String, i64)> = apps.iter().filter(|a| a.1 == *e).collect();
                 let rest: i64 = mine.iter().skip(5).map(|a| a.2).sum();
-                let mut segments: Vec<Segment> = mine.iter().take(5).enumerate().map(|(j, a)| Segment { weight: a.2.max(1) as f32, alpha: 0.95 - j as f32 * 0.12 }).collect();
+                let mut segments: Vec<Segment> = mine
+                    .iter()
+                    .take(5)
+                    .enumerate()
+                    .map(|(j, a)| Segment { weight: a.2.max(1) as f32, alpha: 0.95 - j as f32 * 0.12 })
+                    .collect();
                 if rest > 0 {
                     segments.push(Segment { weight: rest as f32, alpha: 0.25 });
                 }
@@ -1059,7 +1149,11 @@ fn flows(i: &Inputs, v: &Loaded) -> FlowsView {
                     frac: b.total() as f32 / biggest as f32,
                     segments,
                     names: mine.iter().take(5).map(|a| Named { name: name(&a.0), bytes: bytes_text(a.2) }).collect(),
-                    rest: if mine.len() > 5 { format!("+{} apps {}", mine.len() - 5, bytes_text(rest)) } else { String::new() },
+                    rest: if mine.len() > 5 {
+                        format!("+{} apps {}", mine.len() - 5, bytes_text(rest))
+                    } else {
+                        String::new()
+                    },
                     selected: only == Some(e.as_str()),
                 }
             })
@@ -1096,7 +1190,13 @@ fn journal(i: &Inputs, v: &Loaded) -> JournalView {
     let day = i.journal_day.map_or(last, |d| (d - start).clamp(0, last));
     let shown = days(v.heat_start, day);
     let (lo, hi) = (start_ms(shown), start_ms(days(shown, 1))); // 23 or 25 h on DST days
-    let spans: Vec<(i64, i64, bool)> = i.data.map_or(&[][..], |d| &d.spans[..]).iter().map(|s| (s.0.max(lo), s.1.min(hi), s.2)).filter(|s| s.1 > s.0).collect();
+    let spans: Vec<(i64, i64, bool)> = i
+        .data
+        .map_or(&[][..], |d| &d.spans[..])
+        .iter()
+        .map(|s| (s.0.max(lo), s.1.min(hi), s.2))
+        .filter(|s| s.1 > s.0)
+        .collect();
     let len = (hi - lo) as f32;
     let on: Vec<i64> = spans.iter().filter(|s| !s.2).map(|s| s.1 - s.0).collect();
     let pauses: Vec<i64> = spans.iter().filter(|s| s.2).map(|s| s.1 - s.0).collect();
@@ -1112,18 +1212,31 @@ fn journal(i: &Inputs, v: &Loaded) -> JournalView {
         week: hm_parts(v.week_ms),
         sub: format!("{} of 7 days with at least 4 h connected", v.week.iter().filter(|h| **h >= 4.0).count()),
         heat: v.heat.clone(),
-        months: weeks.into_iter().map(|w| MonthMark { week: w as i32, name: days(v.heat_start, 7 * w + 6).format("%b").to_string() }).collect(),
+        months: weeks
+            .into_iter()
+            .map(|w| MonthMark { week: w as i32, name: days(v.heat_start, 7 * w + 6).format("%b").to_string() })
+            .collect(),
         index: day as i32,
         day: epoch_day(shown) as i32,
         date: shown.format("%A %-d %B").to_string(),
         has_prev: day > 0,
         has_next: v.heat.get(day as usize + 1).is_some_and(|h| *h >= 0.0),
-        spans: spans.iter().map(|s| DaySpan { from: (s.0 - lo) as f32 / len, to: (s.1 - lo) as f32 / len, paused: s.2 }).collect(),
+        spans: spans
+            .iter()
+            .map(|s| DaySpan { from: (s.0 - lo) as f32 / len, to: (s.1 - lo) as f32 / len, paused: s.2 })
+            .collect(),
         summary: format!("{} connected, {} pauses", hm(connected), pauses.len()),
         facts: vec![
             Fact { parts: hm_parts(connected), label: "connected".into() },
             Fact { parts: hm_parts(on.iter().copied().max().unwrap_or(0)), label: "longest".into() },
-            Fact { parts: vec![part(pauses.len().to_string(), "")], label: if pauses.is_empty() { "pauses".into() } else { format!("pauses · {}", hm(pauses.iter().sum())) } },
+            Fact {
+                parts: vec![part(pauses.len().to_string(), "")],
+                label: if pauses.is_empty() {
+                    "pauses".into()
+                } else {
+                    format!("pauses · {}", hm(pauses.iter().sum()))
+                },
+            },
         ],
     }
 }
@@ -1135,15 +1248,22 @@ fn speed_pair(down: i64, up: i64) -> String {
 
 fn tunnels(i: &Inputs, v: &Loaded) -> TunnelsView {
     // Every exit in use or tested: fastest download test first, the rest by name.
-    let in_use: Vec<String> = i.running.map(|r| i.tags.keys().filter(|t| *t != DIRECT).map(|t| stats::id_in(t, r)).collect()).unwrap_or_default();
-    let mut ids: Vec<String> = in_use.into_iter().chain(v.tests.keys().cloned()).collect::<IndexSet<_>>().into_iter().collect();
+    let in_use: Vec<String> = i
+        .running
+        .map(|r| i.tags.keys().filter(|t| *t != DIRECT).map(|t| stats::id_in(t, r)).collect())
+        .unwrap_or_default();
+    let mut ids: Vec<String> =
+        in_use.into_iter().chain(v.tests.keys().cloned()).collect::<IndexSet<_>>().into_iter().collect();
     ids.sort_by(|a, b| v.fastest(b).cmp(&v.fastest(a)).then_with(|| v.name(a).cmp(&v.name(b))));
     let top = ids.iter().map(|id| v.fastest(id)).max().unwrap_or(1).max(1);
-    let best = v.tests.values().fold(None, |b: Option<&&Test>, t| if b.is_none_or(|b| t.down > b.down) { Some(t) } else { b });
+    let best =
+        v.tests.values().fold(None, |b: Option<&&Test>, t| if b.is_none_or(|b| t.down > b.down) { Some(t) } else { b });
     TunnelsView {
         tested: best.is_some(),
         best: best.map(|t| mbps(t.down)).unwrap_or_default(),
-        sub: best.map(|t| format!("↓ download · ↑ {} Mbps upload · {}", mbps(t.up), v.name(&t.exit))).unwrap_or_default(),
+        sub: best
+            .map(|t| format!("↓ download · ↑ {} Mbps upload · {}", mbps(t.up), v.name(&t.exit)))
+            .unwrap_or_default(),
         rows: ids
             .iter()
             .map(|id| {
@@ -1171,13 +1291,26 @@ fn tunnel(i: &Inputs, v: &Loaded) -> TunnelView {
     let total = servers.iter().map(|s| s.1).sum::<i64>().max(1);
     TunnelView {
         id: id.into(),
-        overline: format!("{} · {}", ex.map(|e| e.via.as_str()).unwrap_or_default(), range_label(i.period, i.now.date())),
+        overline: format!(
+            "{} · {}",
+            ex.map(|e| e.via.as_str()).unwrap_or_default(),
+            range_label(i.period, i.now.date())
+        ),
         title: v.name(id),
         hue: v.hue(id),
         tested: t.is_some(),
         best: t.map(|t| mbps(t.down)).unwrap_or_default(),
-        sub: t.map(|t| format!("↓ download · ↑ {} Mbps upload", if t.up > 0 { mbps(t.up) } else { "—".into() })).unwrap_or_default(),
-        servers: servers.iter().map(|(name, b)| ServerRow { name: name.clone(), pct: format!("{}%", 100 * b / total), frac: *b as f32 / total as f32 }).collect(),
+        sub: t
+            .map(|t| format!("↓ download · ↑ {} Mbps upload", if t.up > 0 { mbps(t.up) } else { "—".into() }))
+            .unwrap_or_default(),
+        servers: servers
+            .iter()
+            .map(|(name, b)| ServerRow {
+                name: name.clone(),
+                pct: format!("{}%", 100 * b / total),
+                frac: *b as f32 / total as f32,
+            })
+            .collect(),
     }
 }
 
@@ -1188,7 +1321,11 @@ fn when(at: i64) -> String {
 
 fn history(d: &Data, v: &Loaded) -> HistoryView {
     let all = ALL;
-    let best = d.tests.iter().filter(|t| t.grp == 0).fold(None, |b: Option<&Test>, t| if b.is_none_or(|b| t.down > b.down) { Some(t) } else { b });
+    let best = d
+        .tests
+        .iter()
+        .filter(|t| t.grp == 0)
+        .fold(None, |b: Option<&Test>, t| if b.is_none_or(|b| t.down > b.down) { Some(t) } else { b });
     HistoryView {
         overline: format!("{} tests", d.tests.iter().filter(|t| t.exit != all).count()),
         tested: best.is_some(),
@@ -1212,13 +1349,24 @@ fn history(d: &Data, v: &Loaded) -> HistoryView {
                     line: if together {
                         format!("{} exits together", t.n)
                     } else {
-                        [t.via.clone(), if t.server.is_empty() { v.name(&t.exit) } else { t.server.clone() }].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ")
+                        [t.via.clone(), if t.server.is_empty() { v.name(&t.exit) } else { t.server.clone() }]
+                            .into_iter()
+                            .filter(|s| !s.is_empty())
+                            .collect::<Vec<_>>()
+                            .join(" · ")
                     },
                     members: if together {
                         d.tests
                             .iter()
                             .filter(|m| m.grp == t.grp && m.exit != all)
-                            .map(|m| Member { code: v.code(&m.exit), hue: v.hue(&m.exit), name: v.name(&m.exit), down: mbps(m.down), up: mbps(m.up), ping: m.idle.to_string() })
+                            .map(|m| Member {
+                                code: v.code(&m.exit),
+                                hue: v.hue(&m.exit),
+                                name: v.name(&m.exit),
+                                down: mbps(m.down),
+                                up: mbps(m.up),
+                                ping: m.idle.to_string(),
+                            })
                             .collect()
                     } else {
                         vec![]
@@ -1428,21 +1576,38 @@ fn speed(i: &Inputs, v: &Loaded) -> SpeedView {
     let unknown = |id: &str| Ex { code: "?".into(), name: id.into(), via: String::new(), hue: INK_FAINT };
     // Routed exits by name, then the tailnet's other exit nodes (tested by switching Tailscale to them for the test).
     // Tests start by route id; the label is that of the route's current history.
-    let mut options: Vec<(String, Ex)> = i.tags.keys().filter(|id| *id != DIRECT).map(|id| (id.clone(), v.ex(&stats::id_in(id, running)).cloned().unwrap_or_else(|| unknown(id)))).collect();
+    let mut options: Vec<(String, Ex)> = i
+        .tags
+        .keys()
+        .filter(|id| *id != DIRECT)
+        .map(|id| (id.clone(), v.ex(&stats::id_in(id, running)).cloned().unwrap_or_else(|| unknown(id))))
+        .collect();
     options.sort_by(|a, b| a.1.name.cmp(&b.1.name));
-    options.extend(t.nodes.iter().map(|n| (format!("{}{}", speed_test::NODE, n.ip), Ex { code: "TS".into(), name: n.name.clone(), via: "Tailscale".into(), hue: INK_TEXT })));
+    options.extend(t.nodes.iter().map(|n| {
+        (
+            format!("{}{}", speed_test::NODE, n.ip),
+            Ex { code: "TS".into(), name: n.name.clone(), via: "Tailscale".into(), hue: INK_TEXT },
+        )
+    }));
     // Every route at once once there are two, with apps or without (those connect for the run). Two routes by the same
     // name ("Fastest") are told apart by their provider.
     let mut routed: Vec<(String, Ex)> = setup
         .routes
         .iter()
         .map(|r| {
-            let name = if setup.routes.iter().filter(|o| o.name() == r.name()).count() > 1 { format!("{} · {}", r.name(), r.source()) } else { r.name() };
+            let name = if setup.routes.iter().filter(|o| o.name() == r.name()).count() > 1 {
+                format!("{} · {}", r.name(), r.source())
+            } else {
+                r.name()
+            };
             (r.id.clone(), Ex { code: r.code(), name, via: r.source(), hue: r.hue })
         })
         .collect();
     routed.sort_by(|a, b| a.1.name.cmp(&b.1.name));
-    let chosen = t.chosen.map(String::from).or_else(|| if t.all.is_some() { Some(ALL.into()) } else { options.first().map(|o| o.0.clone()) });
+    let chosen = t
+        .chosen
+        .map(String::from)
+        .or_else(|| if t.all.is_some() { Some(ALL.into()) } else { options.first().map(|o| o.0.clone()) });
     let all_mode = routed.len() >= 2 && chosen.as_deref() == Some(ALL);
     let want = t.run.map(|r| r.exit.clone()).or(chosen);
     let picked = options.iter().find(|o| Some(&o.0) == want.as_ref()).or(options.first());
@@ -1457,33 +1622,63 @@ fn speed(i: &Inputs, v: &Loaded) -> SpeedView {
     let (done, preparing) = (stage == Some(Stage::Done), stage == Some(Stage::Preparing));
     let upload = stage == Some(Stage::Upload);
     let found = r.and_then(|r| r.server.as_ref());
-    let via = [ex.map(|e| e.via.clone()).filter(|v| !v.is_empty()), server.clone()].into_iter().flatten().collect::<Vec<_>>().join(" ");
+    let via = [ex.map(|e| e.via.clone()).filter(|v| !v.is_empty()), server.clone()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" ");
     SpeedView {
         overline: if all_mode {
             "All exits · together".into()
         } else {
-            [ex.map(|e| e.name.clone()), server.clone().or_else(|| ex.filter(|_| node).map(|e| e.via.clone()))].into_iter().flatten().collect::<Vec<_>>().join(" · ")
+            [ex.map(|e| e.name.clone()), server.clone().or_else(|| ex.filter(|_| node).map(|e| e.via.clone()))]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" · ")
         },
         empty: i.vpn.phase != Phase::On || options.is_empty(),
         all_chip: routed.len() >= 2,
         all_on: all_mode,
         all_hues: routed.iter().map(|r| r.1.hue).collect(),
         all_text: format!("{} exits", routed.len()),
-        choices: options.iter().map(|(id, e)| Choice { id: id.clone(), code: e.code.clone(), hue: e.hue, name: e.name.clone(), on: *id == exit && !all_mode }).collect(),
+        choices: options
+            .iter()
+            .map(|(id, e)| Choice {
+                id: id.clone(),
+                code: e.code.clone(),
+                hue: e.hue,
+                name: e.name.clone(),
+                on: *id == exit && !all_mode,
+            })
+            .collect(),
         busy,
         exit: exit.clone(),
         name: name.clone(),
         hue: ex.map_or(INK_ACCENT, |e| e.hue),
         cards: vec![
             // Ping, then the two speeds, as Ookla orders them: the median of five, then the range.
-            card("Ping", r.and_then(|r| r.ping).map(|p| p.median.to_string()), r.and_then(|r| r.ping).map_or_else(|| "ms".into(), |p| format!("ms · {}–{}", p.low, p.high)), false),
+            card(
+                "Ping",
+                r.and_then(|r| r.ping).map(|p| p.median.to_string()),
+                r.and_then(|r| r.ping).map_or_else(|| "ms".into(), |p| format!("ms · {}–{}", p.low, p.high)),
+                false,
+            ),
             card("Download", r.and_then(|r| r.down).map(mbps), "Mbps", stage == Some(Stage::Download)),
             card("Upload", r.and_then(|r| r.up).map(mbps), "Mbps", upload),
         ],
         measuring,
         gauge: r
             .filter(|_| measuring)
-            .map(|r| gauge(r.now as f32 / 1e6, format!("{} megabits per second, {}", mbps(r.now), if upload { "upload" } else { "download" }), upload, r.elapsed_ms, String::new()))
+            .map(|r| {
+                gauge(
+                    r.now as f32 / 1e6,
+                    format!("{} megabits per second, {}", mbps(r.now), if upload { "upload" } else { "download" }),
+                    upload,
+                    r.elapsed_ms,
+                    String::new(),
+                )
+            })
             .unwrap_or_default(),
         error: r.and_then(|r| r.error.clone()).filter(|_| !measuring).unwrap_or_default(),
         missing: r
@@ -1507,27 +1702,44 @@ fn speed(i: &Inputs, v: &Loaded) -> SpeedView {
         },
         server_shown: measuring || preparing || done,
         server: ServerCard {
-            place: found.map_or_else(|| format!("Finding one in {}…", ex.map_or("the exit's country", |e| e.name.as_str())), |s| place(&s.city, &s.country)),
-            line: [found.map(|s| s.machine.split('.').next().unwrap_or_default().to_string()), Some(via).filter(|v| !v.is_empty()).map(|v| format!("via {v}"))]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
-                .join(" · "),
+            place: found.map_or_else(
+                || format!("Finding one in {}…", ex.map_or("the exit's country", |e| e.name.as_str())),
+                |s| place(&s.city, &s.country),
+            ),
+            line: [
+                found.map(|s| s.machine.split('.').next().unwrap_or_default().to_string()),
+                Some(via).filter(|v| !v.is_empty()).map(|v| format!("via {v}")),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · "),
         },
         note: if done {
-            if setup.prefs.stats { "Test complete · saved with your statistics" } else { "Test complete · not saved: statistics are off" }.into()
+            if setup.prefs.stats {
+                "Test complete · saved with your statistics"
+            } else {
+                "Test complete · not saved: statistics are off"
+            }
+            .into()
         } else if node {
             format!(
                 "Tailscale switches to {name} for the test, then back.{} Tested with M-Lab, about 20 seconds of real data.",
                 if setup.ts_exit().is_some() { " Apps on your Tailscale route use it meanwhile." } else { "" }
             )
         } else {
-            "Tested with M-Lab on a server in the exit's country, or a nearby one: ten seconds each way, real data.".into()
+            "Tested with M-Lab on a server in the exit's country, or a nearby one: ten seconds each way, real data."
+                .into()
         },
         ask: node && (setup.ts_exit().is_some() || i.running.and_then(|s| s.ts_exit()).is_some()),
         ask_title: format!("Test through {name}?"),
-        ask_text: format!("For about 20 seconds, apps on your Tailscale route leave through {name} instead of their usual exit node. Test only through a node you trust with their traffic."),
-        terms: format!("Also sent: the time, the app's name and version, and the exit's country when it's known. Nothing about your computer or accounts. Up to {} tests a day.", speed_test::PER_DAY),
+        ask_text: format!(
+            "For about 20 seconds, apps on your Tailscale route leave through {name} instead of their usual exit node. Test only through a node you trust with their traffic."
+        ),
+        terms: format!(
+            "Also sent: the time, the app's name and version, and the exit's country when it's known. Nothing about your computer or accounts. Up to {} tests a day.",
+            speed_test::PER_DAY
+        ),
         together: together(i, v, &routed, &options),
     }
 }
@@ -1563,11 +1775,32 @@ fn together(i: &Inputs, v: &Loaded, exits: &[(String, Ex)], options: &[(String, 
     let (d, u) = (a.and_then(|a| a.down).map(total), a.and_then(|a| a.up).map(total));
     let active = |id: &str| setup.active_routes().iter().any(|r| r.id == id);
     // Data a run may use: each exit's best test this period both ways for ten seconds, else 500 Mbps each way.
-    let gb = |ids: &[String]| (ids.iter().map(|id| v.tests.get(&stats::id_in(id, running)).map_or(1_000_000_000, |t| t.down + t.up)).sum::<i64>() * 10 / 8) as f64 / 1e9;
+    let gb = |ids: &[String]| {
+        (ids.iter()
+            .map(|id| v.tests.get(&stats::id_in(id, running)).map_or(1_000_000_000, |t| t.down + t.up))
+            .sum::<i64>()
+            * 10
+            / 8) as f64
+            / 1e9
+    };
     let left = speed_test::PER_DAY - t.tests_today;
-    let nearest: Vec<String> = legs.iter().filter(|l| l.missing && l.usable() && !t.leave_out.contains(&l.exit)).map(|l| l.exit.clone()).collect();
-    let going: Vec<String> = legs.iter().filter(|l| l.usable() && (!l.missing || nearest.contains(&l.exit))).map(|l| l.exit.clone()).collect();
-    let country = |id: &str| setup.route(Some(id)).and_then(|r| r.loc.country.clone()).or_else(|| ex(id).map(|e| e.name.clone())).unwrap_or_else(|| "its country".into());
+    let nearest: Vec<String> = legs
+        .iter()
+        .filter(|l| l.missing && l.usable() && !t.leave_out.contains(&l.exit))
+        .map(|l| l.exit.clone())
+        .collect();
+    let going: Vec<String> = legs
+        .iter()
+        .filter(|l| l.usable() && (!l.missing || nearest.contains(&l.exit)))
+        .map(|l| l.exit.clone())
+        .collect();
+    let country = |id: &str| {
+        setup
+            .route(Some(id))
+            .and_then(|r| r.loc.country.clone())
+            .or_else(|| ex(id).map(|e| e.name.clone()))
+            .unwrap_or_else(|| "its country".into())
+    };
     let scale = a.map_or(1, |a| a.now.max(1)) as f32;
     Together {
         cards: vec![
@@ -1711,7 +1944,14 @@ mod tests {
     const KEY: &str = "5p4RkybdRU5uaDi90eu4KZPTFif0lKCg4Qp6t1c4F30=";
 
     fn setup() -> Setup {
-        let lab = WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
+        let lab = WgPeer::new(
+            "Home lab",
+            KEY,
+            vec!["10.8.0.2/32".into()],
+            KEY,
+            "203.0.113.7:51820",
+            vec!["0.0.0.0/0".into()],
+        );
         Setup {
             routes: vec![
                 Route::new("nl", Location::country("nord", 153, "NL", "Netherlands")),
@@ -1738,7 +1978,20 @@ mod tests {
     }
 
     fn test(at: i64, exit: &str, down: i64, up: i64, grp: i64) -> Test {
-        Test { at, exit: exit.into(), via: "Nord".into(), server: "nl1".into(), ip: String::new(), down, up, idle: 12, busy_down: 0, busy_up: 0, grp, n: 1 }
+        Test {
+            at,
+            exit: exit.into(),
+            via: "Nord".into(),
+            server: "nl1".into(),
+            ip: String::new(),
+            down,
+            up,
+            idle: 12,
+            busy_down: 0,
+            busy_up: 0,
+            grp,
+            n: 1,
+        }
     }
 
     fn day(s: &Setup, d: u32, nl: i64, us: i64) -> (i64, IndexMap<String, Bytes>) {
@@ -1759,15 +2012,25 @@ mod tests {
         let setup = setup();
         let (nl, us) = (id(&setup, "nl"), id(&setup, "us"));
         let data = Data {
-            days: [day(&setup, 9, 3_000_000_000, 1_000_000_000), day(&setup, 10, 1_000_000_000, 0)].into_iter().collect(),
+            days: [day(&setup, 9, 3_000_000_000, 1_000_000_000), day(&setup, 10, 1_000_000_000, 0)]
+                .into_iter()
+                .collect(),
             apps: vec![
                 ("firefox".into(), nl.clone(), 2_500_000_000),
                 ("app.unbraid".into(), nl.clone(), 1_500_000_000),
                 ("firefox".into(), us.clone(), 600_000_000),
                 ("?".into(), us.clone(), 400_000_000),
             ],
-            tests: vec![test(at(10, 9, 0), &us, 300_000_000, 0, 0), test(at(9, 9, 0), &nl, 800_000_000, 90_000_000, 0), test(at(9, 8, 0), &nl, 950_000_000, 80_000_000, 5)],
-            spans: vec![(at(10, 8, 0), at(10, 12, 0), false), (at(10, 12, 0), at(10, 12, 30), true), (at(10, 12, 30), at(10, 14, 0), false)],
+            tests: vec![
+                test(at(10, 9, 0), &us, 300_000_000, 0, 0),
+                test(at(9, 9, 0), &nl, 800_000_000, 90_000_000, 0),
+                test(at(9, 8, 0), &nl, 950_000_000, 80_000_000, 5),
+            ],
+            spans: vec![
+                (at(10, 8, 0), at(10, 12, 0), false),
+                (at(10, 12, 0), at(10, 12, 30), true),
+                (at(10, 12, 30), at(10, 14, 0), false),
+            ],
             ..Data::default()
         };
         let vpn = VpnState { phase: Phase::On, ..VpnState::default() };
@@ -1834,7 +2097,10 @@ mod tests {
         assert_eq!("1–30 NOV", range_label(Period::Month, today));
         // A week across two months says the second.
         assert_eq!("30–6 DEC", range_label(Period::Week, NaiveDate::from_ymd_opt(2026, 12, 2).unwrap()));
-        assert_eq!((NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(), NaiveDate::from_ymd_opt(2026, 12, 31).unwrap()), range(Period::Month, NaiveDate::from_ymd_opt(2026, 12, 31).unwrap()));
+        assert_eq!(
+            (NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(), NaiveDate::from_ymd_opt(2026, 12, 31).unwrap()),
+            range(Period::Month, NaiveDate::from_ymd_opt(2026, 12, 31).unwrap())
+        );
     }
 
     #[test]
@@ -1862,12 +2128,21 @@ mod tests {
         let f = fixture();
         let v = f.view("", None, SpeedInputs::default());
         assert_eq!(part("5.0", "GB"), v.hub.usage);
-        assert_eq!(vec!["Netherlands", "United States"], v.hub.legend.iter().map(|l| l.name.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["Netherlands", "United States"],
+            v.hub.legend.iter().map(|l| l.name.as_str()).collect::<Vec<_>>()
+        );
         // An app's row takes the exit that carried most of it; unknown apps are "Other".
-        assert_eq!(vec![("Firefox", "NL"), ("app.unbraid", "NL"), ("Other", "US")], v.hub.apps.iter().map(|a| (a.name.as_str(), a.code.as_str())).collect::<Vec<_>>());
+        assert_eq!(
+            vec![("Firefox", "NL"), ("app.unbraid", "NL"), ("Other", "US")],
+            v.hub.apps.iter().map(|a| (a.name.as_str(), a.code.as_str())).collect::<Vec<_>>()
+        );
         assert_eq!("2 apps", v.hub.exits[0].apps);
         // Only solo tests count, and each exit's best: Netherlands' combined run reads higher but is left out.
-        assert_eq!(("800".to_string(), "best test · Netherlands".to_string()), (v.hub.best.clone(), v.hub.best_line.clone()));
+        assert_eq!(
+            ("800".to_string(), "best test · Netherlands".to_string()),
+            (v.hub.best.clone(), v.hub.best_line.clone())
+        );
         assert_eq!(2, v.selected, "Wednesday is the week's third day");
         assert_eq!("5 GB", v.scale);
     }
@@ -1881,7 +2156,11 @@ mod tests {
         assert_eq!(vec!["Firefox", "Unknown app"], v.flows.rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>());
         assert_eq!(1.0, v.flows.rows[0].frac, "the list's first is the full meter");
         assert!(v.flows.lanes.iter().any(|l| l.selected && l.id == us));
-        assert_eq!(vec![false, false, true], v.flows.pills.iter().map(|p| p.on).collect::<Vec<_>>(), "All, then the exits by data");
+        assert_eq!(
+            vec![false, false, true],
+            v.flows.pills.iter().map(|p| p.on).collect::<Vec<_>>(),
+            "All, then the exits by data"
+        );
         // The app's own traffic is named after it.
         let v = f.view("flows", None, SpeedInputs::default());
         assert_eq!("unbraid", v.flows.rows[1].name);
@@ -1892,7 +2171,10 @@ mod tests {
     #[test]
     fn the_journal_counts_a_day_with_its_pause() {
         let f = fixture();
-        let v = view(&Inputs { journal_day: Some(epoch_day(NaiveDate::from_ymd_opt(2026, 11, 10).unwrap())), ..inputs(&f) });
+        let v = view(&Inputs {
+            journal_day: Some(epoch_day(NaiveDate::from_ymd_opt(2026, 11, 10).unwrap())),
+            ..inputs(&f)
+        });
         assert_eq!("Tuesday 10 November", v.journal.date);
         assert_eq!(vec![part("5", "h"), part("30", "m")], v.journal.facts[0].parts);
         assert_eq!(vec![part("4", "h"), part("0", "m")], v.journal.facts[1].parts);
@@ -1930,7 +2212,10 @@ mod tests {
     fn tunnels_list_the_fastest_first_then_by_name() {
         let f = fixture();
         let v = f.view("tunnels", None, SpeedInputs::default());
-        assert_eq!(vec!["Netherlands", "United States"], v.tunnels.rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["Netherlands", "United States"],
+            v.tunnels.rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>()
+        );
         assert_eq!("↓800 ↑90.0", v.tunnels.rows[0].test);
         // A missing upload is a dash.
         assert_eq!("↓300 ↑—", v.tunnels.rows[1].test);
@@ -1950,7 +2235,10 @@ mod tests {
         let v = f.view("history", None, SpeedInputs::default());
         assert_eq!("3 tests", v.history.overline);
         assert_eq!(2, v.history.rows.len());
-        assert_eq!(("ALL", "2 exits together".to_string()), (v.history.rows[0].code.as_str(), format!("{} exits together", v.history.rows[0].members.len())));
+        assert_eq!(
+            ("ALL", "2 exits together".to_string()),
+            (v.history.rows[0].code.as_str(), format!("{} exits together", v.history.rows[0].members.len()))
+        );
         assert_eq!("500", v.history.best, "the best download is a solo test's");
         assert_eq!("Nord · nl1", v.history.rows[1].line);
     }
@@ -1959,7 +2247,10 @@ mod tests {
     fn the_speed_test_offers_routed_exits_then_all_together() {
         let f = fixture();
         let v = f.view("speed", None, SpeedInputs::default());
-        assert_eq!(vec!["Netherlands", "United States"], v.speed.choices.iter().map(|c| c.name.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["Netherlands", "United States"],
+            v.speed.choices.iter().map(|c| c.name.as_str()).collect::<Vec<_>>()
+        );
         assert!(v.speed.choices[0].on && !v.speed.all_on, "the first exit until one is picked");
         assert_eq!(("GO", 200), (v.speed.go.text.as_str(), v.speed.go.size));
         assert_eq!("Finding one in Netherlands…", v.speed.server.place);
@@ -1983,7 +2274,12 @@ mod tests {
             id: 1,
             legs: vec![
                 Leg { server: server("Amsterdam"), ..Leg::new("nl") },
-                Leg { server: server("Frankfurt"), missing: true, ping: Some(Ping { median: 20, low: 18, high: 25 }), ..Leg::new("lab") },
+                Leg {
+                    server: server("Frankfurt"),
+                    missing: true,
+                    ping: Some(Ping { median: 20, low: 18, high: 25 }),
+                    ..Leg::new("lab")
+                },
                 Leg { error: Some("The route isn't connected.".into()), ..Leg::new("us") },
             ],
             metered: true,
@@ -1999,7 +2295,10 @@ mod tests {
         let t = &v.speed.together;
         assert!(t.deciding && v.speed.busy);
         assert_eq!(vec!["lab"], t.nearest);
-        assert_eq!(vec!["No test server in Home lab", "United States can't join"], t.decisions.iter().map(|d| d.title.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["No test server in Home lab", "United States can't join"],
+            t.decisions.iter().map(|d| d.title.as_str()).collect::<Vec<_>>()
+        );
         assert_eq!("The route isn't connected. It's left out of this run.", t.decisions[1].text);
         assert!(t.decisions[0].choice && !t.decisions[1].choice);
         // Netherlands' best test this week, and 1 Gbit/s for one never tested; 3 tests left of M-Lab's 40.
@@ -2008,7 +2307,11 @@ mod tests {
         assert_eq!(("Start 2 together", true), (t.yes.as_str(), t.can_go));
         // Left out, it doesn't go: one exit can't run together.
         let out = ["lab".to_string()];
-        let v = f.view("speed", None, SpeedInputs { all: Some(&all), tests_today: 37, leave_out: &out, ..SpeedInputs::default() });
+        let v = f.view(
+            "speed",
+            None,
+            SpeedInputs { all: Some(&all), tests_today: 37, leave_out: &out, ..SpeedInputs::default() },
+        );
         assert_eq!(("Needs two exits", false), (v.speed.together.yes.as_str(), v.speed.together.can_go));
         let v = f.view("speed", None, SpeedInputs { all: Some(&all), tests_today: 39, ..SpeedInputs::default() });
         assert_eq!("Not enough tests left", v.speed.together.yes);

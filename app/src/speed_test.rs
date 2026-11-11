@@ -62,7 +62,18 @@ pub struct Run {
 
 impl Run {
     pub fn new(exit: &str) -> Run {
-        Run { exit: exit.into(), phase: Phase::Preparing, now: 0, down: None, up: None, ping: None, elapsed_ms: 0, server: None, missing: None, error: None }
+        Run {
+            exit: exit.into(),
+            phase: Phase::Preparing,
+            now: 0,
+            down: None,
+            up: None,
+            ping: None,
+            elapsed_ms: 0,
+            server: None,
+            missing: None,
+            error: None,
+        }
     }
 }
 
@@ -123,7 +134,12 @@ pub fn nodes() -> Vec<TsNode> {
         return vec![];
     }
     let routed = setup.ts_exit();
-    live().state().ts_exit_nodes.into_iter().filter(|n| n.online && !n.id.is_empty() && Some(&n.ip) != routed.as_ref()).collect()
+    live()
+        .state()
+        .ts_exit_nodes
+        .into_iter()
+        .filter(|n| n.online && !n.id.is_empty() && Some(&n.ip) != routed.as_ref())
+        .collect()
 }
 
 /// Counts `n` tests against M-Lab's daily allowance, unless a newer test took over or they don't fit.
@@ -194,11 +210,24 @@ pub fn start(exit: &str, anywhere: bool) -> bool {
     let setup = live().running().unwrap_or_else(|| store().current()); // what the engine runs, for the label and the record
     let route = setup.route(Some(exit)).cloned();
     let vpn_server = live().state().servers.get(exit).cloned();
-    let via = if node.is_some() { "Tailscale".to_string() } else { route.as_ref().map(Route::source).unwrap_or_default() };
-    let name = node.as_ref().map(|n| n.name.clone()).or_else(|| vpn_server.as_ref().map(|s| s.name.clone())).unwrap_or_else(|| route.as_ref().map(Route::name).unwrap_or_default());
-    let ip = node.as_ref().map(|n| n.ip.clone()).unwrap_or_else(|| vpn_server.as_ref().map(|s| s.ip.clone()).unwrap_or_default());
+    let via =
+        if node.is_some() { "Tailscale".to_string() } else { route.as_ref().map(Route::source).unwrap_or_default() };
+    let name = node
+        .as_ref()
+        .map(|n| n.name.clone())
+        .or_else(|| vpn_server.as_ref().map(|s| s.name.clone()))
+        .unwrap_or_else(|| route.as_ref().map(Route::name).unwrap_or_default());
+    let ip = node
+        .as_ref()
+        .map(|n| n.ip.clone())
+        .unwrap_or_else(|| vpn_server.as_ref().map(|s| s.ip.clone()).unwrap_or_default());
     // Provider routes know their country; imported servers and Tailscale nodes are located by their address alone.
-    let country = route.as_ref().filter(|r| !r.imported() && r.ts_exit.is_none()).and_then(|r| r.loc.country_code.as_ref()).map(|c| c.to_uppercase()).filter(|_| !anywhere);
+    let country = route
+        .as_ref()
+        .filter(|r| !r.imported() && r.ts_exit.is_none())
+        .and_then(|r| r.loc.country_code.as_ref())
+        .map(|c| c.to_uppercase())
+        .filter(|_| !anywhere);
     let epoch = stats::epoch();
     let record_as = stats::note(exit, &setup);
     let mine = {
@@ -219,7 +248,8 @@ pub fn start(exit: &str, anywhere: bool) -> bool {
             }
             let Some(located) = located else {
                 // With no country to name there is nothing for "missing" to say: say that no server answered.
-                let named = route.as_ref().and_then(|r| r.loc.country.clone()).or(country).filter(|c| !c.trim().is_empty());
+                let named =
+                    route.as_ref().and_then(|r| r.loc.country.clone()).or(country).filter(|c| !c.trim().is_empty());
                 set_run(mine, |r| {
                     r.phase = Phase::Failed;
                     r.error = named.is_none().then(|| "No test server answered. Try again later.".into());
@@ -252,7 +282,8 @@ pub fn start(exit: &str, anywhere: bool) -> bool {
             };
             let (server, down) = {
                 let (t, l) = (tag.clone(), located.clone());
-                blocking(move || any_of(&l, |s| ndt7::download(&t, &s.download, || stopped(mine), "", |_, _| {}, rate))).await?
+                blocking(move || any_of(&l, |s| ndt7::download(&t, &s.download, || stopped(mine), "", |_, _| {}, rate)))
+                    .await?
             };
             if stopped(mine) {
                 return Ok(());
@@ -283,7 +314,20 @@ pub fn start(exit: &str, anywhere: bool) -> bool {
                 r.elapsed_ms = MAX_SECONDS as i64 * 1000;
             });
             let Some(done) = RUN.borrow().clone() else { return Ok(()) };
-            let test = stats::Test { at: now_ms(), exit: record_as, via, server: name, ip, down, up, idle: done.ping.map_or(0, |p| p.median), busy_down: 0, busy_up: 0, grp: 0, n: 1 };
+            let test = stats::Test {
+                at: now_ms(),
+                exit: record_as,
+                via,
+                server: name,
+                ip,
+                down,
+                up,
+                idle: done.ping.map_or(0, |p| p.median),
+                busy_down: 0,
+                busy_up: 0,
+                grp: 0,
+                n: 1,
+            };
             stats::save_tests(vec![test], epoch);
             Ok::<_, Error>(())
         }
@@ -316,7 +360,9 @@ pub fn start(exit: &str, anywhere: bool) -> bool {
             }
             // The routed node's stable ID (the switch back needs one), noted with the route's setting it belongs to.
             if store().ts_test_from().is_none() {
-                let from = store().current().ts_exit().and_then(|r| restore_to(Some(&r), None, &live().state().ts_exit_nodes).map(|id| format!("{r}\n{id}")));
+                let from = store().current().ts_exit().and_then(|r| {
+                    restore_to(Some(&r), None, &live().state().ts_exit_nodes).map(|id| format!("{r}\n{id}"))
+                });
                 store().set_ts_test_from(Some(&from.unwrap_or_default()));
             }
             // Give Tailscale a moment to reach the new node before measuring.
@@ -364,7 +410,17 @@ pub struct Leg {
 
 impl Leg {
     pub fn new(exit: &str) -> Leg {
-        Leg { exit: exit.into(), server: None, missing: false, limited: false, ping: None, now: 0, down: None, up: None, error: None }
+        Leg {
+            exit: exit.into(),
+            server: None,
+            missing: false,
+            limited: false,
+            ping: None,
+            now: 0,
+            down: None,
+            up: None,
+            error: None,
+        }
     }
 
     pub fn usable(&self) -> bool {
@@ -467,7 +523,14 @@ struct Combined {
 /// Every exit first finds its M-Lab server; then, after [`go`], all download together and then all upload together.
 pub fn start_all(exits: &[String], metered: bool) -> bool {
     let setup = store().current();
-    let legs: Vec<String> = exits.iter().cloned().collect::<IndexSet<_>>().into_iter().filter(|e| setup.route(Some(e)).is_some()).take(MAX_TOGETHER).collect();
+    let legs: Vec<String> = exits
+        .iter()
+        .cloned()
+        .collect::<IndexSet<_>>()
+        .into_iter()
+        .filter(|e| setup.route(Some(e)).is_some())
+        .take(MAX_TOGETHER)
+        .collect();
     if legs.len() < 2 || live().probe().is_none() {
         return false;
     }
@@ -477,7 +540,18 @@ pub fn start_all(exits: &[String], metered: bool) -> bool {
     let record_as = legs.iter().map(|e| (e.clone(), stats::note(e, &setup))).collect();
     let mine = {
         let _g = lock();
-        let all = All { id, legs: legs.iter().map(|e| Leg::new(e)).collect(), metered, phase: Phase::Preparing, now: 0, down: None, up: None, elapsed_ms: 0, window_ms: 0, error: None };
+        let all = All {
+            id,
+            legs: legs.iter().map(|e| Leg::new(e)).collect(),
+            metered,
+            phase: Phase::Preparing,
+            now: 0,
+            down: None,
+            up: None,
+            elapsed_ms: 0,
+            window_ms: 0,
+            error: None,
+        };
         TOGETHER.send_replace(Some(all));
         ATTEMPT.fetch_add(1, Ordering::SeqCst) + 1
     };
@@ -526,10 +600,14 @@ impl Combined {
             let over = limits::over(&testing(&up), &testing(&more), limit);
             let ts = testing(&up).ts_exit();
             if r.ts_exit.is_some() && ts.is_some() && ts != r.ts_exit {
-                leg(mine, e, |l| l.error = Some("Tailscale has one exit node at a time, and another route uses it.".into()));
+                leg(mine, e, |l| {
+                    l.error = Some("Tailscale has one exit node at a time, and another route uses it.".into())
+                });
             } else if let Some(o) = over {
                 let name = providers::get(&o.provider).map_or_else(|| o.provider.clone(), |p| p.name().to_string());
-                leg(mine, e, |l| l.error = Some(format!("{name} allows {}, all in use.", limits::units(o.limit, &o.unit))));
+                leg(mine, e, |l| {
+                    l.error = Some(format!("{name} allows {}, all in use.", limits::units(o.limit, &o.unit)))
+                });
             } else {
                 up = more;
             }
@@ -563,10 +641,18 @@ impl Combined {
             });
             let _ = back.await;
         }
-        let legs = TOGETHER.borrow().as_ref().map(|a| a.legs.iter().filter(|l| l.error.is_none()).map(|l| l.exit.clone()).collect()).unwrap_or_default();
+        let legs = TOGETHER
+            .borrow()
+            .as_ref()
+            .map(|a| a.legs.iter().filter(|l| l.error.is_none()).map(|l| l.exit.clone()).collect())
+            .unwrap_or_default();
         let setup = self.setup.clone();
         parallel(legs, move |e| {
-            let country = setup.route(Some(e)).filter(|r| !r.imported() && r.ts_exit.is_none()).and_then(|r| r.loc.country_code.as_ref()).map(|c| c.to_uppercase());
+            let country = setup
+                .route(Some(e))
+                .filter(|r| !r.imported() && r.ts_exit.is_none())
+                .and_then(|r| r.loc.country_code.as_ref())
+                .map(|c| c.to_uppercase());
             match tag(e).and_then(|t| ndt7::locate(&t, country.as_deref())) {
                 Ok(Some(s)) => leg(mine, e, |l| l.server = Some(s)),
                 Ok(None) => {
@@ -608,7 +694,9 @@ impl Combined {
     ) -> IndexMap<String, Vec<(i64, i64)>> {
         let mine = self.mine;
         set_all(mine, |a| a.phase = p);
-        let samples = Arc::new(exits.iter().map(|e| (e.clone(), Mutex::new(Vec::<(i64, i64)>::new()))).collect::<IndexMap<_, _>>());
+        let samples = Arc::new(
+            exits.iter().map(|e| (e.clone(), Mutex::new(Vec::<(i64, i64)>::new()))).collect::<IndexMap<_, _>>(),
+        );
         let all = samples.clone();
         parallel(exits, move |e| {
             let sample = |t: i64, b: i64| held(&all[e]).push((t, b));
@@ -618,7 +706,11 @@ impl Combined {
             };
             match f(e, &sample, &rate) {
                 Ok(r) => leg(mine, e, |l| {
-                    if p == Phase::Download { l.down = Some(r) } else { l.up = Some(r) }
+                    if p == Phase::Download {
+                        l.down = Some(r)
+                    } else {
+                        l.up = Some(r)
+                    }
                     l.now = 0;
                 }),
                 Err(x) => {
@@ -626,7 +718,8 @@ impl Combined {
                     log::w("Unbraid", &format!("speed test: {name} through one exit stopped: {}", probe::kind(&x)));
                     leg(mine, e, |l| {
                         l.now = 0;
-                        l.error = Some(format!("Stopped during the {name}: the exit stopped answering. Not in the totals."));
+                        l.error =
+                            Some(format!("Stopped during the {name}: the exit stopped answering. Not in the totals."));
                     });
                 }
             }
@@ -647,20 +740,28 @@ impl Combined {
             return Ok(());
         }
         let legs = TOGETHER.borrow().as_ref().map(|a| a.legs.clone()).unwrap_or_default();
-        let going: Vec<Leg> = legs.into_iter().filter(|l| l.usable() && (!l.missing || nearest.contains(&l.exit))).collect();
+        let going: Vec<Leg> =
+            legs.into_iter().filter(|l| l.usable() && (!l.missing || nearest.contains(&l.exit))).collect();
         if going.len() < 2 {
             failed(mine, "At least two exits need a test server to run together.");
             return Ok(());
         }
         if !reserve(going.len() as i32, mine) {
-            failed(mine, &format!("M-Lab allows {PER_DAY} tests a day; this run needs {} of them. Try fewer exits, or tomorrow.", going.len()));
+            failed(
+                mine,
+                &format!(
+                    "M-Lab allows {PER_DAY} tests a day; this run needs {} of them. Try fewer exits, or tomorrow.",
+                    going.len()
+                ),
+            );
             return Ok(());
         }
         set_all(mine, |a| {
             a.legs = going.clone();
             a.phase = Phase::Preparing;
         });
-        let located: Arc<IndexMap<String, Server>> = Arc::new(going.iter().filter_map(|l| Some((l.exit.clone(), l.server.clone()?))).collect());
+        let located: Arc<IndexMap<String, Server>> =
+            Arc::new(going.iter().filter_map(|l| Some((l.exit.clone(), l.server.clone()?))).collect());
         let exits: Vec<String> = going.iter().map(|l| l.exit.clone()).collect();
         let servers = located.clone();
         parallel(exits.clone(), move |e| {
@@ -677,11 +778,18 @@ impl Combined {
         let extra = format!("concurrent={}", going.len());
         let used = Arc::new(Mutex::new(IndexMap::<String, Server>::new()));
         let t0 = elapsed_realtime();
-        let ok = || TOGETHER.borrow().as_ref().map(|a| a.legs.iter().filter(|l| l.error.is_none()).map(|l| l.exit.clone()).collect::<Vec<_>>()).unwrap_or_default();
+        let ok = || {
+            TOGETHER
+                .borrow()
+                .as_ref()
+                .map(|a| a.legs.iter().filter(|l| l.error.is_none()).map(|l| l.exit.clone()).collect::<Vec<_>>())
+                .unwrap_or_default()
+        };
         let (servers, taken, x) = (located.clone(), used.clone(), extra.clone());
         let down = self
             .phase(Phase::Download, exits, t0, move |e, sample, rate| {
-                let (s, r) = any_of(&servers[e], |s| ndt7::download(&tag(e)?, &s.download, || stopped(mine), &x, sample, rate))?;
+                let (s, r) =
+                    any_of(&servers[e], |s| ndt7::download(&tag(e)?, &s.download, || stopped(mine), &x, sample, rate))?;
                 // Another of Locate's servers took the test: its ping wasn't measured, and the card names it.
                 if s != servers[e] {
                     leg(mine, e, |l| {
@@ -697,7 +805,11 @@ impl Combined {
             return Ok(());
         }
         let both = ok();
-        let together = if both.len() >= 2 { both.iter().map(|e| down.get(e).cloned().ok_or_else(missing)).collect::<Result<Vec<_>>>()? } else { vec![] };
+        let together = if both.len() >= 2 {
+            both.iter().map(|e| down.get(e).cloned().ok_or_else(missing)).collect::<Result<Vec<_>>>()?
+        } else {
+            vec![]
+        };
         let Some((bps, ms)) = combined(&together) else {
             failed(mine, &apart(ok().len()));
             return Ok(());
@@ -718,7 +830,11 @@ impl Combined {
         // An exit moved to another provider or server meanwhile: its numbers belong to neither.
         let running = live().running().unwrap_or_else(|| self.setup.clone());
         set_all(mine, |a| {
-            for l in a.legs.iter_mut().filter(|l| l.error.is_none() && Some(&stats::id_in(&l.exit, &running)) != self.record_as.get(&l.exit)) {
+            for l in a
+                .legs
+                .iter_mut()
+                .filter(|l| l.error.is_none() && Some(&stats::id_in(&l.exit, &running)) != self.record_as.get(&l.exit))
+            {
                 l.error = Some("The route changed during the test. Not counted.".into());
             }
         });
@@ -741,7 +857,20 @@ impl Combined {
         let Some(done) = TOGETHER.borrow().clone().filter(|a| a.phase == Phase::Done) else { return Ok(()) };
         let servers = live().state().servers;
         let n = last.len() as i32;
-        let mut tests = vec![stats::Test { at: self.id, exit: ALL.into(), via: String::new(), server: String::new(), ip: String::new(), down: d.0, up: u.0, idle: 0, busy_down: 0, busy_up: 0, grp: self.id, n }];
+        let mut tests = vec![stats::Test {
+            at: self.id,
+            exit: ALL.into(),
+            via: String::new(),
+            server: String::new(),
+            ip: String::new(),
+            down: d.0,
+            up: u.0,
+            idle: 0,
+            busy_down: 0,
+            busy_up: 0,
+            grp: self.id,
+            n,
+        }];
         for (i, l) in done.legs.iter().filter(|l| l.error.is_none()).enumerate() {
             let r = self.setup.route(Some(&l.exit));
             tests.push(stats::Test {
@@ -773,7 +902,12 @@ fn done(mine: i32) {
 }
 
 fn apart(n: usize) -> String {
-    if n < 2 { "Only one exit kept going, so there's nothing to add up. Try again." } else { "The exits didn't run together long enough to add them up. Try again." }.into()
+    if n < 2 {
+        "Only one exit kept going, so there's nothing to add up. Try again."
+    } else {
+        "The exits didn't run together long enough to add them up. Try again."
+    }
+    .into()
 }
 
 /// bits/s through several exits counted only while all of them ran, and that stretch in ms: from the latest first
@@ -808,8 +942,17 @@ pub fn exit_on(tag: Option<&str>) -> Option<String> {
         return None;
     }
     let tags = live().tags();
-    let single = RUN.borrow().as_ref().map(|r| r.exit.clone()).filter(|e| tag == if e.starts_with(NODE) { Some(TS_TAG) } else { tags.get(e).map(String::as_str) });
-    single.or_else(|| TOGETHER.borrow().as_ref().and_then(|a| a.legs.iter().find(|l| tags.get(&l.exit).map(String::as_str) == tag).map(|l| l.exit.clone())))
+    let single = RUN
+        .borrow()
+        .as_ref()
+        .map(|r| r.exit.clone())
+        .filter(|e| tag == if e.starts_with(NODE) { Some(TS_TAG) } else { tags.get(e).map(String::as_str) });
+    single.or_else(|| {
+        TOGETHER
+            .borrow()
+            .as_ref()
+            .and_then(|a| a.legs.iter().find(|l| tags.get(&l.exit).map(String::as_str) == tag).map(|l| l.exit.clone()))
+    })
 }
 
 fn busy(p: Option<Phase>) -> bool {
@@ -839,7 +982,11 @@ pub fn restore_node() {
 
 /// On the switch queue only.
 async fn switch_back() {
-    let want = restore_to(store().current().ts_exit().as_deref(), store().ts_test_from().as_deref(), &live().state().ts_exit_nodes);
+    let want = restore_to(
+        store().current().ts_exit().as_deref(),
+        store().ts_test_from().as_deref(),
+        &live().state().ts_exit_nodes,
+    );
     // A node Tailscale won't take back (gone, no longer an exit) is no reason to stay on the tested one: no exit then.
     async fn set(id: &str) -> bool {
         engine::get().set_tailscale_exit_node(TS_TAG, id).await.is_ok()
@@ -861,10 +1008,15 @@ pub(crate) fn restore_to(routed: Option<&str>, hint: Option<&str>, nodes: &[TsNo
         return Some(n.id.clone());
     }
     let host = r.split('.').next().unwrap_or(r);
-    let named: Vec<&TsNode> = nodes.iter().filter(|n| eq_ignore_case(&n.name, r) || eq_ignore_case(&n.name, host)).collect();
+    let named: Vec<&TsNode> =
+        nodes.iter().filter(|n| eq_ignore_case(&n.name, r) || eq_ignore_case(&n.name, host)).collect();
     match named[..] {
         [n] => Some(n.id.clone()),
-        [] => hint.filter(|h| h.split('\n').next() == Some(routed)).map(|h| h.split_once('\n').map_or(h, |(_, id)| id)).filter(|id| !id.is_empty()).map(String::from),
+        [] => hint
+            .filter(|h| h.split('\n').next() == Some(routed))
+            .map(|h| h.split_once('\n').map_or(h, |(_, id)| id))
+            .filter(|id| !id.is_empty())
+            .map(String::from),
         _ => None, // two nodes by that name: neither is surely the one
     }
 }
@@ -979,7 +1131,8 @@ mod tests {
     /// Three exits at 400, 200 and 100 Mbit/s that started a little apart add up to about 700 Mbit/s.
     #[test]
     fn three_staggered_legs_add_up() {
-        let r = combined(&[leg_of(0, 10_000, 50_000), leg_of(150, 10_150, 25_000), leg_of(300, 10_300, 12_500)]).unwrap();
+        let r =
+            combined(&[leg_of(0, 10_000, 50_000), leg_of(150, 10_150, 25_000), leg_of(300, 10_300, 12_500)]).unwrap();
         assert_eq!(9700, r.1);
         assert!((693_000_000..=707_000_000).contains(&r.0), "{r:?}");
     }

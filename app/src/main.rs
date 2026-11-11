@@ -28,7 +28,10 @@ fn main() {
         return;
     }
     if args.needs_running() {
-        println!("{}", if args.command == "status" { "off".to_string() } else { format!("{} isn't running", unbraid::APP) });
+        println!(
+            "{}",
+            if args.command == "status" { "off".to_string() } else { format!("{} isn't running", unbraid::APP) }
+        );
         return;
     }
     // Kept for the whole run: the connection, statistics and the engine's streams live on it.

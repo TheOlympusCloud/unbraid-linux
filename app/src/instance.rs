@@ -34,9 +34,20 @@ pub struct Args {
 impl Args {
     pub fn parse(args: &[String]) -> Args {
         let has = |f: &str| args.iter().any(|a| a == f);
-        let words: Vec<&str> = args.iter().filter(|a| !a.starts_with("--") && a.as_str() != "-h").map(String::as_str).collect();
-        let command = if words.is_empty() { if has("--background") { String::new() } else { "show".into() } } else { words.join(" ") };
-        Args { command, background: has("--background"), connect: has("--connect"), help: has("--help") || has("-h"), version: has("--version") }
+        let words: Vec<&str> =
+            args.iter().filter(|a| !a.starts_with("--") && a.as_str() != "-h").map(String::as_str).collect();
+        let command = if words.is_empty() {
+            if has("--background") { String::new() } else { "show".into() }
+        } else {
+            words.join(" ")
+        };
+        Args {
+            command,
+            background: has("--background"),
+            connect: has("--connect"),
+            help: has("--help") || has("-h"),
+            version: has("--version"),
+        }
     }
 
     /// The first word is one this program knows.
@@ -80,7 +91,8 @@ pub fn serve(path: &Path, handle: Arc<dyn Fn(&str) -> String + Send + Sync>) -> 
                 let mut line = String::new();
                 let _ = BufReader::new(&ch).read_line(&mut line);
                 let h = handle.clone();
-                let answer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| h(line.trim_end_matches('\n')))).unwrap_or_else(|_| "error".into());
+                let answer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| h(line.trim_end_matches('\n'))))
+                    .unwrap_or_else(|_| "error".into());
                 let _ = ch.write_all(format!("{answer}\n").as_bytes());
             }
         })

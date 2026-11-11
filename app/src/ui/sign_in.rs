@@ -135,13 +135,17 @@ pub fn submit(i: &Inputs) -> Option<IndexMap<String, String>> {
     let id = i.step?;
     let f = fields(i, id);
     let ready = f.iter().all(|f| !text(i, id, &f.key).trim().is_empty());
-    (ready && !i.signing.contains(id)).then(|| f.iter().map(|f| (f.key.clone(), text(i, id, &f.key).to_string())).collect())
+    (ready && !i.signing.contains(id))
+        .then(|| f.iter().map(|f| (f.key.clone(), text(i, id, &f.key).to_string())).collect())
 }
 
 /// The sign-in as `i` has it: the providers to choose from, or the open one's form.
 pub fn view(i: &Inputs) -> SignInView {
     let other = |other, title: &str, sub: &str| OtherRow { other, title: title.into(), sub: sub.into() };
-    let mut others = vec![other(Other::File, "Import a config file", "WireGuard .conf or OpenVPN .ovpn"), other(Other::Shadowsocks, "Shadowsocks link", "Paste an ss:// access key")];
+    let mut others = vec![
+        other(Other::File, "Import a config file", "WireGuard .conf or OpenVPN .ovpn"),
+        other(Other::Shadowsocks, "Shadowsocks link", "Paste an ss:// access key"),
+    ];
     if !i.adding {
         others.push(other(Other::Tailscale, "Tailscale only", "No VPN provider, just your tailnet"));
     }
@@ -166,7 +170,12 @@ pub fn view(i: &Inputs) -> SignInView {
                         qr: f.qr,
                         file: f.file,
                         // Config files keep their line breaks only when loaded from a file.
-                        file_note: if value.contains('\n') { "Config file loaded" } else { "Or load the downloaded file" }.into(),
+                        file_note: if value.contains('\n') {
+                            "Config file loaded"
+                        } else {
+                            "Or load the downloaded file"
+                        }
+                        .into(),
                         last: k + 1 == n,
                         asked: asked.is_some_and(|c| c.field == *f),
                         value,
@@ -194,7 +203,11 @@ pub fn view(i: &Inputs) -> SignInView {
         providers: providers::all()
             .into_iter()
             .filter(|p| !i.accounts.contains_key(p.id()))
-            .map(|p| ProviderRow { id: p.id().into(), name: p.name().into(), fields: p.fields().iter().map(|f| f.label.as_str()).collect::<Vec<_>>().join(" · ") })
+            .map(|p| ProviderRow {
+                id: p.id().into(),
+                name: p.name().into(),
+                fields: p.fields().iter().map(|f| f.label.as_str()).collect::<Vec<_>>().join(" · "),
+            })
             .collect(),
         others,
         import_error: i.import_error.unwrap_or_default().into(),
@@ -239,7 +252,10 @@ mod tests {
     #[test]
     fn the_first_run_lists_every_provider() {
         let v = view(&World::default().inputs());
-        assert_eq!(("Sign in", "un/braid", "Choose your VPN", false), (v.overline.as_str(), v.title.as_str(), v.sub.as_str(), v.closable));
+        assert_eq!(
+            ("Sign in", "un/braid", "Choose your VPN", false),
+            (v.overline.as_str(), v.title.as_str(), v.sub.as_str(), v.closable)
+        );
         let rows: Vec<_> = v.providers.iter().map(|p| (p.name.as_str(), p.fields.as_str())).collect();
         assert_eq!(
             vec![
@@ -256,14 +272,21 @@ mod tests {
             ],
             rows
         );
-        assert_eq!(vec![Other::File, Other::Shadowsocks, Other::Tailscale], v.others.iter().map(|o| o.other).collect::<Vec<_>>());
+        assert_eq!(
+            vec![Other::File, Other::Shadowsocks, Other::Tailscale],
+            v.others.iter().map(|o| o.other).collect::<Vec<_>>()
+        );
         assert_eq!("", v.form.id);
     }
 
     /// Add provider: Close, no Tailscale alone, and no provider already signed in.
     #[test]
     fn adding_offers_the_others() {
-        let w = World { adding: true, accounts: IndexMap::from([("nord".to_string(), "x".to_string())]), ..World::default() };
+        let w = World {
+            adding: true,
+            accounts: IndexMap::from([("nord".to_string(), "x".to_string())]),
+            ..World::default()
+        };
         let v = view(&w.inputs());
         assert_eq!(("Providers & servers", "Add provider", true), (v.overline.as_str(), v.title.as_str(), v.closable));
         assert_eq!("Mullvad", v.providers[0].name);
@@ -285,7 +308,11 @@ mod tests {
         w.form.insert(form_key("pia", "password"), " s3cret ".into());
         assert!(view(&w.inputs()).form.ready);
         let sent = submit(&w.inputs()).unwrap();
-        assert_eq!((" p1234567 ", " s3cret "), (sent["username"].as_str(), sent["password"].as_str()), "as typed: secrets are never trimmed");
+        assert_eq!(
+            (" p1234567 ", " s3cret "),
+            (sent["username"].as_str(), sent["password"].as_str()),
+            "as typed: secrets are never trimmed"
+        );
         w.signing.insert("pia".into());
         assert!(view(&w.inputs()).form.busy && submit(&w.inputs()).is_none());
         w.accounts.insert("pia".into(), "x".into());
@@ -298,11 +325,25 @@ mod tests {
         let mut w = World { step: Some("ivpn".into()), ..World::default() };
         w.form.insert(form_key("ivpn", "account"), "i-AB12-CD34-EF56".into());
         let field = Field { secret: false, ..Field::new("captcha", "Characters in the picture") };
-        w.challenges.insert("ivpn".into(), Challenge { message: "Type the characters".into(), field, image: Some(vec![0x89, b'P']), keep: IndexMap::new() });
+        w.challenges.insert(
+            "ivpn".into(),
+            Challenge {
+                message: "Type the characters".into(),
+                field,
+                image: Some(vec![0x89, b'P']),
+                keep: IndexMap::new(),
+            },
+        );
         w.errors.insert("ivpn".into(), "Type the characters".into());
         let v = view(&w.inputs()).form;
-        assert_eq!(vec![("account", true, false, false), ("captcha", false, true, true)], v.fields.iter().map(|f| (f.key.as_str(), f.qr, f.asked, f.last)).collect::<Vec<_>>());
-        assert_eq!(("Characters in the picture", true, Some(vec![0x89, b'P']), false), (v.fields[1].placeholder.as_str(), v.question, v.captcha, v.ready));
+        assert_eq!(
+            vec![("account", true, false, false), ("captcha", false, true, true)],
+            v.fields.iter().map(|f| (f.key.as_str(), f.qr, f.asked, f.last)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            ("Characters in the picture", true, Some(vec![0x89, b'P']), false),
+            (v.fields[1].placeholder.as_str(), v.question, v.captcha, v.ready)
+        );
         w.form.insert(form_key("ivpn", "captcha"), "x7Kq".into());
         assert_eq!(Some("x7Kq"), submit(&w.inputs()).as_ref().and_then(|a| a.get("captcha")).map(String::as_str));
         // Any other failure: in red, with where to fix it.
@@ -310,14 +351,20 @@ mod tests {
         w.errors.insert("ivpn".into(), "This account has no free device slot".into());
         w.links.insert("ivpn".into(), "https://www.ivpn.net/account/".into());
         let v = view(&w.inputs()).form;
-        assert_eq!((false, "https://www.ivpn.net/account/", "Open the IVPN client area"), (v.question, v.link.as_str(), v.link_label.as_str()));
+        assert_eq!(
+            (false, "https://www.ivpn.net/account/", "Open the IVPN client area"),
+            (v.question, v.link.as_str(), v.link_label.as_str())
+        );
     }
 
     /// A field that holds a config file says whether one was loaded: only a file keeps its line breaks.
     #[test]
     fn a_config_file_field_says_when_one_is_loaded() {
         let mut w = World { step: Some("windscribe".into()), ..World::default() };
-        assert_eq!((true, "Or load the downloaded file"), (view(&w.inputs()).form.fields[0].file, view(&w.inputs()).form.fields[0].file_note.as_str()));
+        assert_eq!(
+            (true, "Or load the downloaded file"),
+            (view(&w.inputs()).form.fields[0].file, view(&w.inputs()).form.fields[0].file_note.as_str())
+        );
         w.form.insert(form_key("windscribe", "config"), "[Interface]\nPrivateKey = x\n".into());
         assert_eq!("Config file loaded", view(&w.inputs()).form.fields[0].file_note);
     }

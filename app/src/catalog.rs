@@ -106,7 +106,12 @@ fn file(body: &str) -> Result<File> {
 fn usable(entries: Vec<Entry>, vpn: &str) -> Vec<Entry> {
     entries
         .into_iter()
-        .filter(|e| e.vpn == vpn && e.ipv4().is_some() && !e.place().is_empty() && (vpn != "wireguard" || e.wgpubkey.as_deref().is_some_and(|k| !k.is_empty())))
+        .filter(|e| {
+            e.vpn == vpn
+                && e.ipv4().is_some()
+                && !e.place().is_empty()
+                && (vpn != "wireguard" || e.wgpubkey.as_deref().is_some_and(|k| !k.is_empty()))
+        })
         .collect()
 }
 
@@ -128,7 +133,10 @@ pub fn countries(entries: &[Entry]) -> Vec<Country> {
                 name: place.into(),
                 code: code(place),
                 server_count: list.len() as i32,
-                cities: cities.into_iter().map(|c| City { id: stable_id(c), name: c.into(), key: Some(c.into()) }).collect(),
+                cities: cities
+                    .into_iter()
+                    .map(|c| City { id: stable_id(c), name: c.into(), key: Some(c.into()) })
+                    .collect(),
             }
         })
         .collect()
@@ -166,7 +174,8 @@ pub fn name(code: &str) -> Option<&'static str> {
     COUNTRIES.iter().find(|(c, _)| *c == code).map(|(_, name)| *name)
 }
 
-static CODES: LazyLock<HashMap<String, &str>> = LazyLock::new(|| COUNTRIES.iter().map(|(code, name)| (norm(name), *code)).collect());
+static CODES: LazyLock<HashMap<String, &str>> =
+    LazyLock::new(|| COUNTRIES.iter().map(|(code, name)| (norm(name), *code)).collect());
 
 #[rustfmt::skip]
 const ALIASES: &[(&str, &str)] = &[
@@ -180,13 +189,21 @@ const ALIASES: &[(&str, &str)] = &[
 /// ISO code for a catalogue country name; "··" when unknown rather than a plausible-looking wrong code.
 pub fn code(country: &str) -> String {
     let n = norm(country);
-    CODES.get(&n).copied().or_else(|| ALIASES.iter().find(|(alias, _)| *alias == n).map(|(_, code)| *code)).unwrap_or("··").to_string()
+    CODES
+        .get(&n)
+        .copied()
+        .or_else(|| ALIASES.iter().find(|(alias, _)| *alias == n).map(|(_, code)| *code))
+        .unwrap_or("··")
+        .to_string()
 }
 
 /// `e` as a server, named `name` or else its own server name or the first label of its host name. `e` must be usable
 /// (have an IPv4 address).
 pub fn server(e: &Entry, name: Option<&str>) -> Result<Server> {
-    let name = name.map(String::from).or_else(|| e.server_name.clone()).unwrap_or_else(|| e.hostname.split('.').next().unwrap_or_default().to_string());
+    let name = name
+        .map(String::from)
+        .or_else(|| e.server_name.clone())
+        .unwrap_or_else(|| e.hostname.split('.').next().unwrap_or_default().to_string());
     // No message of its own: like any other bug, it shows as the caller's fallback text.
     let ip = e.ipv4().ok_or_else(|| Error::State(String::new()))?;
     Ok(Server {
@@ -301,8 +318,11 @@ mod tests {
         for p in ["protonvpn", "surfshark", "airvpn", "expressvpn"] {
             let vpn = if p == "expressvpn" { "openvpn" } else { "wireguard" };
             let entries = parse(&fixture(&format!("catalog_{p}.json")), vpn).unwrap();
-            let bad: Vec<String> =
-                countries(&entries).into_iter().filter(|c| !iso.contains(c.code.as_str())).map(|c| format!("{}→{}", c.name, c.code)).collect();
+            let bad: Vec<String> = countries(&entries)
+                .into_iter()
+                .filter(|c| !iso.contains(c.code.as_str()))
+                .map(|c| format!("{}→{}", c.name, c.code))
+                .collect();
             assert_eq!(Vec::<String>::new(), bad, "{p}: {bad:?}");
         }
     }

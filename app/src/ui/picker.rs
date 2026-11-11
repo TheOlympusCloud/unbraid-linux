@@ -37,7 +37,8 @@ static DOTTED: LazyLock<Regex> = LazyLock::new(|| Regex::new("^[0-9.]+$").unwrap
 /// again. Also a pinned favourite saved without its server's address and key (before favourites kept them): star it
 /// again.
 pub fn stale(l: &Location) -> bool {
-    l.provider != "nord" && l.city.is_some() && l.region.is_none() || l.pinned.as_ref().is_some_and(|p| p.host.is_empty())
+    l.provider != "nord" && l.city.is_some() && l.region.is_none()
+        || l.pinned.as_ref().is_some_and(|p| p.host.is_empty())
 }
 
 /// A node name, or a Tailscale address: 100.64.0.0/10, so the second octet is 64 to 127.
@@ -65,7 +66,10 @@ pub fn servers(loc: &Location, account: Option<&str>) -> Vec<Server> {
 /// What a click on `l` hands on: a Nord server found over OpenVPN may have no NordLynx key, so under NordLynx its
 /// country is picked instead.
 pub fn picked(l: &Location) -> Location {
-    Location { pinned: l.pinned.clone().filter(|p| l.provider != "nord" || l.protocol.is_some() || !p.public_key.is_empty()), ..l.clone() }
+    Location {
+        pinned: l.pinned.clone().filter(|p| l.provider != "nord" || l.protocol.is_some() || !p.public_key.is_empty()),
+        ..l.clone()
+    }
 }
 
 /// Why a Tailscale exit can't be chosen while a profile not in use is edited: `r`, a live route, uses another one.
@@ -80,7 +84,10 @@ pub fn lock_note(s: &Setup, r: &Route) -> String {
 /// `s` holds `q`, as Kotlin's `contains(q, ignoreCase = true)` finds it: character by character.
 fn holds(s: &str, q: &str) -> bool {
     let (s, q): (Vec<char>, Vec<char>) = (s.chars().collect(), q.chars().collect());
-    q.is_empty() || s.windows(q.len()).any(|w| w.iter().zip(&q).all(|(a, b)| eq_ignore_case(a.encode_utf8(&mut [0; 4]), b.encode_utf8(&mut [0; 4]))))
+    q.is_empty()
+        || s.windows(q.len()).any(|w| {
+            w.iter().zip(&q).all(|(a, b)| eq_ignore_case(a.encode_utf8(&mut [0; 4]), b.encode_utf8(&mut [0; 4])))
+        })
 }
 
 /// What is open beside the list, or over it.
@@ -178,7 +185,11 @@ fn signed(accounts: &IndexMap<String, String>) -> Vec<&'static dyn Provider> {
 }
 
 /// The provider the picker shows: the one chosen, else the route's, else the first signed in; never one signed out.
-fn shown(chosen: Option<&str>, current: Option<&Location>, signed: &[&'static dyn Provider]) -> Option<&'static dyn Provider> {
+fn shown(
+    chosen: Option<&str>,
+    current: Option<&Location>,
+    signed: &[&'static dyn Provider],
+) -> Option<&'static dyn Provider> {
     let find = |id: &str| signed.iter().copied().find(|p| p.id() == id);
     chosen.and_then(find).or_else(|| current.and_then(|c| find(&c.provider))).or_else(|| signed.first().copied())
 }
@@ -358,7 +369,11 @@ pub fn view(i: &Inputs) -> PickerView {
     let group = p.group.clone().filter(|_| nord);
     // Double VPN and Onion only run over OpenVPN: UDP unless TCP was chosen.
     let openvpn_only = group.as_deref().is_some_and(|g| OPEN_VPN_ONLY.contains(&g));
-    let protocol = p.protocol.clone().filter(|x| nord && (!openvpn_only || x.starts_with("openvpn"))).or_else(|| (nord && openvpn_only).then(|| "openvpn_udp".into()));
+    let protocol = p
+        .protocol
+        .clone()
+        .filter(|x| nord && (!openvpn_only || x.starts_with("openvpn")))
+        .or_else(|| (nord && openvpn_only).then(|| "openvpn_udp".into()));
     // Specialty groups exist in a few countries only: list just those.
     let narrow = group.clone().filter(|g| g != "legacy_standard");
     let catalog = provider.and_then(|x| i.catalogs.get(x.id())).map_or(&[][..], Vec::as_slice);
@@ -372,10 +387,15 @@ pub fn view(i: &Inputs) -> PickerView {
     let on = |l: &Location| current.is_some_and(|c| !stale(l) && c.ident() == l.ident());
     let at = |l: Location| Location { group: group.clone(), protocol: protocol.clone(), ..l };
     let mut seen = HashSet::new();
-    let own_favs: Vec<&Location> = s.favorites.iter().filter(|f| f.provider == id && provider.is_some() && !stale(f) && seen.insert(f.fav_key())).collect();
+    let own_favs: Vec<&Location> = s
+        .favorites
+        .iter()
+        .filter(|f| f.provider == id && provider.is_some() && !stale(f) && seen.insert(f.fav_key()))
+        .collect();
     let mut nodes: Vec<&TsNode> = i.nodes.iter().collect();
     nodes.sort_by_key(|n| !n.online);
-    let exit_node = s.routes.iter().find(|r| r.ts_exit.is_some()).and_then(|r| r.ts_name.clone().or_else(|| r.ts_exit.clone()));
+    let exit_node =
+        s.routes.iter().find(|r| r.ts_exit.is_some()).and_then(|r| r.ts_name.clone().or_else(|| r.ts_exit.clone()));
     let custom = s.prefs.filter.routes && s.prefs.filter.server().is_some();
     let mut rows = Vec::new();
     let mut places = IndexMap::new();
@@ -386,9 +406,22 @@ pub fn view(i: &Inputs) -> PickerView {
 
     let country_row = |c: &Country| {
         let all = at(Location::country(id, c.id, &c.code, &c.name));
-        (PickRow { key: format!("c:{}", c.id), lead: Lead::Code, code: c.code.clone(), title: c.name.clone(), on: on(&all), more: true, ..PickRow::default() }, all)
+        (
+            PickRow {
+                key: format!("c:{}", c.id),
+                lead: Lead::Code,
+                code: c.code.clone(),
+                title: c.name.clone(),
+                on: on(&all),
+                more: true,
+                ..PickRow::default()
+            },
+            all,
+        )
     };
-    let favorites = |rows: &mut Vec<PickRow>, place: &mut dyn FnMut(&mut Vec<PickRow>, PickRow, Location), shown: &dyn Fn(&Location) -> bool| {
+    let favorites = |rows: &mut Vec<PickRow>,
+                     place: &mut dyn FnMut(&mut Vec<PickRow>, PickRow, Location),
+                     shown: &dyn Fn(&Location) -> bool| {
         let list: Vec<(usize, &&Location)> = own_favs.iter().enumerate().filter(|(_, f)| shown(f)).collect();
         if list.is_empty() {
             return;
@@ -396,7 +429,16 @@ pub fn view(i: &Inputs) -> PickerView {
         rows.push(label("Favorites"));
         for (n, f) in list {
             let l = Location { group: group.clone(), protocol: protocol.clone(), ..(*f).clone() };
-            let row = PickRow { key: format!("fav:{n}"), lead: Lead::Code, code: f.code(), title: f.label(), on: on(&l), star: true, starred: true, ..PickRow::default() };
+            let row = PickRow {
+                key: format!("fav:{n}"),
+                lead: Lead::Code,
+                code: f.code(),
+                title: f.label(),
+                on: on(&l),
+                star: true,
+                starred: true,
+                ..PickRow::default()
+            };
             place(rows, row, l);
         }
     };
@@ -428,7 +470,14 @@ pub fn view(i: &Inputs) -> PickerView {
         }
         // A device the tailnet hasn't listed yet (not connected, or just added) can still be named.
         if let Some(t) = typed {
-            rows.push(PickRow { kind: PickKind::Typed, key: t.into(), title: format!("Use {t}"), sub: "As this route's Tailscale exit node".into(), n: 1, ..PickRow::default() });
+            rows.push(PickRow {
+                kind: PickKind::Typed,
+                key: t.into(),
+                title: format!("Use {t}"),
+                sub: "As this route's Tailscale exit node".into(),
+                n: 1,
+                ..PickRow::default()
+            });
         }
     };
     let saved = |rows: &mut Vec<PickRow>, list: &[&crate::model::OwnServer]| {
@@ -437,7 +486,16 @@ pub fn view(i: &Inputs) -> PickerView {
         }
         rows.push(label("Saved servers"));
         for (k, v) in list.iter().enumerate() {
-            let row = PickRow { kind: PickKind::Server, key: v.id.clone(), title: v.name(), sub: v.kind().into(), code: v.code().into(), i: k as i32, n: list.len() as i32, ..PickRow::default() };
+            let row = PickRow {
+                kind: PickKind::Server,
+                key: v.id.clone(),
+                title: v.name(),
+                sub: v.kind().into(),
+                code: v.code().into(),
+                i: k as i32,
+                n: list.len() as i32,
+                ..PickRow::default()
+            };
             rows.push(PickRow { on: route.is_some_and(|r| r.own.as_ref() == Some(&v.id)), ..row });
         }
     };
@@ -445,13 +503,21 @@ pub fn view(i: &Inputs) -> PickerView {
     // An empty profile's default can also be Direct (Routes lists Direct only once an app uses it): on either tab, and
     // with no provider signed in too.
     if query.is_empty() && target == "default" {
-        rows.push(PickRow { key: "direct".into(), lead: Lead::Direct, title: "Direct".into(), sub: "No VPN: apps use your normal connection".into(), ..PickRow::default() });
+        rows.push(PickRow {
+            key: "direct".into(),
+            lead: Lead::Direct,
+            title: "Direct".into(),
+            sub: "No VPN: apps use your normal connection".into(),
+            ..PickRow::default()
+        });
     }
     // Search covers the open tab: favourites, countries and cities, or devices and saved servers.
     if !query.is_empty() && p.mine {
         let devices: Vec<&TsNode> = nodes.iter().copied().filter(|d| hit(&d.name) || hit(&d.ip)).collect();
         let own: Vec<_> = s.servers.iter().filter(|v| hit(&v.name()) || hit(v.kind())).collect();
-        let typed = Some(query).filter(|q| s.tailscale() && valid_node(q) && i.nodes.iter().all(|d| d.ip != *q && !eq_ignore_case(&d.name, q)));
+        let typed = Some(query).filter(|q| {
+            s.tailscale() && valid_node(q) && i.nodes.iter().all(|d| d.ip != *q && !eq_ignore_case(&d.name, q))
+        });
         if devices.is_empty() && own.is_empty() && typed.is_none() {
             rows.push(message("No matches", ""));
         }
@@ -461,7 +527,11 @@ pub fn view(i: &Inputs) -> PickerView {
         saved(&mut rows, &own);
     } else if !query.is_empty() {
         let by_name: Vec<&Country> = countries.iter().copied().filter(|c| hit(&c.name) || hit(&c.code)).collect();
-        let cities: Vec<_> = countries.iter().flat_map(|c| c.cities.iter().filter(|t| hit(&t.name)).map(move |t| (*c, t))).filter(|(c, _)| !by_name.contains(c)).collect();
+        let cities: Vec<_> = countries
+            .iter()
+            .flat_map(|c| c.cities.iter().filter(|t| hit(&t.name)).map(move |t| (*c, t)))
+            .filter(|(c, _)| !by_name.contains(c))
+            .collect();
         if !own_favs.iter().any(|f| hit(&f.label())) && by_name.is_empty() && cities.is_empty() {
             rows.push(message("No matches", ""));
         } else {
@@ -474,8 +544,21 @@ pub fn view(i: &Inputs) -> PickerView {
                 place(&mut rows, row, l);
             }
             for (c, t) in cities {
-                let l = at(Location { city_id: Some(t.id), city: Some(t.name.clone()), region: t.key.clone(), ..Location::country(id, c.id, &c.code, &c.name) });
-                let row = PickRow { key: format!("city:{}:{}", c.id, t.id), lead: Lead::Code, code: c.code.clone(), title: t.name.clone(), sub: c.name.clone(), on: on(&l), ..PickRow::default() };
+                let l = at(Location {
+                    city_id: Some(t.id),
+                    city: Some(t.name.clone()),
+                    region: t.key.clone(),
+                    ..Location::country(id, c.id, &c.code, &c.name)
+                });
+                let row = PickRow {
+                    key: format!("city:{}:{}", c.id, t.id),
+                    lead: Lead::Code,
+                    code: c.code.clone(),
+                    title: t.name.clone(),
+                    sub: c.name.clone(),
+                    on: on(&l),
+                    ..PickRow::default()
+                };
                 place(&mut rows, row, l);
             }
         }
@@ -489,7 +572,12 @@ pub fn view(i: &Inputs) -> PickerView {
         let empty = !s.tailscale() && s.servers.is_empty();
         rows.push(PickRow {
             kind: PickKind::Settings,
-            title: if empty { "No servers yet. Add a WireGuard, OpenVPN or Shadowsocks server, or turn on Tailscale, in Settings." } else { "Add or manage servers in Settings." }.into(),
+            title: if empty {
+                "No servers yet. Add a WireGuard, OpenVPN or Shadowsocks server, or turn on Tailscale, in Settings."
+            } else {
+                "Add or manage servers in Settings."
+            }
+            .into(),
             action: "Open Settings".into(),
             ..PickRow::default()
         });
@@ -502,7 +590,14 @@ pub fn view(i: &Inputs) -> PickerView {
         }
     } else {
         let any = at(Location::of(id));
-        let row = PickRow { key: "fastest".into(), lead: Lead::Fastest, title: if has_load { "Fastest anywhere" } else { "Automatic" }.into(), sub: "Any country, picked on connect".into(), on: on(&any), ..PickRow::default() };
+        let row = PickRow {
+            key: "fastest".into(),
+            lead: Lead::Fastest,
+            title: if has_load { "Fastest anywhere" } else { "Automatic" }.into(),
+            sub: "Any country, picked on connect".into(),
+            on: on(&any),
+            ..PickRow::default()
+        };
         place(&mut rows, row, any);
         favorites(&mut rows, &mut place, &|_| true);
         rows.push(PickRow {
@@ -531,13 +626,31 @@ pub fn view(i: &Inputs) -> PickerView {
     if let Some(c) = country {
         let all = at(Location::country(id, c.id, &c.code, &c.name));
         let starred = |l: &Location| own_favs.iter().any(|f| f.fav_key() == l.fav_key());
-        let row = |key: String, l: &Location, title: String, sub: String| PickRow { key, title, sub, on: on(l), star: true, starred: starred(l), ..PickRow::default() };
+        let row = |key: String, l: &Location, title: String, sub: String| PickRow {
+            key,
+            title,
+            sub,
+            on: on(l),
+            star: true,
+            starred: starred(l),
+            ..PickRow::default()
+        };
         panel.push(PickRow { kind: PickKind::Title, title: c.name.clone(), ..PickRow::default() });
-        place(&mut panel, row(format!("in:{}", c.id), &all, format!("{} in {}", if has_load { "Fastest" } else { "Automatic" }, c.name), String::new()), all.clone());
+        place(
+            &mut panel,
+            row(
+                format!("in:{}", c.id),
+                &all,
+                format!("{} in {}", if has_load { "Fastest" } else { "Automatic" }, c.name),
+                String::new(),
+            ),
+            all.clone(),
+        );
         if c.cities.len() > 1 {
             panel.push(label("Cities"));
             for t in &c.cities {
-                let l = Location { city_id: Some(t.id), city: Some(t.name.clone()), region: t.key.clone(), ..all.clone() };
+                let l =
+                    Location { city_id: Some(t.id), city: Some(t.name.clone()), region: t.key.clone(), ..all.clone() };
                 place(&mut panel, row(format!("in:{}:{}", c.id, t.id), &l, t.name.clone(), String::new()), l);
             }
         }
@@ -549,9 +662,16 @@ pub fn view(i: &Inputs) -> PickerView {
                 Some(list) => {
                     for (k, v) in list.iter().enumerate() {
                         let l = Location { pinned: Some(v.clone()), ..all.clone() };
-                        let sub = [Some(v.city.clone()).filter(|c| !c.trim().is_empty()), (has_load && v.load >= 0).then(|| format!("{}% load", v.load))];
+                        let sub = [
+                            Some(v.city.clone()).filter(|c| !c.trim().is_empty()),
+                            (has_load && v.load >= 0).then(|| format!("{}% load", v.load)),
+                        ];
                         let sub = sub.into_iter().flatten().collect::<Vec<_>>().join(" · ");
-                        place(&mut panel, PickRow { small: true, ..row(format!("pin:{k}"), &l, v.name.clone(), sub) }, l);
+                        place(
+                            &mut panel,
+                            PickRow { small: true, ..row(format!("pin:{k}"), &l, v.name.clone(), sub) },
+                            l,
+                        );
                     }
                 }
             }
@@ -559,12 +679,23 @@ pub fn view(i: &Inputs) -> PickerView {
         }
     }
 
-    let group_label = |g: Option<&str>| NORD_GROUPS.iter().find(|(k, _)| *k == g).map_or_else(|| g.unwrap_or_default().to_string(), |(_, label)| label.to_string());
-    let blocker = route.filter(|_| current.is_some_and(|c| c.provider == id)).zip(provider.and_then(|x| x.protection()));
+    let group_label = |g: Option<&str>| {
+        NORD_GROUPS
+            .iter()
+            .find(|(k, _)| *k == g)
+            .map_or_else(|| g.unwrap_or_default().to_string(), |(_, label)| label.to_string())
+    };
+    let blocker =
+        route.filter(|_| current.is_some_and(|c| c.provider == id)).zip(provider.and_then(|x| x.protection()));
     let options = match () {
         _ if p.mine || !query.is_empty() || provider.is_none() => String::new(),
         _ if nord => group_label(group.as_deref()),
-        _ if blocker.is_some() => if blocker.as_ref().is_some_and(|(r, _)| s.protects(r)) && !custom { "Protection on" } else { "Protection off" }.into(),
+        _ if blocker.is_some() => if blocker.as_ref().is_some_and(|(r, _)| s.protects(r)) && !custom {
+            "Protection on"
+        } else {
+            "Protection off"
+        }
+        .into(),
         _ => "App settings".into(),
     };
     let name = provider.map_or("", |x| x.name());
@@ -580,8 +711,15 @@ pub fn view(i: &Inputs) -> PickerView {
             _ if route.is_some_and(Route::imported) => "Your own server".into(),
             None => "Pick where this route exits".into(),
             Some(c) => {
-                let how = c.pinned.is_none().then(|| if has_load { "fastest server" } else { "automatic server" }.to_string());
-                [route.map(Route::source), c.pinned.as_ref().map(|v| v.name.clone()).or_else(|| c.city.clone()), how].into_iter().flatten().collect::<Vec<_>>().join(" · ")
+                let how = c
+                    .pinned
+                    .is_none()
+                    .then(|| if has_load { "fastest server" } else { "automatic server" }.to_string());
+                [route.map(Route::source), c.pinned.as_ref().map(|v| v.name.clone()).or_else(|| c.city.clone()), how]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .join(" · ")
             }
         },
         hue: route.map_or(0, |r| r.hue),
@@ -589,9 +727,21 @@ pub fn view(i: &Inputs) -> PickerView {
         fields: !p.mine && provider.is_some(),
         provider_id: id.into(),
         provider: name.into(),
-        providers: signed.iter().map(|x| Choice { key: x.id().into(), label: x.name().into(), sub: String::new(), on: x.id() == id, enabled: true }).collect(),
+        providers: signed
+            .iter()
+            .map(|x| Choice {
+                key: x.id().into(),
+                label: x.name().into(),
+                sub: String::new(),
+                on: x.id() == id,
+                enabled: true,
+            })
+            .collect(),
         protocol: if nord {
-            NORD_PROTOCOLS.iter().find(|(k, _, _)| *k == protocol.as_deref()).map_or_else(|| protocol.clone().unwrap_or_default(), |(_, label, _)| label.to_string())
+            NORD_PROTOCOLS
+                .iter()
+                .find(|(k, _, _)| *k == protocol.as_deref())
+                .map_or_else(|| protocol.clone().unwrap_or_default(), |(_, label, _)| label.to_string())
         } else {
             provider.map(|x| x.protocol()).unwrap_or_default()
         },
@@ -600,7 +750,13 @@ pub fn view(i: &Inputs) -> PickerView {
                 .iter()
                 .map(|(k, label, sub)| {
                     let ok = k.is_some() || !openvpn_only;
-                    Choice { key: k.unwrap_or_default().into(), label: label.to_string(), sub: if ok { *sub } else { "Double VPN and Onion use OpenVPN" }.into(), on: *k == protocol.as_deref(), enabled: ok }
+                    Choice {
+                        key: k.unwrap_or_default().into(),
+                        label: label.to_string(),
+                        sub: if ok { *sub } else { "Double VPN and Onion use OpenVPN" }.into(),
+                        on: *k == protocol.as_deref(),
+                        enabled: ok,
+                    }
                 })
                 .collect()
         } else {
@@ -612,13 +768,41 @@ pub fn view(i: &Inputs) -> PickerView {
         options,
         country: country.map(|c| c.name.clone()).unwrap_or_default(),
         panel,
-        hint: format!("Click a country to use its {} server, or its ⋯ to choose a city or a server here.", if has_load { "fastest" } else { "automatic" }),
+        hint: format!(
+            "Click a country to use its {} server, or its ⋯ to choose a city or a server here.",
+            if has_load { "fastest" } else { "automatic" }
+        ),
         options_open: p.sheet == Sheet::Options,
-        groups: if nord { NORD_GROUPS.iter().map(|(k, label)| Choice { key: k.unwrap_or_default().into(), label: label.to_string(), sub: String::new(), on: *k == group.as_deref(), enabled: true }).collect() } else { vec![] },
+        groups: if nord {
+            NORD_GROUPS
+                .iter()
+                .map(|(k, label)| Choice {
+                    key: k.unwrap_or_default().into(),
+                    label: label.to_string(),
+                    sub: String::new(),
+                    on: *k == group.as_deref(),
+                    enabled: true,
+                })
+                .collect()
+        } else {
+            vec![]
+        },
         // unbraid's filter on VPN routes replaces the provider's blocking resolver: shown off, the choice kept.
         blocking: blocker.map(|(r, o)| Blocking {
             title: format!("{name} blocking"),
-            sub: if custom { "Off while unbraid's filter is on for VPN routes".into() } else { format!("{} · {}", o.label, if r.filter.is_none() { format!("as set for {name} in Settings") } else { "for this route only".into() }) },
+            sub: if custom {
+                "Off while unbraid's filter is on for VPN routes".into()
+            } else {
+                format!(
+                    "{} · {}",
+                    o.label,
+                    if r.filter.is_none() {
+                        format!("as set for {name} in Settings")
+                    } else {
+                        "for this route only".into()
+                    }
+                )
+            },
             on: s.protects(r) && !custom,
             enabled: !custom,
         }),
@@ -660,7 +844,14 @@ mod tests {
 
     /// The set-up app of the screenshots: three Nord countries and a WireGuard server, Nord signed in.
     fn set_up() -> Setup {
-        let lab = WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
+        let lab = WgPeer::new(
+            "Home lab",
+            KEY,
+            vec!["10.8.0.2/32".into()],
+            KEY,
+            "203.0.113.7:51820",
+            vec!["0.0.0.0/0".into()],
+        );
         Setup {
             routes: vec![
                 Route::new("nl", Location::country("nord", 153, "NL", "Netherlands")),
@@ -725,7 +916,18 @@ mod tests {
         for ok in ["laptop", "my-pc.tail1234.ts.net", "100.64.0.1", "100.127.255.255", "pi4", &"a".repeat(63)] {
             assert!(valid_node(ok), "{ok}");
         }
-        for bad in ["", "-laptop", "my pc", "10.0.0.1", "100.63.0.1", "100.128.0.1", "100.64.0", "100.64.0.256", "100.64..1", &"a".repeat(64)] {
+        for bad in [
+            "",
+            "-laptop",
+            "my pc",
+            "10.0.0.1",
+            "100.63.0.1",
+            "100.128.0.1",
+            "100.64.0",
+            "100.64.0.256",
+            "100.64..1",
+            &"a".repeat(64),
+        ] {
             assert!(!valid_node(bad), "{bad}");
         }
     }
@@ -735,8 +937,14 @@ mod tests {
         let city = Location { city: Some("Gothenburg".into()), ..Location::country("mullvad", 1, "SE", "Sweden") };
         assert!(stale(&city), "a city saved before regions were");
         assert!(!stale(&Location { region: Some("se-got".into()), ..city.clone() }));
-        assert!(!stale(&Location { city: Some("Amsterdam".into()), ..Location::country("nord", 153, "NL", "Netherlands") }), "Nord's cities have ids of their own");
-        let pin = |host: &str| Location { pinned: Some(Server { name: "nl1".into(), host: host.into(), ..Server::default() }), ..Location::of("nord") };
+        assert!(
+            !stale(&Location { city: Some("Amsterdam".into()), ..Location::country("nord", 153, "NL", "Netherlands") }),
+            "Nord's cities have ids of their own"
+        );
+        let pin = |host: &str| Location {
+            pinned: Some(Server { name: "nl1".into(), host: host.into(), ..Server::default() }),
+            ..Location::of("nord")
+        };
         assert!(stale(&pin("")), "a favourite pinned without its address");
         assert!(!stale(&pin("nl1.nordvpn.com")));
     }
@@ -754,15 +962,30 @@ mod tests {
     fn a_new_route_as_approved() {
         let w = World::new();
         let v = w.view("", &w.open(""));
-        assert_eq!(("New route", "Choose a location", "Pick where this route exits"), (v.overline.as_str(), v.title.as_str(), v.sub.as_str()));
+        assert_eq!(
+            ("New route", "Choose a location", "Pick where this route exits"),
+            (v.overline.as_str(), v.title.as_str(), v.sub.as_str())
+        );
         assert!(!v.mine && v.fields);
-        assert_eq!(("NordVPN", "NordLynx", "Country or city"), (v.provider.as_str(), v.protocol.as_str(), v.placeholder.as_str()));
-        assert_eq!(vec!["Fastest anywhere", "Favorites", "United States", "Italy", "Netherlands", "All countries"], titles(&v.rows));
+        assert_eq!(
+            ("NordVPN", "NordLynx", "Country or city"),
+            (v.provider.as_str(), v.protocol.as_str(), v.placeholder.as_str())
+        );
+        assert_eq!(
+            vec!["Fastest anywhere", "Favorites", "United States", "Italy", "Netherlands", "All countries"],
+            titles(&v.rows)
+        );
         let all = &v.rows[5];
-        assert_eq!((PickKind::All, "9", "Click a country to use its fastest server", false), (all.kind, all.code.as_str(), all.sub.as_str(), all.on));
+        assert_eq!(
+            (PickKind::All, "9", "Click a country to use its fastest server", false),
+            (all.kind, all.code.as_str(), all.sub.as_str(), all.on)
+        );
         assert!(v.rows[2..5].iter().all(|r| r.star && r.starred && r.lead == Lead::Code && !r.on));
         assert_eq!("Standard", v.options);
-        assert_eq!(vec!["Standard", "P2P", "Dedicated IP", "Double VPN", "Onion"], v.groups.iter().map(|g| g.label.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["Standard", "P2P", "Dedicated IP", "Double VPN", "Onion"],
+            v.groups.iter().map(|g| g.label.as_str()).collect::<Vec<_>>()
+        );
         assert_eq!("Click a country to use its fastest server, or its ⋯ to choose a city or a server here.", v.hint);
         assert_eq!(Some(&Location::of("nord")), v.places.get("fastest"));
         assert_eq!((None, None, None), (v.refresh, v.narrow, v.load));
@@ -780,17 +1003,37 @@ mod tests {
         p.open_country(&v.places["c:81"]);
         let v = w.view("", &p);
         assert_eq!("Germany", v.country);
-        assert_eq!(vec!["Germany", "Fastest in Germany", "Cities", "Frankfurt", "Berlin", "Hamburg", "Servers"], titles(&v.panel));
+        assert_eq!(
+            vec!["Germany", "Fastest in Germany", "Cities", "Frankfurt", "Berlin", "Hamburg", "Servers"],
+            titles(&v.panel)
+        );
         assert_eq!("Show", v.panel[6].action);
         assert_eq!(Some(2), v.places["in:81:2"].city_id);
         p.servers_open = true;
-        assert_eq!(("Hide", "Loading servers"), (w.view("", &p).panel[6].action.as_str(), w.view("", &p).panel[7].title.as_str()));
-        let server = |name: &str, load: i32, city: &str| Server { name: name.into(), host: format!("{name}.nordvpn.com"), load, city: city.into(), ..Server::default() };
+        assert_eq!(
+            ("Hide", "Loading servers"),
+            (w.view("", &p).panel[6].action.as_str(), w.view("", &p).panel[7].title.as_str())
+        );
+        let server = |name: &str, load: i32, city: &str| Server {
+            name: name.into(),
+            host: format!("{name}.nordvpn.com"),
+            load,
+            city: city.into(),
+            ..Server::default()
+        };
         w.servers = Some(vec![server("de1012", 9, "Frankfurt"), server("de877", -1, "")]);
-        w.setup.favorites.push(Location { pinned: Some(server("de1012", 30, "Frankfurt")), ..Location::country("nord", 81, "DE", "Germany") });
+        w.setup.favorites.push(Location {
+            pinned: Some(server("de1012", 30, "Frankfurt")),
+            ..Location::country("nord", 81, "DE", "Germany")
+        });
         let v = w.view("", &p);
-        let pins: Vec<_> = v.panel.iter().filter(|r| r.small).map(|r| (r.title.as_str(), r.sub.as_str(), r.starred)).collect();
-        assert_eq!(vec![("de1012", "Frankfurt · 9% load", true), ("de877", "", false)], pins, "a pin is a favourite by its server's name");
+        let pins: Vec<_> =
+            v.panel.iter().filter(|r| r.small).map(|r| (r.title.as_str(), r.sub.as_str(), r.starred)).collect();
+        assert_eq!(
+            vec![("de1012", "Frankfurt · 9% load", true), ("de877", "", false)],
+            pins,
+            "a pin is a favourite by its server's name"
+        );
         assert_eq!(Some(&Location::country("nord", 81, "DE", "Germany")), v.load.as_ref());
         // Another country starts with its servers hidden; Route options closes the panel.
         p.show(Sheet::Country(74));
@@ -824,17 +1067,31 @@ mod tests {
     fn a_route_shows_where_it_exits() {
         let mut w = World::new();
         let v = w.view("it", &w.open("it"));
-        assert_eq!(("IT route · location", "Italy", "Nord · fastest server", 2), (v.overline.as_str(), v.title.as_str(), v.sub.as_str(), v.hue));
+        assert_eq!(
+            ("IT route · location", "Italy", "Nord · fastest server", 2),
+            (v.overline.as_str(), v.title.as_str(), v.sub.as_str(), v.hue)
+        );
         assert_eq!(vec!["Italy"], v.rows.iter().filter(|r| r.on).map(|r| r.title.as_str()).collect::<Vec<_>>());
-        w.setup.routes[2].loc = Location { pinned: Some(Server { name: "it201".into(), host: "it201.nordvpn.com".into(), ..Server::default() }), ..w.setup.routes[2].loc.clone() };
+        w.setup.routes[2].loc = Location {
+            pinned: Some(Server { name: "it201".into(), host: "it201.nordvpn.com".into(), ..Server::default() }),
+            ..w.setup.routes[2].loc.clone()
+        };
         assert_eq!("Nord · it201", w.view("it", &w.open("it")).sub);
-        w.setup.routes[2].loc = Location { city: Some("Milan".into()), city_id: Some(15), ..Location::country("nord", 106, "IT", "Italy") };
+        w.setup.routes[2].loc =
+            Location { city: Some("Milan".into()), city_id: Some(15), ..Location::country("nord", 106, "IT", "Italy") };
         assert_eq!("Nord · Milan · fastest server", w.view("it", &w.open("it")).sub);
         let v = w.view("lab", &w.open("lab"));
-        assert_eq!(("WG route · location", "Home lab", "Your own server", true), (v.overline.as_str(), v.title.as_str(), v.sub.as_str(), v.mine), "a saved server opens on My servers");
+        assert_eq!(
+            ("WG route · location", "Home lab", "Your own server", true),
+            (v.overline.as_str(), v.title.as_str(), v.sub.as_str(), v.mine),
+            "a saved server opens on My servers"
+        );
         let v = w.view("default", &w.open("default"));
         assert_eq!(("Default route", "Choose a location"), (v.overline.as_str(), v.title.as_str()));
-        assert_eq!((Lead::Direct, "Direct", "No VPN: apps use your normal connection"), (v.rows[0].lead, v.rows[0].title.as_str(), v.rows[0].sub.as_str()));
+        assert_eq!(
+            (Lead::Direct, "Direct", "No VPN: apps use your normal connection"),
+            (v.rows[0].lead, v.rows[0].title.as_str(), v.rows[0].sub.as_str())
+        );
     }
 
     /// Double VPN and Onion run over OpenVPN only: UDP unless TCP was chosen, and NordLynx can't be.
@@ -847,13 +1104,19 @@ mod tests {
         assert_eq!(("OpenVPN UDP", "Double VPN"), (v.protocol.as_str(), v.options.as_str()));
         assert_eq!(Some("legacy_double_vpn"), v.narrow.as_deref());
         let lynx = &v.protocols[0];
-        assert_eq!(("NordLynx", "Double VPN and Onion use OpenVPN", false), (lynx.label.as_str(), lynx.sub.as_str(), lynx.enabled));
+        assert_eq!(
+            ("NordLynx", "Double VPN and Onion use OpenVPN", false),
+            (lynx.label.as_str(), lynx.sub.as_str(), lynx.enabled)
+        );
         assert!(v.protocols[1].on && v.groups[3].on);
         assert_eq!(Some("openvpn_udp"), v.places["fastest"].protocol.as_deref());
         // Specialty groups exist in a few countries only: once known, just those are listed.
         w.allowed = Some(IndexSet::from(["NL".to_string(), "CH".to_string()]));
         p.all_open = true;
-        assert_eq!(vec!["Netherlands", "Switzerland"], w.view("", &p).rows.iter().filter(|r| r.more).map(|r| r.title.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["Netherlands", "Switzerland"],
+            w.view("", &p).rows.iter().filter(|r| r.more).map(|r| r.title.as_str()).collect::<Vec<_>>()
+        );
         p.protocol = Some("openvpn_tcp".into());
         assert_eq!("OpenVPN TCP", w.view("", &p).protocol);
         // Another provider has neither: its protocol is said, not chosen.
@@ -870,13 +1133,26 @@ mod tests {
     #[test]
     fn a_protocol_applies_to_the_route() {
         let mut w = World::new();
-        let pin = |key: &str| Server { name: "nl1".into(), host: "nl1.nordvpn.com".into(), public_key: key.into(), ..Server::default() };
-        w.setup.routes[0].loc = Location { group: Some("legacy_double_vpn".into()), protocol: Some("openvpn_tcp".into()), pinned: Some(pin("")), ..w.setup.routes[0].loc.clone() };
+        let pin = |key: &str| Server {
+            name: "nl1".into(),
+            host: "nl1.nordvpn.com".into(),
+            public_key: key.into(),
+            ..Server::default()
+        };
+        w.setup.routes[0].loc = Location {
+            group: Some("legacy_double_vpn".into()),
+            protocol: Some("openvpn_tcp".into()),
+            pinned: Some(pin("")),
+            ..w.setup.routes[0].loc.clone()
+        };
         let mut p = w.open("nl");
         let to = p.set_protocol(&w.setup, "nl", None).unwrap();
         assert_eq!((None, None, None), (to.protocol, to.group, to.pinned));
         let to = p.set_protocol(&w.setup, "nl", Some("openvpn_udp")).unwrap();
-        assert_eq!((Some("openvpn_udp"), Some("legacy_double_vpn"), true), (to.protocol.as_deref(), to.group.as_deref(), to.pinned.is_some()));
+        assert_eq!(
+            (Some("openvpn_udp"), Some("legacy_double_vpn"), true),
+            (to.protocol.as_deref(), to.group.as_deref(), to.pinned.is_some())
+        );
         w.setup.routes[0].loc.group = None;
         w.setup.routes[0].loc.pinned = Some(pin(KEY));
         assert!(p.set_protocol(&w.setup, "nl", None).unwrap().pinned.is_some(), "a pin with its key stays");
@@ -905,19 +1181,41 @@ mod tests {
         let mut p = w.open("");
         p.tab(true);
         let v = w.view("", &p);
-        assert_eq!(vec!["No servers yet. Add a WireGuard, OpenVPN or Shadowsocks server, or turn on Tailscale, in Settings."], titles(&v.rows));
+        assert_eq!(
+            vec!["No servers yet. Add a WireGuard, OpenVPN or Shadowsocks server, or turn on Tailscale, in Settings."],
+            titles(&v.rows)
+        );
         assert_eq!(("Server or device", false, ""), (v.placeholder.as_str(), v.fields, v.options.as_str()));
         w.setup.home.tailscale = true;
         w.setup.servers = vec![OwnServer { id: "s1".into(), wg: w.setup.routes[3].wg.clone(), ovpn: None, ss: None }];
         w.setup.routes[3].own = Some("s1".into());
         let v = w.view("lab", &p);
-        assert_eq!(vec!["Tailscale exit node", "Connect and sign in to Tailscale to see your devices.", "Saved servers", "Home lab", "Add or manage servers in Settings."], titles(&v.rows));
+        assert_eq!(
+            vec![
+                "Tailscale exit node",
+                "Connect and sign in to Tailscale to see your devices.",
+                "Saved servers",
+                "Home lab",
+                "Add or manage servers in Settings."
+            ],
+            titles(&v.rows)
+        );
         assert_eq!(("WireGuard", "WG", true), (v.rows[3].sub.as_str(), v.rows[3].code.as_str(), v.rows[3].on));
         w.nodes = vec![node("nas", "100.101.1.2", false), node("pi", "100.101.1.3", true)];
-        w.setup.routes.push(Route { ts_exit: Some("100.101.1.3".into()), ts_name: Some("pi".into()), ..Route::new("ts", Location::default()) });
+        w.setup.routes.push(Route {
+            ts_exit: Some("100.101.1.3".into()),
+            ts_name: Some("pi".into()),
+            ..Route::new("ts", Location::default())
+        });
         let v = w.view("ts", &p);
-        assert_eq!(vec!["Tailscale exit node", "One exit node at a time. Choosing another replaces pi.", "pi", "nas"], titles(&v.rows)[..4]);
-        assert_eq!(("100.101.1.3 · online", true, true, 0, 2), (v.rows[2].sub.as_str(), v.rows[2].online, v.rows[2].on, v.rows[2].i, v.rows[2].n));
+        assert_eq!(
+            vec!["Tailscale exit node", "One exit node at a time. Choosing another replaces pi.", "pi", "nas"],
+            titles(&v.rows)[..4]
+        );
+        assert_eq!(
+            ("100.101.1.3 · online", true, true, 0, 2),
+            (v.rows[2].sub.as_str(), v.rows[2].online, v.rows[2].on, v.rows[2].i, v.rows[2].n)
+        );
         assert_eq!("Tailscale exit node", v.sub);
         // A device the tailnet hasn't listed can be typed; one it lists, by name or address, isn't offered twice.
         p.query = "100.100.7.7".into();
@@ -927,7 +1225,11 @@ mod tests {
         p.query = "PI".into();
         assert_eq!(vec!["Tailscale exit node", "pi"], titles(&w.view("ts", &p).rows));
         p.query = "wireguard".into();
-        assert_eq!(vec!["Tailscale exit node", "Use wireguard", "Saved servers", "Home lab"], titles(&w.view("ts", &p).rows), "saved servers are found by their kind");
+        assert_eq!(
+            vec!["Tailscale exit node", "Use wireguard", "Saved servers", "Home lab"],
+            titles(&w.view("ts", &p).rows),
+            "saved servers are found by their kind"
+        );
         p.query = "nothing here!".into();
         assert_eq!(vec!["No matches"], titles(&w.view("ts", &p).rows));
         // While a profile not in use is edited, another live exit keeps this one from being chosen.
@@ -935,7 +1237,13 @@ mod tests {
         w.setup.profile = Some("Work".into());
         p.ts_note = Some(lock_note(&w.setup, &w.setup.routes[4]));
         let v = w.view("ts", &p);
-        assert_eq!(("Work uses the Tailscale exit pi. Tailscale uses one exit node at a time: pick that one here, or this one once this profile is in use.", true), (v.rows[0].title.as_str(), v.rows[0].on));
+        assert_eq!(
+            (
+                "Work uses the Tailscale exit pi. Tailscale uses one exit node at a time: pick that one here, or this one once this profile is in use.",
+                true
+            ),
+            (v.rows[0].title.as_str(), v.rows[0].on)
+        );
     }
 
     /// No provider signed in: Add a provider, or Direct for a default; servers of your own open My servers.
@@ -961,7 +1269,13 @@ mod tests {
         let mut w = World::new();
         w.accounts.insert("mullvad".into(), "test".into());
         w.catalogs.insert("mullvad".into(), nord_countries());
-        w.setup.routes.push(Route { hue: 4, ..Route::new("se", Location { region: Some("se-got".into()), ..Location::country("mullvad", 1, "SE", "Sweden") }) });
+        w.setup.routes.push(Route {
+            hue: 4,
+            ..Route::new(
+                "se",
+                Location { region: Some("se-got".into()), ..Location::country("mullvad", 1, "SE", "Sweden") },
+            )
+        });
         let v = w.view("se", &w.open("se"));
         assert_eq!(("Mullvad", "Protection off"), (v.provider.as_str(), v.options.as_str()));
         let b = v.blocking.unwrap();
@@ -971,10 +1285,18 @@ mod tests {
         let v = w.view("se", &w.open("se"));
         assert_eq!(("Protection on", true), (v.options.as_str(), v.blocking.as_ref().unwrap().on));
         assert!(v.blocking.unwrap().sub.ends_with(" · for this route only"));
-        w.setup.prefs.filter = crate::model::Filter { id: Some("nextdns".into()), value: "abc123".into(), routes: true, ..Default::default() };
+        w.setup.prefs.filter = crate::model::Filter {
+            id: Some("nextdns".into()),
+            value: "abc123".into(),
+            routes: true,
+            ..Default::default()
+        };
         let v = w.view("se", &w.open("se"));
         let b = v.blocking.unwrap();
-        assert_eq!(("Protection off", "Off while unbraid's filter is on for VPN routes", false, false), (v.options.as_str(), b.sub.as_str(), b.on, b.enabled));
+        assert_eq!(
+            ("Protection off", "Off while unbraid's filter is on for VPN routes", false, false),
+            (v.options.as_str(), b.sub.as_str(), b.on, b.enabled)
+        );
         // A new route has no blocking of its own yet; a provider with none offers App settings.
         assert_eq!(None, w.view("", &w.open("")).blocking);
         let mut p = w.open("");
@@ -986,9 +1308,18 @@ mod tests {
     #[test]
     fn favourites_once_and_fresh() {
         let mut w = World::new();
-        w.setup.favorites.push(Location { group: Some("legacy_p2p".into()), ..Location::country("nord", 228, "US", "United States") });
-        w.setup.favorites.push(Location { pinned: Some(Server { name: "nl9".into(), ..Server::default() }), ..Location::of("nord") });
+        w.setup.favorites.push(Location {
+            group: Some("legacy_p2p".into()),
+            ..Location::country("nord", 228, "US", "United States")
+        });
+        w.setup.favorites.push(Location {
+            pinned: Some(Server { name: "nl9".into(), ..Server::default() }),
+            ..Location::of("nord")
+        });
         let v = w.view("", &w.open(""));
-        assert_eq!(vec!["Fastest anywhere", "Favorites", "United States", "Italy", "Netherlands", "All countries"], titles(&v.rows));
+        assert_eq!(
+            vec!["Fastest anywhere", "Favorites", "United States", "Italy", "Netherlands", "All countries"],
+            titles(&v.rows)
+        );
     }
 }

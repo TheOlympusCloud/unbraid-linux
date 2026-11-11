@@ -34,7 +34,8 @@ pub fn config(json: &str, apps: impl Fn(&str) -> Matchers, own: Option<&str>) ->
             .position(|r| r["action"] == "reject" && r.get("ip_cidr").is_some() && r.get("inbound").is_none())
             .or_else(|| route_rules.iter().rposition(|r| r["action"] == "hijack-dns"))
             .map_or(0, |i| i + 1);
-        route_rules.insert(at, json!({"inbound": ["tun"], "process_path": [own], "action": "resolve", "server": "local"}));
+        route_rules
+            .insert(at, json!({"inbound": ["tun"], "process_path": [own], "action": "resolve", "server": "local"}));
         route_rules.insert(at + 1, json!({"inbound": ["tun"], "process_path": [own], "outbound": "direct"}));
     }
     c["route"]["rules"] = Value::Array(route_rules);
@@ -55,8 +56,11 @@ fn rules(list: &Value, apps: &impl Fn(&str) -> Matchers) -> Vec<Value> {
 /// `r` matching processes instead of packages; none when none of its apps has a known process.
 fn rule(r: &Map<String, Value>, apps: &impl Fn(&str) -> Matchers) -> Option<Value> {
     let Some(pkgs) = r.get("package_name") else { return Some(Value::Object(r.clone())) };
-    let all: Vec<Matchers> = pkgs.as_array().expect("a package list").iter().map(|p| apps(p.as_str().expect("a package"))).collect();
-    let distinct = |f: fn(&Matchers) -> &Vec<String>| all.iter().flat_map(f).cloned().collect::<IndexSet<_>>().into_iter().collect::<Vec<_>>();
+    let all: Vec<Matchers> =
+        pkgs.as_array().expect("a package list").iter().map(|p| apps(p.as_str().expect("a package"))).collect();
+    let distinct = |f: fn(&Matchers) -> &Vec<String>| {
+        all.iter().flat_map(f).cloned().collect::<IndexSet<_>>().into_iter().collect::<Vec<_>>()
+    };
     let m = Matchers { paths: distinct(|m| &m.paths), dirs: distinct(|m| &m.dirs), names: distinct(|m| &m.names) };
     if m.is_empty() {
         return None;
@@ -69,8 +73,13 @@ fn rule(r: &Map<String, Value>, apps: &impl Fn(&str) -> Matchers) -> Option<Valu
     .into_iter()
     .filter(|(_, v)| v.as_array().is_some_and(|a| !a.is_empty()))
     .collect();
-    let matching: Map<String, Value> = r.iter().filter(|(k, _)| *k != "package_name" && !ACTION.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
-    let mut out: Map<String, Value> = r.iter().filter(|(k, _)| ACTION.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
+    let matching: Map<String, Value> = r
+        .iter()
+        .filter(|(k, _)| *k != "package_name" && !ACTION.contains(&k.as_str()))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    let mut out: Map<String, Value> =
+        r.iter().filter(|(k, _)| ACTION.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
     let with = |(k, v): &(&str, Value)| {
         let mut o = matching.clone();
         o.insert(k.to_string(), v.clone());
@@ -104,8 +113,8 @@ mod tests {
     use super::*;
     use crate::compiler::tests::{KEY, PUB, has, keep, pairs, wg_link};
     use crate::compiler::{Input, compile};
-    use crate::providers::nord;
     use crate::model::{DIRECT, Link, Location, Route, Server, Setup};
+    use crate::providers::nord;
     use indexmap::IndexMap;
 
     const OWN: &str = "/usr/lib/unbraid/bin/unbraid";
@@ -113,12 +122,22 @@ mod tests {
     // Each route its own server: routes on one server with one key share a tunnel.
     fn sv(n: &str) -> Server {
         let c: Vec<u32> = n.chars().map(u32::from).collect();
-        Server { name: format!("{n} #1"), host: format!("{n}.nordvpn.com"), ip: format!("10.9.{}.{}", c[0], c[1]), public_key: PUB.into(), load: 10, ..Server::default() }
+        Server {
+            name: format!("{n} #1"),
+            host: format!("{n}.nordvpn.com"),
+            ip: format!("10.9.{}.{}", c[0], c[1]),
+            public_key: PUB.into(),
+            load: 10,
+            ..Server::default()
+        }
     }
 
     fn setup() -> Setup {
         Setup {
-            routes: vec![Route::new("nl", Location::country("nord", 153, "NL", "Netherlands")), Route { hue: 1, ..Route::new("us", Location::country("nord", 228, "US", "United States")) }],
+            routes: vec![
+                Route::new("nl", Location::country("nord", 153, "NL", "Netherlands")),
+                Route { hue: 1, ..Route::new("us", Location::country("nord", 228, "US", "United States")) },
+            ],
             default_route: "nl".into(),
             apps: pairs(&[("firefox", "us"), ("/usr/bin/curl", "us"), ("spotify", DIRECT), ("gone", "us")]),
             ..Setup::default()
@@ -129,7 +148,11 @@ mod tests {
         let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect();
         match k {
             _ if k.starts_with('/') => Matchers { paths: vec![k.into()], ..Matchers::default() },
-            "firefox" => Matchers { paths: s(&["/usr/lib/firefox/firefox"]), dirs: s(&["/usr/lib/firefox/"]), names: s(&["firefox"]) },
+            "firefox" => Matchers {
+                paths: s(&["/usr/lib/firefox/firefox"]),
+                dirs: s(&["/usr/lib/firefox/"]),
+                names: s(&["firefox"]),
+            },
             "spotify" => Matchers { paths: s(&["/opt/spotify/spotify"]), ..Matchers::default() },
             _ => Matchers::default(),
         }
@@ -140,7 +163,10 @@ mod tests {
     }
 
     fn linux(s: &Setup, own: Option<&str>) -> Value {
-        let i = Input { probe: Some((40000, "pw".into())), ..Input::new(s.clone(), links(s), "app.unbraid", true, "tailscale", "cache.db") };
+        let i = Input {
+            probe: Some((40000, "pw".into())),
+            ..Input::new(s.clone(), links(s), "app.unbraid", true, "tailscale", "cache.db")
+        };
         let out = config(&compile(&i).unwrap(), apps, own);
         keep("compiled-linux", &out);
         serde_json::from_str(&out).unwrap()
@@ -155,18 +181,23 @@ mod tests {
     fn apps_are_matched_by_process() {
         let c = linux(&setup(), Some(OWN));
         assert!(!c.to_string().contains("package_name"));
-        let us: Vec<&Value> = rules(&c).iter().filter(|r| r["outbound"] == "r-us" && r.get("inbound").is_none()).collect(); // the app's own probe has a rule of its own
+        let us: Vec<&Value> =
+            rules(&c).iter().filter(|r| r["outbound"] == "r-us" && r.get("inbound").is_none()).collect(); // the app's own probe has a rule of its own
         // firefox and curl share the route: one rule, with the paths of both, firefox's folder and its name.
         assert_eq!(1, us.len());
         let rule = us[0];
         assert_eq!("logical", rule["type"]);
         assert_eq!("or", rule["mode"]);
-        let branch = |k: &str| rule["rules"].as_array().unwrap().iter().find(|b| b.get(k).is_some()).unwrap()[k].clone();
+        let branch =
+            |k: &str| rule["rules"].as_array().unwrap().iter().find(|b| b.get(k).is_some()).unwrap()[k].clone();
         assert_eq!(json!(["/usr/bin/curl", "/usr/lib/firefox/firefox"]), branch("process_path"));
         assert_eq!(json!(["^/usr/lib/firefox/"]), branch("process_path_regex"));
         assert_eq!(json!(["firefox"]), branch("process_name"));
         // The lookup at the app's exit comes first, for the same processes.
-        let resolve = rules(&c).iter().find(|r| r["action"] == "resolve" && r["server"] == "dns-r-us" && r.get("inbound").is_none()).unwrap();
+        let resolve = rules(&c)
+            .iter()
+            .find(|r| r["action"] == "resolve" && r["server"] == "dns-r-us" && r.get("inbound").is_none())
+            .unwrap();
         assert_eq!("logical", resolve["type"]);
     }
 
@@ -183,8 +214,13 @@ mod tests {
     fn direct_apps_leave_through_the_engine() {
         let c = linux(&setup(), Some(OWN));
         let tun = &c["inbounds"][0];
-        assert!(tun.get("exclude_package").is_none() && tun.get("route_exclude_address").is_none() && tun.get("route_address").is_none());
-        let direct: Vec<&Value> = rules(&c).iter().filter(|r| r["process_path"] == json!(["/opt/spotify/spotify"])).collect();
+        assert!(
+            tun.get("exclude_package").is_none()
+                && tun.get("route_exclude_address").is_none()
+                && tun.get("route_address").is_none()
+        );
+        let direct: Vec<&Value> =
+            rules(&c).iter().filter(|r| r["process_path"] == json!(["/opt/spotify/spotify"])).collect();
         assert_eq!(vec![Some("local"), None], direct.iter().map(|r| r["server"].as_str()).collect::<Vec<_>>());
         assert_eq!("direct", direct.last().unwrap()["outbound"]);
         assert!(rules(&c).iter().any(|r| has(&r["ip_cidr"], "192.168.0.0/16") && r["outbound"] == "direct"));
@@ -195,15 +231,22 @@ mod tests {
     fn own_traffic_goes_direct_only_from_the_tun() {
         let c = linux(&setup(), Some(OWN));
         let rs = rules(&c);
-        let own: Vec<(usize, &Value)> = rs.iter().enumerate().filter(|(_, r)| r["process_path"] == json!([OWN])).collect();
+        let own: Vec<(usize, &Value)> =
+            rs.iter().enumerate().filter(|(_, r)| r["process_path"] == json!([OWN])).collect();
         assert_eq!(2, own.len());
         own.iter().for_each(|(_, r)| assert_eq!(json!(["tun"]), r["inbound"]));
         assert_eq!("direct", own[1].1["outbound"]);
         // After stale fake IPs are refused, before any exit.
         let stale = rs.iter().position(|r| r["action"] == "reject" && r.get("ip_cidr").is_some()).unwrap();
         assert_eq!(stale + 1, own[0].0);
-        assert!(rs.iter().position(|r| r["outbound"].as_str().is_some_and(|o| o.starts_with("r-"))).unwrap() > own[1].0);
-        assert!(rules(&linux(&setup(), None)).iter().all(|r| !(r.get("process_path").is_some() && r.get("inbound").is_some())));
+        assert!(
+            rs.iter().position(|r| r["outbound"].as_str().is_some_and(|o| o.starts_with("r-"))).unwrap() > own[1].0
+        );
+        assert!(
+            rules(&linux(&setup(), None))
+                .iter()
+                .all(|r| !(r.get("process_path").is_some() && r.get("inbound").is_some()))
+        );
     }
 
     /// Nothing about lookups is kept on disk, and every connection is matched to its process (for statistics).

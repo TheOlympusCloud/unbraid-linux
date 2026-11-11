@@ -49,7 +49,12 @@ pub fn check(url: &str, control_url: Option<&str>) -> Check {
     let clean = format!("https{}", &t[link.scheme.len()..]);
     // No control server set, or Tailscale's own: Tailscale's hosts are trusted. A custom server (even one that can't be
     // parsed) trusts only its own host, so a typo never widens trust to Tailscale.
-    let control = control_url.map(str::trim).filter(|c| !c.is_empty()).map(|c| Link::parse(c).and_then(|l| l.host).map(|h| h.to_lowercase().trim_end_matches('.').to_string()).unwrap_or_default());
+    let control = control_url.map(str::trim).filter(|c| !c.is_empty()).map(|c| {
+        Link::parse(c)
+            .and_then(|l| l.host)
+            .map(|h| h.to_lowercase().trim_end_matches('.').to_string())
+            .unwrap_or_default()
+    });
     let trusted = match control {
         None => tailscale(&host),
         Some(c) if TAILSCALE_CONTROL.contains(&c.as_str()) => tailscale(&host),
@@ -73,26 +78,36 @@ struct Link<'a> {
 
 impl<'a> Link<'a> {
     fn parse(s: &'a str) -> Option<Link<'a>> {
-        let allowed = |c: char| c.is_ascii_graphic() && !matches!(c, '"' | '<' | '>' | '\\' | '^' | '`' | '{' | '|' | '}');
+        let allowed =
+            |c: char| c.is_ascii_graphic() && !matches!(c, '"' | '<' | '>' | '\\' | '^' | '`' | '{' | '|' | '}');
         if s.is_empty() || !s.chars().all(allowed) {
             return None;
         }
         // Escapes must be complete.
         let bytes = s.as_bytes();
         for (i, b) in bytes.iter().enumerate() {
-            if *b == b'%' && !(bytes.get(i + 1).is_some_and(u8::is_ascii_hexdigit) && bytes.get(i + 2).is_some_and(u8::is_ascii_hexdigit)) {
+            if *b == b'%'
+                && !(bytes.get(i + 1).is_some_and(u8::is_ascii_hexdigit)
+                    && bytes.get(i + 2).is_some_and(u8::is_ascii_hexdigit))
+            {
                 return None;
             }
         }
         let colon = s.find(':');
-        let scheme_end = colon.filter(|&i| i > 0 && s[..i].starts_with(|c: char| c.is_ascii_alphabetic()) && s[..i].chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c)));
+        let scheme_end = colon.filter(|&i| {
+            i > 0
+                && s[..i].starts_with(|c: char| c.is_ascii_alphabetic())
+                && s[..i].chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
+        });
         let Some(i) = scheme_end else {
             // A relative reference: no scheme, no host.
             return Some(Link { scheme: "", host: None, port: None, user_info: false });
         };
         let scheme = &s[..i];
         let rest = &s[i + 1..];
-        let Some(hier) = rest.strip_prefix("//") else { return Some(Link { scheme, host: None, port: None, user_info: false }) };
+        let Some(hier) = rest.strip_prefix("//") else {
+            return Some(Link { scheme, host: None, port: None, user_info: false });
+        };
         let end = hier.find(['/', '?', '#']).unwrap_or(hier.len());
         let authority = &hier[..end];
         if authority.is_empty() {
@@ -116,7 +131,11 @@ impl<'a> Link<'a> {
             match hostport.rfind(':') {
                 Some(c) => {
                     let p = &hostport[c + 1..];
-                    let port = if p.is_empty() { None } else { Some(p.parse::<u64>().ok().filter(|_| p.chars().all(|c| c.is_ascii_digit()))?) };
+                    let port = if p.is_empty() {
+                        None
+                    } else {
+                        Some(p.parse::<u64>().ok().filter(|_| p.chars().all(|c| c.is_ascii_digit()))?)
+                    };
                     (&hostport[..c], port)
                 }
                 None => (hostport, None),
@@ -124,7 +143,12 @@ impl<'a> Link<'a> {
         };
         // A registry-based authority (anything but a server's name or address) has no host in java.net.URI.
         let server = !host.is_empty() && (host.starts_with('[') || hostname(host) || ipv4(host));
-        Some(Link { scheme, host: server.then_some(host), port: if server { port } else { None }, user_info: user_info && server })
+        Some(Link {
+            scheme,
+            host: server.then_some(host),
+            port: if server { port } else { None },
+            user_info: user_info && server,
+        })
     }
 }
 
@@ -133,13 +157,24 @@ impl<'a> Link<'a> {
 fn hostname(h: &str) -> bool {
     let h = h.strip_suffix('.').unwrap_or(h);
     let labels: Vec<&str> = h.split('.').collect();
-    let label = |l: &str| !l.is_empty() && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') && !l.starts_with('-') && !l.ends_with('-');
+    let label = |l: &str| {
+        !l.is_empty()
+            && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            && !l.starts_with('-')
+            && !l.ends_with('-')
+    };
     labels.iter().all(|l| label(l)) && labels.last().is_some_and(|l| l.starts_with(|c: char| c.is_ascii_alphabetic()))
 }
 
 fn ipv4(h: &str) -> bool {
     let parts: Vec<&str> = h.split('.').collect();
-    parts.len() == 4 && parts.iter().all(|p| !p.is_empty() && p.len() <= 3 && p.chars().all(|c| c.is_ascii_digit()) && p.parse::<u16>().is_ok_and(|n| n <= 255))
+    parts.len() == 4
+        && parts.iter().all(|p| {
+            !p.is_empty()
+                && p.len() <= 3
+                && p.chars().all(|c| c.is_ascii_digit())
+                && p.parse::<u16>().is_ok_and(|n| n <= 255)
+        })
 }
 
 #[cfg(test)]

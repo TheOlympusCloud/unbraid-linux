@@ -130,20 +130,31 @@ pub fn facts<P: KeyProvider + ?Sized>(p: &P, blob: &str) -> Option<String> {
 
 pub fn trusts<P: KeyProvider + ?Sized>(p: &P, link: &Link, blob: &str) -> bool {
     match link {
-        Link::Wg { server, peer, .. } => account(blob).is_ok_and(|a| peer.public_key == p.peer_key(server, &a) && p.trusts_key(&peer.public_key, &a)),
+        Link::Wg { server, peer, .. } => {
+            account(blob).is_ok_and(|a| peer.public_key == p.peer_key(server, &a) && p.trusts_key(&peer.public_key, &a))
+        }
         _ => true,
     }
 }
 
 pub fn sign_in<P: KeyProvider + ?Sized>(p: &P, input: &IndexMap<String, String>) -> Result<String> {
     let text = input.get("key").map_or("", |k| k.trim());
-    let a = if text.contains('[') { from_conf(p, text)? } else { from_key(p, &text.chars().filter(|c| !c.is_whitespace()).collect::<String>())? };
+    let a = if text.contains('[') {
+        from_conf(p, text)?
+    } else {
+        from_key(p, &text.chars().filter(|c| !c.is_whitespace()).collect::<String>())?
+    };
     encode(&a)
 }
 
 fn from_key<P: KeyProvider + ?Sized>(p: &P, key: &str) -> Result<Account> {
     require!(KEY.is_match(key), "That doesn't look like a WireGuard private key");
-    let address = p.default_address().ok_or_else(|| invalid(format!("{} needs the whole downloaded .conf file: it holds this device's address and preshared key", p.name())))?;
+    let address = p.default_address().ok_or_else(|| {
+        invalid(format!(
+            "{} needs the whole downloaded .conf file: it holds this device's address and preshared key",
+            p.name()
+        ))
+    })?;
     Ok(Account::new(key, address, p.default_dns(), p.default_port(), p.default_mtu()))
 }
 
@@ -162,7 +173,12 @@ fn from_conf<P: KeyProvider + ?Sized>(p: &P, text: &str) -> Result<Account> {
     Ok(Account {
         address: c.address.iter().map(|a| if a.contains('/') { a.clone() } else { format!("{a}/32") }).collect(),
         dns: if c.dns.is_empty() { p.default_dns() } else { c.dns },
-        port: c.endpoint.rsplit(':').next().and_then(|port| port.parse().ok()).ok_or_else(|| invalid("Endpoint needs host:port"))?,
+        port: c
+            .endpoint
+            .rsplit(':')
+            .next()
+            .and_then(|port| port.parse().ok())
+            .ok_or_else(|| invalid("Endpoint needs host:port"))?,
         mtu: if MTU.is_match(text) { c.mtu } else { p.default_mtu() },
         preshared_key: c.preshared_key,
         public_key: Some(c.public_key),
@@ -203,19 +219,35 @@ fn refreshed<P: KeyProvider + ?Sized>(
         Err(e) if is_io(&e) && p.trusts_key(&p.peer_key(pinned, a), a) => return Ok((pinned.clone(), None)),
         Err(e) => return Err(e),
     };
-    let name = |e: &Entry| e.server_name.clone().unwrap_or_else(|| e.hostname.split('.').next().unwrap_or_default().to_string());
-    let named: Vec<Entry> = all.iter().filter(|e| e.hostname == pinned.host && name(e) == pinned.name).cloned().collect();
-    let found: Vec<Entry> = if named.is_empty() { all.into_iter().filter(|e| e.ips.contains(&pinned.ip)).collect() } else { named };
+    let name = |e: &Entry| {
+        e.server_name.clone().unwrap_or_else(|| e.hostname.split('.').next().unwrap_or_default().to_string())
+    };
+    let named: Vec<Entry> =
+        all.iter().filter(|e| e.hostname == pinned.host && name(e) == pinned.name).cloned().collect();
+    let found: Vec<Entry> =
+        if named.is_empty() { all.into_iter().filter(|e| e.ips.contains(&pinned.ip)).collect() } else { named };
     let Some(first) = found.first() else { return Err(Error::NoLongerOffered(pinned.name.clone())) };
-    let live = unless_io(p.usable(&found, &Location::of(&loc.provider)))?.and_then(|u| u.into_iter().find(|e| e.hostname == first.hostname));
+    let live = unless_io(p.usable(&found, &Location::of(&loc.provider)))?
+        .and_then(|u| u.into_iter().find(|e| e.hostname == first.hostname));
     match live {
         Some(live) => Ok((catalog::server(&live, Some(&pinned.name))?, Some(live))),
         // No address for it now: keep the pinned one, but with the list's current key.
-        None => Ok((first.wgpubkey.as_ref().map_or_else(|| pinned.clone(), |k| Server { public_key: k.clone(), ..pinned.clone() }), None)),
+        None => Ok((
+            first
+                .wgpubkey
+                .as_ref()
+                .map_or_else(|| pinned.clone(), |k| Server { public_key: k.clone(), ..pinned.clone() }),
+            None,
+        )),
     }
 }
 
-pub(crate) fn link<P: KeyProvider + ?Sized>(p: &P, loc: &Location, a: &Account, entries: impl Fn() -> Result<Vec<Entry>>) -> Result<Link> {
+pub(crate) fn link<P: KeyProvider + ?Sized>(
+    p: &P,
+    loc: &Location,
+    a: &Account,
+    entries: impl Fn() -> Result<Vec<Entry>>,
+) -> Result<Link> {
     let (sv, e) = match &loc.pinned {
         Some(pinned) => refreshed(p, pinned, loc, a, entries)?,
         None => match p.usable(&entries()?, loc)?.into_iter().next() {
@@ -224,12 +256,23 @@ pub(crate) fn link<P: KeyProvider + ?Sized>(p: &P, loc: &Location, a: &Account, 
         },
     };
     let ports = p.ports();
-    let ports = if ports.is_empty() { vec![] } else { std::iter::once(a.port).chain(ports).collect::<IndexSet<_>>().into_iter().collect() };
+    let ports = if ports.is_empty() {
+        vec![]
+    } else {
+        std::iter::once(a.port).chain(ports).collect::<IndexSet<_>>().into_iter().collect()
+    };
     let peer = WgPeer {
         preshared_key: a.preshared_key.clone(),
         dns: a.dns.clone(),
         mtu: a.mtu,
-        ..WgPeer::new(&sv.name, &a.private_key, a.address.clone(), &p.peer_key(&sv, a), &format!("{}:{}", sv.ip, a.port), vec!["0.0.0.0/0".into()])
+        ..WgPeer::new(
+            &sv.name,
+            &a.private_key,
+            a.address.clone(),
+            &p.peer_key(&sv, a),
+            &format!("{}:{}", sv.ip, a.port),
+            vec!["0.0.0.0/0".into()],
+        )
     };
     Ok(Link::Wg { entries: e.map(|e| p.addresses(&e)).unwrap_or_default(), server: sv, peer, ports })
 }
@@ -240,7 +283,10 @@ mod tests {
     use crate::providers::airvpn::{self, AirVpn};
     use crate::providers::proton::{PROTON, PROTON_FREE};
     use crate::providers::surfshark::{self, Surfshark};
-    use crate::providers::tests::{by_code, by_country, fixture, input, offline, peer, pinned_to, sing_box_check, sing_box_config, surfshark_at, wg};
+    use crate::providers::tests::{
+        by_code, by_country, fixture, input, offline, peer, pinned_to, sing_box_check, sing_box_config, surfshark_at,
+        wg,
+    };
     use crate::snapshot::Snapshot;
     use std::collections::HashSet;
     use std::sync::{Arc, Mutex};
@@ -302,7 +348,13 @@ mod tests {
         fn city_loc(provider: &str, entries: &[Entry]) -> Location {
             let c = catalog::countries(entries).into_iter().find(|c| !c.cities.is_empty()).unwrap();
             let city = &c.cities[0];
-            Location { country_code: Some(c.code.clone()), country: Some(c.name.clone()), city: Some(city.name.clone()), region: city.key.clone(), ..Location::of(provider) }
+            Location {
+                country_code: Some(c.code.clone()),
+                country: Some(c.name.clone()),
+                city: Some(city.name.clone()),
+                region: city.key.clone(),
+                ..Location::of(provider)
+            }
         }
 
         fn place_of<'a>(entries: &'a [Entry], ip: &str) -> &'a str {
@@ -310,7 +362,11 @@ mod tests {
         }
 
         fn static_host() -> Entry {
-            Entry { region: Some("Europe".into()), city: Some("Frankfurt".into()), ..entry("Germany", "de-fra-st001.prod.surfshark.com", SERVER_KEY, &["5.5.5.5"]) }
+            Entry {
+                region: Some("Europe".into()),
+                city: Some("Frankfurt".into()),
+                ..entry("Germany", "de-fra-st001.prod.surfshark.com", SERVER_KEY, &["5.5.5.5"])
+            }
         }
 
         // ---- Proton
@@ -322,7 +378,10 @@ mod tests {
                 "[Interface]\n# Key for test\n# Bouncing = 3\n# NetShield = 0\n# Moderate NAT = off\n# NAT-PMP (Port Forwarding) = off\n# VPN Accelerator = on\n# Secret = {PRIV}\nPrivateKey = {PRIV}\nAddress = 10.2.0.2/32\nDNS = 10.2.0.1\n[Peer]\nPublicKey = {SERVER_KEY}\nAllowedIPs = 0.0.0.0/0\nEndpoint = 1.2.3.4:51820"
             );
             let a = PROTON_FREE.sign_in(&input(&[("key", &conf)])).unwrap();
-            assert_eq!(Some("VPN Accelerator on · NetShield off · Moderate NAT off · Port forwarding off".to_string()), PROTON_FREE.facts(&a));
+            assert_eq!(
+                Some("VPN Accelerator on · NetShield off · Moderate NAT off · Port forwarding off".to_string()),
+                PROTON_FREE.facts(&a)
+            );
             assert!(!a.contains("Bouncing") && !a.contains("Secret"));
             assert_eq!(Some(String::new()), PROTON_FREE.facts(&PROTON_FREE.sign_in(&input(&[("key", PRIV)])).unwrap())); // a bare key: not known
             assert_eq!(None, Surfshark.facts(&a));
@@ -348,7 +407,13 @@ mod tests {
         fn proton_bare_key_connects_to_a_country_and_a_city() {
             let a = signed(&PROTON, PRIV);
             let entries = PROTON.filtered(catalogue("protonvpn"));
-            let l = link(&PROTON, &Location { country_code: Some("DE".into()), ..by_country("proton", "Germany") }, &a, || Ok(entries.clone())).unwrap();
+            let l = link(
+                &PROTON,
+                &Location { country_code: Some("DE".into()), ..by_country("proton", "Germany") },
+                &a,
+                || Ok(entries.clone()),
+            )
+            .unwrap();
             let ips: Vec<Option<&str>> = entries.iter().filter(|e| e.place() == "Germany").map(|e| e.ipv4()).collect();
             let p = peer(&l);
             assert!(ips.contains(&p.endpoint.split(':').next()));
@@ -373,7 +438,10 @@ mod tests {
 
         #[test]
         fn proton_free_offers_only_free_servers() {
-            let raw: Vec<Entry> = catalogue("protonvpn").into_iter().map(|e| if e.place() == "Austria" { Entry { free: true, ..e } } else { e }).collect();
+            let raw: Vec<Entry> = catalogue("protonvpn")
+                .into_iter()
+                .map(|e| if e.place() == "Austria" { Entry { free: true, ..e } } else { e })
+                .collect();
             let free = PROTON_FREE.filtered(raw.clone());
             assert!(!free.is_empty() && free.iter().all(|e| e.free && e.place() == "Austria"));
             let all = PROTON.filtered(raw);
@@ -395,7 +463,10 @@ mod tests {
 
         #[test]
         fn proton_conf_overrides_defaults() {
-            let a = signed(&PROTON, &conf("10.2.0.2/32, 2a07:b944::2:2/128", "10.2.0.1", "79.135.105.1:51820", false, "MTU = 1400"));
+            let a = signed(
+                &PROTON,
+                &conf("10.2.0.2/32, 2a07:b944::2:2/128", "10.2.0.1", "79.135.105.1:51820", false, "MTU = 1400"),
+            );
             assert_eq!(PRIV, a.private_key);
             assert_eq!(vec!["10.2.0.2/32"], a.address);
             assert_eq!(vec!["10.2.0.1"], a.dns);
@@ -409,7 +480,11 @@ mod tests {
         #[test]
         fn proton_pinned_server_needs_no_list() {
             let a = signed(&PROTON, PRIV);
-            let sv = link(&PROTON, &by_country("proton", "Germany"), &a, || Ok(PROTON.filtered(catalogue("protonvpn")))).unwrap().server().clone();
+            let sv =
+                link(&PROTON, &by_country("proton", "Germany"), &a, || Ok(PROTON.filtered(catalogue("protonvpn"))))
+                    .unwrap()
+                    .server()
+                    .clone();
             let l = link(&PROTON, &pinned_to("proton", sv.clone()), &a, || Err(Error::Io("offline".into()))).unwrap();
             assert_eq!(&sv, l.server());
             assert_eq!(format!("{}:51820", sv.ip), peer(&l).endpoint);
@@ -437,9 +512,13 @@ mod tests {
         fn surfshark_live_list_has_countries_and_keys_but_no_ips() {
             let clusters = clusters();
             assert!(!clusters.is_empty());
-            assert!(clusters.iter().all(|e| e.ips.is_empty() && e.hostname.ends_with(".prod.surfshark.com") && e.wgpubkey.as_ref().unwrap().len() == 44));
+            assert!(clusters.iter().all(|e| e.ips.is_empty()
+                && e.hostname.ends_with(".prod.surfshark.com")
+                && e.wgpubkey.as_ref().unwrap().len() == 44));
             let cs = catalog::countries(&clusters);
-            assert!(cs.iter().any(|c| c.name == "Netherlands" && c.code == "NL" && c.cities.iter().any(|city| city.name == "Amsterdam")));
+            assert!(cs.iter().any(|c| c.name == "Netherlands"
+                && c.code == "NL"
+                && c.cities.iter().any(|city| city.name == "Amsterdam")));
             assert!(cs.iter().all(|c| iso(&c.code)));
         }
 
@@ -457,7 +536,10 @@ mod tests {
             assert_eq!(vec!["10.14.0.2/16"], p.address);
             assert_eq!(vec!["162.252.172.57", "149.154.159.92"], p.dns);
             assert_eq!(1280, p.mtu);
-            assert_eq!(clusters.iter().find(|e| e.hostname == l.server().host).unwrap().wgpubkey.as_deref(), Some(p.public_key.as_str()));
+            assert_eq!(
+                clusters.iter().find(|e| e.hostname == l.server().host).unwrap().wgpubkey.as_deref(),
+                Some(p.public_key.as_str())
+            );
             assert_eq!("Amsterdam", l.server().city);
 
             let coded = link(&Surfshark, &by_code("surfshark", "DE"), &a, || Ok(clusters.clone())).unwrap();
@@ -475,7 +557,11 @@ mod tests {
             let clusters = clusters();
             let mut cat = catalogue("surfshark");
             cat.push(static_host());
-            let de: Vec<String> = surfshark::fallback(cat.clone()).into_iter().filter(|e| e.place() == "Germany").flat_map(|e| e.ips).collect();
+            let de: Vec<String> = surfshark::fallback(cat.clone())
+                .into_iter()
+                .filter(|e| e.place() == "Germany")
+                .flat_map(|e| e.ips)
+                .collect();
             assert!(!de.is_empty());
             let listed = cat.clone();
             surfshark::set_catalogue(move || Ok(listed.clone()));
@@ -498,7 +584,10 @@ mod tests {
             let reads = Arc::new(Mutex::new(0));
             let nl: Vec<Entry> = clusters().into_iter().filter(|e| e.place() == "Netherlands").collect();
             let host = nl[0].hostname.clone();
-            let (counted, at) = (reads.clone(), nl.iter().map(|e| entry("Netherlands", &e.hostname, "unused", &["203.0.113.7"])).collect::<Vec<_>>());
+            let (counted, at) = (
+                reads.clone(),
+                nl.iter().map(|e| entry("Netherlands", &e.hostname, "unused", &["203.0.113.7"])).collect::<Vec<_>>(),
+            );
             surfshark::set_catalogue(move || {
                 *counted.lock().unwrap() += 1;
                 Ok(at.clone())
@@ -526,8 +615,13 @@ mod tests {
             assert_eq!(2, *reads.lock().unwrap());
             // A host name in the catalogue's addresses is never used (it would be looked up on the computer's network).
             let named = host.clone();
-            surfshark::set_catalogue(move || Ok(vec![entry("Netherlands", &named, "unused", &["evil.example.com", "203.0.113.8"])]));
-            assert_eq!(Some(&vec!["203.0.113.8".to_string()]), surfshark::addresses(chrono::Utc::now().timestamp_millis()).unwrap().get(&host));
+            surfshark::set_catalogue(move || {
+                Ok(vec![entry("Netherlands", &named, "unused", &["evil.example.com", "203.0.113.8"])])
+            });
+            assert_eq!(
+                Some(&vec!["203.0.113.8".to_string()]),
+                surfshark::addresses(chrono::Utc::now().timestamp_millis()).unwrap().get(&host)
+            );
         }
 
         /// With nothing kept and the catalogue down, it is asked again only after 15 minutes.
@@ -558,7 +652,9 @@ mod tests {
             let a = signed(&Surfshark, PRIV);
             let l = link(&Surfshark, &by_country("surfshark", "Germany"), &a, || Ok(clusters.clone())).unwrap();
             assert_eq!("198.51.100.9:51820", peer(&l).endpoint);
-            surfshark::set_catalogue(|| Ok(vec![entry("Germany", "elsewhere.prod.surfshark.com", "unused", &["198.51.100.9"])]));
+            surfshark::set_catalogue(|| {
+                Ok(vec![entry("Germany", "elsewhere.prod.surfshark.com", "unused", &["198.51.100.9"])])
+            });
             match link(&Surfshark, &by_country("surfshark", "Germany"), &a, || Ok(clusters.clone())) {
                 Err(e) if is_io(&e) => assert!(e.to_string().contains("Germany")),
                 _ => panic!("no server has an address"),
@@ -573,7 +669,10 @@ mod tests {
             let static_ip = Regex::new(r"-st[0-9]+\.").unwrap();
             assert!(raw.iter().filter(|e| static_ip.is_match(&e.hostname)).count() >= 1);
             assert_eq!(raw.iter().filter(|e| !static_ip.is_match(&e.hostname)).cloned().collect::<Vec<_>>(), kept);
-            let l = link(&Surfshark, &by_country("surfshark", "Netherlands"), &signed(&Surfshark, PRIV), || Ok(kept.clone())).unwrap();
+            let l = link(&Surfshark, &by_country("surfshark", "Netherlands"), &signed(&Surfshark, PRIV), || {
+                Ok(kept.clone())
+            })
+            .unwrap();
             let ip = peer(&l).endpoint.split(':').next().unwrap().to_string();
             assert!(kept.iter().filter(|e| e.place() == "Netherlands").any(|e| e.ips.contains(&ip)));
             assert!(peer(&l).endpoint.ends_with(":51820"));
@@ -581,13 +680,17 @@ mod tests {
 
         #[test]
         fn surfshark_conf_is_used_as_pasted() {
-            let a = signed(&Surfshark, &conf("10.14.0.2/16", "162.252.172.57, 149.154.159.92", "nl-ams.prod.surfshark.com:51820", false, ""));
+            let a = signed(
+                &Surfshark,
+                &conf("10.14.0.2/16", "162.252.172.57, 149.154.159.92", "nl-ams.prod.surfshark.com:51820", false, ""),
+            );
             assert_eq!(vec!["10.14.0.2/16"], a.address);
             assert_eq!(vec!["162.252.172.57", "149.154.159.92"], a.dns);
             assert_eq!(51820, a.port);
             assert_eq!(1280, a.mtu);
             assert_eq!(None, a.preshared_key);
-            let b = signed(&Surfshark, &conf("10.64.222.21/16", "1.1.1.1", "nl-ams.prod.surfshark.com:51820", false, ""));
+            let b =
+                signed(&Surfshark, &conf("10.64.222.21/16", "1.1.1.1", "nl-ams.prod.surfshark.com:51820", false, ""));
             assert_eq!(vec!["10.64.222.21/16"], b.address);
             assert_eq!(vec!["1.1.1.1"], b.dns);
         }
@@ -632,10 +735,12 @@ mod tests {
         #[test]
         fn airvpn_connects_with_preshared_key_on_port1637() {
             let a = signed(&AirVpn, &air_conf());
-            let entries = airvpn::parse(&fixture("providers/airvpn_status.json"), a.public_key.as_deref().unwrap()).unwrap();
+            let entries =
+                airvpn::parse(&fixture("providers/airvpn_status.json"), a.public_key.as_deref().unwrap()).unwrap();
             let l = link(&AirVpn, &by_country("airvpn", "Netherlands"), &a, || Ok(entries.clone())).unwrap();
             let p = peer(&l);
-            let nl: Vec<Option<&str>> = entries.iter().filter(|e| e.place() == "Netherlands").map(|e| e.ipv4()).collect();
+            let nl: Vec<Option<&str>> =
+                entries.iter().filter(|e| e.place() == "Netherlands").map(|e| e.ipv4()).collect();
             assert!(nl.contains(&p.endpoint.split(':').next()));
             assert!(p.endpoint.ends_with(":1637"));
             assert_eq!(Some(PSK), p.preshared_key.as_deref());
@@ -648,14 +753,19 @@ mod tests {
             assert_eq!("Netherlands", place_of(&entries, &coded.server().ip));
 
             let city = city_loc("airvpn", &entries);
-            assert_eq!(city.region.as_deref(), Some(link(&AirVpn, &city, &a, || Ok(entries.clone())).unwrap().server().city.as_str()));
+            assert_eq!(
+                city.region.as_deref(),
+                Some(link(&AirVpn, &city, &a, || Ok(entries.clone())).unwrap().server().city.as_str())
+            );
         }
 
         #[test]
         fn airvpn_catalogue_fallback_uses_the_account_key() {
             let entries = catalogue("airvpn");
             assert!(!entries.is_empty() && entries.iter().all(|e| e.ipv4().unwrap().contains('.')));
-            let l = link(&AirVpn, &by_country("airvpn", "Germany"), &signed(&AirVpn, &air_conf()), || Ok(entries.clone())).unwrap();
+            let l =
+                link(&AirVpn, &by_country("airvpn", "Germany"), &signed(&AirVpn, &air_conf()), || Ok(entries.clone()))
+                    .unwrap();
             // The key is the account's own [Peer] key (every AirVPN server shares it), never the catalogue's.
             assert_eq!(SERVER_KEY, peer(&l).public_key);
             assert!(peer(&l).endpoint.ends_with(":1637"));
@@ -670,11 +780,15 @@ mod tests {
             surfshark_at(&clusters, "203.0.113.7");
             let pe = PROTON.filtered(catalogue("protonvpn"));
             let (pa, sa, aa) = (signed(&PROTON, PRIV), signed(&Surfshark, PRIV), signed(&AirVpn, &air_conf()));
-            let ae = airvpn::parse(&fixture("providers/airvpn_status.json"), aa.public_key.as_deref().unwrap()).unwrap();
+            let ae =
+                airvpn::parse(&fixture("providers/airvpn_status.json"), aa.public_key.as_deref().unwrap()).unwrap();
             let links = [
                 ("proton-country", link(&PROTON, &by_country("proton", "Germany"), &pa, || Ok(pe.clone()))),
                 ("proton-city", link(&PROTON, &city_loc("proton", &pe), &pa, || Ok(pe.clone()))),
-                ("surfshark-country", link(&Surfshark, &by_country("surfshark", "Netherlands"), &sa, || Ok(clusters.clone()))),
+                (
+                    "surfshark-country",
+                    link(&Surfshark, &by_country("surfshark", "Netherlands"), &sa, || Ok(clusters.clone())),
+                ),
                 ("surfshark-city", link(&Surfshark, &city_loc("surfshark", &clusters), &sa, || Ok(clusters.clone()))),
                 ("airvpn-country", link(&AirVpn, &by_country("airvpn", "Germany"), &aa, || Ok(ae.clone()))),
                 ("airvpn-city", link(&AirVpn, &city_loc("airvpn", &ae), &aa, || Ok(ae.clone()))),
@@ -705,7 +819,9 @@ mod tests {
         }
 
         fn conf(address: &str, port: i32) -> String {
-            format!("[Interface]\nPrivateKey = {PRIV}\nAddress = {address}\n\n[Peer]\nPublicKey = {ACCOUNT_KEY}\nPresharedKey = {PSK}\nAllowedIPs = 0.0.0.0/0\nEndpoint = at.vpn.airdns.org:{port}")
+            format!(
+                "[Interface]\nPrivateKey = {PRIV}\nAddress = {address}\n\n[Peer]\nPublicKey = {ACCOUNT_KEY}\nPresharedKey = {PSK}\nAllowedIPs = 0.0.0.0/0\nEndpoint = at.vpn.airdns.org:{port}"
+            )
         }
 
         #[test]
@@ -716,7 +832,13 @@ mod tests {
             // A swapped catalogue: same host name, an attacker's address and key.
             let (country, host) = (first.country.clone().unwrap(), first.hostname.clone());
             surfshark::set_catalogue(move || Ok(vec![entry(&country, &host, EVIL_KEY, &["198.51.100.66"])]));
-            let l = link(&Surfshark, &by_country("surfshark", first.place()), &account(&signed(&Surfshark, PRIV)).unwrap(), || Ok(live.clone())).unwrap();
+            let l = link(
+                &Surfshark,
+                &by_country("surfshark", first.place()),
+                &account(&signed(&Surfshark, PRIV)).unwrap(),
+                || Ok(live.clone()),
+            )
+            .unwrap();
             assert_eq!("198.51.100.66:51820", peer(&l).endpoint);
             assert_eq!(first.wgpubkey.as_deref(), Some(peer(&l).public_key.as_str()));
         }
@@ -727,7 +849,14 @@ mod tests {
             let _held = offline();
             let live = clusters();
             let e = &live[0];
-            let pin = Server { name: e.hostname.split('.').next().unwrap().into(), host: e.hostname.clone(), ip: "203.0.113.5".into(), public_key: "stale".into(), load: 0, ..Server::default() };
+            let pin = Server {
+                name: e.hostname.split('.').next().unwrap().into(),
+                host: e.hostname.clone(),
+                ip: "203.0.113.5".into(),
+                public_key: "stale".into(),
+                load: 0,
+                ..Server::default()
+            };
             let loc = Location { pinned: Some(pin), ..by_country("surfshark", e.place()) };
             let l = link(&Surfshark, &loc, &account(&signed(&Surfshark, PRIV)).unwrap(), || Ok(live.clone())).unwrap();
             assert_eq!("203.0.113.5:51820", peer(&l).endpoint);
@@ -739,8 +868,15 @@ mod tests {
             let _held = offline();
             let live = clusters();
             let country = live[0].country.clone().unwrap();
-            surfshark::set_catalogue(move || Ok(vec![entry(&country, "nl-evil.prod.surfshark.com", EVIL_KEY, &["198.51.100.66"])]));
-            let used = link(&Surfshark, &by_country("surfshark", live[0].place()), &account(&signed(&Surfshark, PRIV)).unwrap(), || Ok(live.clone()));
+            surfshark::set_catalogue(move || {
+                Ok(vec![entry(&country, "nl-evil.prod.surfshark.com", EVIL_KEY, &["198.51.100.66"])])
+            });
+            let used = link(
+                &Surfshark,
+                &by_country("surfshark", live[0].place()),
+                &account(&signed(&Surfshark, PRIV)).unwrap(),
+                || Ok(live.clone()),
+            );
             assert!(used.is_err_and(|e| is_io(&e)), "a host only the catalogue lists must not be used");
         }
 
@@ -781,7 +917,8 @@ mod tests {
             let conf = format!(
                 "[Interface]\nPrivateKey = {PRIV}\nAddress = 10.164.20.6/32\nDNS = 10.128.0.1\n\n[Peer]\nPublicKey = {ACCOUNT_KEY}\nPresharedKey = {PSK}\nAllowedIPs = 0.0.0.0/0\nEndpoint = at.vpn.airdns.org:1637"
             );
-            let cat: Vec<Entry> = catalogue("airvpn").into_iter().map(|e| Entry { wgpubkey: Some(EVIL_KEY.into()), ..e }).collect();
+            let cat: Vec<Entry> =
+                catalogue("airvpn").into_iter().map(|e| Entry { wgpubkey: Some(EVIL_KEY.into()), ..e }).collect();
             let listed = cat.clone();
             *airvpn::CATALOGUE.write().unwrap() = Arc::new(move || Ok(listed.clone()));
             let a = account(&signed(&AirVpn, &conf)).unwrap();
@@ -889,7 +1026,14 @@ mod tests {
             let devices = names
                 .iter()
                 .enumerate()
-                .map(|(i, n)| Dev { id: format!("id{i}"), name: n.to_string(), status: "ready".into(), key: format!("k{i}"), ip: format!("10.171.0.{}", i + 1), ready_at: 0 })
+                .map(|(i, n)| Dev {
+                    id: format!("id{i}"),
+                    name: n.to_string(),
+                    status: "ready".into(),
+                    key: format!("k{i}"),
+                    ip: format!("10.171.0.{}", i + 1),
+                    ready_at: 0,
+                })
                 .collect();
             let air = Arc::new(Mutex::new(Air { devices, ready_after: 2, ..Air::default() }));
             *airvpn::STATUS.write().unwrap() = Arc::new(|| Ok(fixture("providers/airvpn_status.json")));
@@ -897,7 +1041,10 @@ mod tests {
             let behind = air.clone();
             *airvpn::API_CALL.write().unwrap() = Arc::new(move |service, key, query| {
                 assert_eq!(API_KEY, key);
-                behind.lock().unwrap().answer(service, query.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect())
+                behind
+                    .lock()
+                    .unwrap()
+                    .answer(service, query.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect())
             });
             air
         }
@@ -925,15 +1072,32 @@ mod tests {
             assert_eq!(vec![format!("{made_ip}/32")], a.address);
             assert_eq!(
                 (Some(API_KEY), Some("unbraid"), Some(made_key.as_str()), Some(made_id.as_str()), true),
-                (a.api_key.as_deref(), a.device.as_deref(), a.device_key.as_deref(), a.device_id.as_deref(), a.own_device)
+                (
+                    a.api_key.as_deref(),
+                    a.device.as_deref(),
+                    a.device_key.as_deref(),
+                    a.device_id.as_deref(),
+                    a.own_device
+                )
             );
-            assert_eq!((Some(ACCOUNT_KEY), Some(PSK), 1637), (a.public_key.as_deref(), a.preshared_key.as_deref(), a.port));
+            assert_eq!(
+                (Some(ACCOUNT_KEY), Some(PSK), 1637),
+                (a.public_key.as_deref(), a.preshared_key.as_deref(), a.port)
+            );
             assert_eq!(1, air.lock().unwrap().actions("add"));
             let calls = air.lock().unwrap().calls.clone();
-            let generated: Vec<&IndexMap<String, String>> = calls.iter().filter(|(s, _)| s == "generator").map(|(_, q)| q).collect();
+            let generated: Vec<&IndexMap<String, String>> =
+                calls.iter().filter(|(s, _)| s == "generator").map(|(_, q)| q).collect();
             assert_eq!(1, generated.len());
-            assert_eq!((Some("unbraid"), Some("wireguard_1_udp_1637")), (generated[0].get("device").map(String::as_str), generated[0].get("protocols").map(String::as_str)));
-            let servers: Vec<Option<String>> = airvpn::parse(&fixture("providers/airvpn_status.json"), "").unwrap().into_iter().map(|e| e.server_name).collect();
+            assert_eq!(
+                (Some("unbraid"), Some("wireguard_1_udp_1637")),
+                (generated[0].get("device").map(String::as_str), generated[0].get("protocols").map(String::as_str))
+            );
+            let servers: Vec<Option<String>> = airvpn::parse(&fixture("providers/airvpn_status.json"), "")
+                .unwrap()
+                .into_iter()
+                .map(|e| e.server_name)
+                .collect();
             assert!(servers.contains(&generated[0].get("servers").cloned()));
             assert_eq!(Some("Its own device, unbraid, removed when you sign out. See all your devices in the AirVPN Client Area".to_string()), AirVpn.device(&blob).map(|d| d.line));
             assert!(AirVpn.sign_out(&blob));
@@ -973,7 +1137,8 @@ mod tests {
             assert_eq!(1, slow.lock().unwrap().actions("delete"));
 
             let broken = fake_air(&["Default"]);
-            broken.lock().unwrap().generated = Some(r#"{"error": "Unexpected, zero files in package. Contact our staff, thanks."}"#.into());
+            broken.lock().unwrap().generated =
+                Some(r#"{"error": "Unexpected, zero files in package. Contact our staff, thanks."}"#.into());
             assert!(matches!(air_sign_in(None), Err(Error::Fail(_))));
             assert_eq!(vec!["Default"], broken.lock().unwrap().names());
 
@@ -981,8 +1146,9 @@ mod tests {
             let stuck = fake_air(&["Default"]);
             stuck.lock().unwrap().generated = Some(r#"{"error": "Unexpected"}"#.into());
             let real = airvpn::API_CALL.read().unwrap().clone();
-            *airvpn::API_CALL.write().unwrap() =
-                Arc::new(move |s, k, q| if q.contains(&("action", "delete")) { Ok(r#"{"error":"Try later"}"#.into()) } else { real(s, k, q) });
+            *airvpn::API_CALL.write().unwrap() = Arc::new(move |s, k, q| {
+                if q.contains(&("action", "delete")) { Ok(r#"{"error":"Try later"}"#.into()) } else { real(s, k, q) }
+            });
             match air_sign_in(None) {
                 Err(Error::Fail(m)) => assert!(m.contains("unbraid") && m.contains("Client Area"), "{m}"),
                 other => panic!("{other:?}"),
@@ -997,7 +1163,9 @@ mod tests {
             let air = fake_air(&["Default", "Phone"]);
             air.lock().unwrap().refuse_add = true;
             match air_sign_in(None) {
-                Err(Error::Challenge(c)) => assert!(c.field.key == "device" && c.message.contains("Default, Phone"), "{}", c.message),
+                Err(Error::Challenge(c)) => {
+                    assert!(c.field.key == "device" && c.message.contains("Default, Phone"), "{}", c.message)
+                }
                 other => panic!("{other:?}"),
             }
             assert!(matches!(air_sign_in(Some("Tablet")), Err(Error::Challenge(_))));
@@ -1006,10 +1174,16 @@ mod tests {
             let blob = air_sign_in(Some("phone")).unwrap();
             let a = account(&blob).unwrap();
             assert_eq!(vec!["10.171.0.2/32"], a.address);
-            assert_eq!((Some("Phone"), Some("k1"), Some("id1"), false), (a.device.as_deref(), a.device_key.as_deref(), a.device_id.as_deref(), a.own_device));
+            assert_eq!(
+                (Some("Phone"), Some("k1"), Some("id1"), false),
+                (a.device.as_deref(), a.device_key.as_deref(), a.device_id.as_deref(), a.own_device)
+            );
             // Answering the question never tries to add a device again.
             assert_eq!(0, air.lock().unwrap().actions("add"));
-            assert_eq!(Some("Uses your device Phone. See all your devices in the AirVPN Client Area".to_string()), AirVpn.device(&blob).map(|d| d.line));
+            assert_eq!(
+                Some("Uses your device Phone. See all your devices in the AirVPN Client Area".to_string()),
+                AirVpn.device(&blob).map(|d| d.line)
+            );
             assert!(AirVpn.sign_out(&blob));
             assert_eq!(vec!["Default", "Phone"], air.lock().unwrap().names());
 
@@ -1029,7 +1203,8 @@ mod tests {
                 if s != "generator" {
                     return real(s, k, q);
                 }
-                let renamed: Vec<(&str, &str)> = q.iter().map(|&(k, v)| if k == "device" { (k, "renamed") } else { (k, v) }).collect();
+                let renamed: Vec<(&str, &str)> =
+                    q.iter().map(|&(k, v)| if k == "device" { (k, "renamed") } else { (k, v) }).collect();
                 real(s, k, &renamed)
             });
             assert!(matches!(air_sign_in(Some("Phone")), Err(Error::Fail(_))));
@@ -1087,17 +1262,31 @@ mod tests {
         fn airvpn_tunnels_carry_ports_and_entries() {
             let _held = offline();
             let entries = airvpn::parse(&fixture("providers/airvpn_status.json"), ACCOUNT_KEY).unwrap();
-            let l = link(&AirVpn, &by_country("airvpn", "Netherlands"), &account(&signed(&AirVpn, &conf("10.164.20.6/32", 1637))).unwrap(), || Ok(entries.clone())).unwrap();
+            let l = link(
+                &AirVpn,
+                &by_country("airvpn", "Netherlands"),
+                &account(&signed(&AirVpn, &conf("10.164.20.6/32", 1637))).unwrap(),
+                || Ok(entries.clone()),
+            )
+            .unwrap();
             let Link::Wg { server, ports, entries: at, .. } = &l else { panic!("not WireGuard") };
             assert_eq!(&vec![1637, 47107], ports);
             let e = entries.iter().find(|e| e.ipv4() == Some(server.ip.as_str())).unwrap();
             assert_eq!(&e.ips, at);
             assert!(at.len() == 2 && at[0] == server.ip && at[1] != server.ip);
-            let other = link(&AirVpn, &by_country("airvpn", "Netherlands"), &account(&signed(&AirVpn, &conf("10.164.20.6/32", 47107))).unwrap(), || Ok(entries.clone())).unwrap();
+            let other = link(
+                &AirVpn,
+                &by_country("airvpn", "Netherlands"),
+                &account(&signed(&AirVpn, &conf("10.164.20.6/32", 47107))).unwrap(),
+                || Ok(entries.clone()),
+            )
+            .unwrap();
             let Link::Wg { ports, .. } = &other else { panic!("not WireGuard") };
             assert_eq!(&vec![47107, 1637], ports);
-            *airvpn::CATALOGUE.write().unwrap() = Arc::new(|| catalog::parse(&fixture("catalog/catalog_airvpn.json"), "wireguard"));
-            let unlisted = AirVpn.connect(&Location::of("airvpn"), &signed(&AirVpn, &conf("10.164.20.6/32", 1637))).unwrap();
+            *airvpn::CATALOGUE.write().unwrap() =
+                Arc::new(|| catalog::parse(&fixture("catalog/catalog_airvpn.json"), "wireguard"));
+            let unlisted =
+                AirVpn.connect(&Location::of("airvpn"), &signed(&AirVpn, &conf("10.164.20.6/32", 1637))).unwrap();
             let Link::Wg { entries: none, .. } = &unlisted else { panic!("not WireGuard") };
             assert!(none.is_empty());
         }
@@ -1115,13 +1304,21 @@ mod tests {
             let live = clusters();
             let blob = signed(&Surfshark, PRIV);
             surfshark_at(&live, "203.0.113.7");
-            let good = link(&Surfshark, &by_country("surfshark", live[0].place()), &account(&blob).unwrap(), || Ok(live.clone())).unwrap();
+            let good = link(&Surfshark, &by_country("surfshark", live[0].place()), &account(&blob).unwrap(), || {
+                Ok(live.clone())
+            })
+            .unwrap();
             // No own list kept yet: a saved Surfshark tunnel can't be vouched for.
             assert!(!Surfshark.trusts(&good, &blob));
             *surfshark::SNAPSHOT.write().unwrap() = Snapshot::memory(Some(&live_body()));
             assert!(Surfshark.trusts(&good, &blob));
             let Link::Wg { server, peer: p, ports, entries } = good else { panic!("not WireGuard") };
-            let swapped = Link::Wg { server: Server { public_key: EVIL_KEY.into(), ..server }, peer: WgPeer { public_key: EVIL_KEY.into(), ..p }, ports, entries };
+            let swapped = Link::Wg {
+                server: Server { public_key: EVIL_KEY.into(), ..server },
+                peer: WgPeer { public_key: EVIL_KEY.into(), ..p },
+                ports,
+                entries,
+            };
             assert!(!Surfshark.trusts(&swapped, &blob));
         }
 
@@ -1130,14 +1327,26 @@ mod tests {
             let blob = signed(&AirVpn, &conf("10.164.20.6/32", 1637));
             let entries = airvpn::parse(&fixture("providers/airvpn_status.json"), ACCOUNT_KEY).unwrap();
             let place = entries[0].place().to_string();
-            let l = link(&AirVpn, &by_country("airvpn", &place), &account(&blob).unwrap(), || Ok(entries.clone())).unwrap();
+            let l =
+                link(&AirVpn, &by_country("airvpn", &place), &account(&blob).unwrap(), || Ok(entries.clone())).unwrap();
             assert!(AirVpn.trusts(&l, &blob));
             let Link::Wg { server, peer: p, ports, entries: at } = l else { panic!("not WireGuard") };
-            let old = Link::Wg { server: Server { public_key: EVIL_KEY.into(), ..server.clone() }, peer: WgPeer { public_key: EVIL_KEY.into(), ..p }, ports, entries: at };
+            let old = Link::Wg {
+                server: Server { public_key: EVIL_KEY.into(), ..server.clone() },
+                peer: WgPeer { public_key: EVIL_KEY.into(), ..p },
+                ports,
+                entries: at,
+            };
             assert!(!AirVpn.trusts(&old, &blob));
             // A pinned server whose saved key is the catalogue's still connects with the account key.
-            let pinned = Location { pinned: Some(Server { public_key: EVIL_KEY.into(), ..server }), ..by_country("airvpn", &place) };
-            assert_eq!(ACCOUNT_KEY, peer(&link(&AirVpn, &pinned, &account(&blob).unwrap(), || Ok(entries.clone())).unwrap()).public_key);
+            let pinned = Location {
+                pinned: Some(Server { public_key: EVIL_KEY.into(), ..server }),
+                ..by_country("airvpn", &place)
+            };
+            assert_eq!(
+                ACCOUNT_KEY,
+                peer(&link(&AirVpn, &pinned, &account(&blob).unwrap(), || Ok(entries.clone())).unwrap()).public_key
+            );
         }
 
         #[test]
@@ -1151,7 +1360,10 @@ mod tests {
             );
             let blob = signed(&Surfshark, &conf);
             surfshark_at(&live, "203.0.113.7");
-            let l = link(&Surfshark, &by_country("surfshark", live[0].place()), &account(&blob).unwrap(), || Ok(live.clone())).unwrap();
+            let l = link(&Surfshark, &by_country("surfshark", live[0].place()), &account(&blob).unwrap(), || {
+                Ok(live.clone())
+            })
+            .unwrap();
             // Right after an upgrade, with no own list kept yet: the .conf's own server is still trusted.
             assert!(Surfshark.trusts(&l, &blob));
         }

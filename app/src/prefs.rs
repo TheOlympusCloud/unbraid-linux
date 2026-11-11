@@ -29,7 +29,8 @@ impl SharedPreferences {
         if let Some(p) = open.get(name) {
             return Ok(p);
         }
-        let p: &'static SharedPreferences = Box::leak(Box::new(SharedPreferences::new(paths::data()?.join(format!("{name}.properties")))));
+        let p: &'static SharedPreferences =
+            Box::leak(Box::new(SharedPreferences::new(paths::data()?.join(format!("{name}.properties")))));
         open.insert(name.into(), p);
         Ok(p)
     }
@@ -301,7 +302,10 @@ mod tests {
             e.put_long("at", 1 << 40);
         });
         let again = SharedPreferences::new(file);
-        assert_eq!((1100, true, 1 << 40), (again.get_int("width", 0), again.get_boolean("maximized", false), again.get_long("at", 0)));
+        assert_eq!(
+            (1100, true, 1 << 40),
+            (again.get_int("width", 0), again.get_boolean("maximized", false), again.get_long("at", 0))
+        );
         assert!(!dir.path().join("desktop.properties.tmp").exists());
     }
 }

@@ -62,7 +62,11 @@ pub(crate) fn post_json_raw(url: &str, body: &str, headers: &[(&str, &str)]) -> 
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(io)?;
-    let mut request = client.post(url).header("Accept", "application/json").header("Content-Type", "application/json").body(body.to_string());
+    let mut request = client
+        .post(url)
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .body(body.to_string());
     for (k, v) in headers {
         request = request.header(*k, *v);
     }
@@ -160,7 +164,8 @@ const PORT: i32 = 51820;
 const PORTS: [i32; 4] = [PORT, 53, 123, 4500];
 const OWNED: &str = "owned";
 /// Categories added to the base ads, trackers and malware (7), with their bit in the blocking address.
-const EXTRA: [(&str, i32, &str); 3] = [("adult", 8, "Adult content"), ("gambling", 16, "Gambling"), ("social", 32, "Social media")];
+const EXTRA: [(&str, i32, &str); 3] =
+    [("adult", 8, "Adult content"), ("gambling", 16, "Gambling"), ("social", 32, "Social media")];
 const SLOTS: i32 = 5;
 const DEVICES: &str = "https://mullvad.net/account/devices";
 
@@ -190,21 +195,42 @@ impl Provider for Mullvad {
     }
 
     fn defaults(&self) -> IndexMap<String, String> {
-        [(PROTECT, "off"), (PORT_OPT, AUTO), (OWNED, "off")].into_iter().chain(EXTRA.map(|(k, ..)| (k, "off"))).map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        [(PROTECT, "off"), (PORT_OPT, AUTO), (OWNED, "off")]
+            .into_iter()
+            .chain(EXTRA.map(|(k, ..)| (k, "off")))
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     fn blocking_dns(&self, opts: &dyn Fn(&str) -> Option<String>) -> Option<String> {
-        Some(format!("100.64.0.{}", 7 + EXTRA.iter().map(|(k, bit, _)| if opts(k).as_deref() == Some("on") { *bit } else { 0 }).sum::<i32>()))
+        Some(format!(
+            "100.64.0.{}",
+            7 + EXTRA.iter().map(|(k, bit, _)| if opts(k).as_deref() == Some("on") { *bit } else { 0 }).sum::<i32>()
+        ))
     }
 
     fn options(&self, _account: &str) -> Vec<Opt> {
-        let ports = std::iter::once((AUTO.to_string(), "Automatic".to_string())).chain(PORTS.map(|p| (p.to_string(), format!("UDP {p}")))).collect();
+        let ports = std::iter::once((AUTO.to_string(), "Automatic".to_string()))
+            .chain(PORTS.map(|p| (p.to_string(), format!("UDP {p}"))))
+            .collect();
         EXTRA
             .iter()
             .map(|(k, _, label)| Opt::new(k, label, "Also blocked while Mullvad blocking is on"))
             .chain([
-                Opt::new(OWNED, "Mullvad-owned servers only", "Leaves out servers Mullvad rents. Servers you pinned stay"),
-                Opt { choices: ports, advanced: true, ..Opt::new(PORT_OPT, "Port", "Automatic tries 51820 first, then other ports when a network blocks it") },
+                Opt::new(
+                    OWNED,
+                    "Mullvad-owned servers only",
+                    "Leaves out servers Mullvad rents. Servers you pinned stay",
+                ),
+                Opt {
+                    choices: ports,
+                    advanced: true,
+                    ..Opt::new(
+                        PORT_OPT,
+                        "Port",
+                        "Automatic tries 51820 first, then other ports when a network blocks it",
+                    )
+                },
             ])
             .collect()
     }
@@ -215,11 +241,20 @@ impl Provider for Mullvad {
     }
 
     fn sign_in(&self, input: &IndexMap<String, String>) -> Result<String> {
-        let n: String = input.get("account").map_or("", String::as_str).chars().filter(|c| !c.is_whitespace() && *c != '-').collect();
+        let n: String = input
+            .get("account")
+            .map_or("", String::as_str)
+            .chars()
+            .filter(|c| !c.is_whitespace() && *c != '-')
+            .collect();
         require!(n.len() == 16 && n.bytes().all(|b| b.is_ascii_digit()), "A Mullvad account number has 16 digits");
         let token = access_token(&n)?;
         let keys = wg_keys::generate();
-        let reply = match post_json_raw(&format!("{API}/accounts/v1/devices"), &format!(r#"{{"pubkey":"{}","hijack_dns":false}}"#, keys.public), &[("Authorization", &bearer(&token))]) {
+        let reply = match post_json_raw(
+            &format!("{API}/accounts/v1/devices"),
+            &format!(r#"{{"pubkey":"{}","hijack_dns":false}}"#, keys.public),
+            &[("Authorization", &bearer(&token))],
+        ) {
             Ok(reply) => reply,
             Err(e) if is_io(&e) => return adopted(&token, &n, &keys).ok_or(e),
             Err(e) => return Err(e),
@@ -231,7 +266,10 @@ impl Provider for Mullvad {
         let release = || -> Result<()> {
             let a = account(blob)?;
             let token = access_token(&a.account)?;
-            match http::delete(&format!("{API}/accounts/v1/devices/{}", http::enc(&a.device_id)), &[("Authorization", &bearer(&token))]) {
+            match http::delete(
+                &format!("{API}/accounts/v1/devices/{}", http::enc(&a.device_id)),
+                &[("Authorization", &bearer(&token))],
+            ) {
                 Err(Error::Status { code: 404 }) | Ok(_) => Ok(()),
                 Err(e) => Err(e),
             }
@@ -243,7 +281,12 @@ impl Provider for Mullvad {
     fn revoked(&self, blob: &str) -> bool {
         let check = || -> Result<String> {
             let a = account(blob)?;
-            http::get(&format!("{API}/accounts/v1/devices/{}", http::enc(&a.device_id)), &[("Authorization", &bearer(&access_token(&a.account)?))], None, None)
+            http::get(
+                &format!("{API}/accounts/v1/devices/{}", http::enc(&a.device_id)),
+                &[("Authorization", &bearer(&access_token(&a.account)?))],
+                None,
+                None,
+            )
         };
         match check() {
             Ok(_) => false,
@@ -258,7 +301,9 @@ impl Provider for Mullvad {
     fn device(&self, blob: &str) -> Option<Device> {
         let a = account(blob).ok()?;
         let list = access_token(&a.account)
-            .and_then(|token| http::get(&format!("{API}/accounts/v1/devices"), &[("Authorization", &bearer(&token))], None, None))
+            .and_then(|token| {
+                http::get(&format!("{API}/accounts/v1/devices"), &[("Authorization", &bearer(&token))], None, None)
+            })
             .and_then(|body| devices(&body))
             .ok();
         Some(device_line(&a, list.as_deref()))
@@ -266,7 +311,9 @@ impl Provider for Mullvad {
 
     fn plan(&self, blob: &str) -> Option<String> {
         let token = access_token(&account(blob).ok()?.account).ok()?;
-        let body = http::get(&format!("{API}/accounts/v1/accounts/me"), &[("Authorization", &bearer(&token))], None, None).ok()?;
+        let body =
+            http::get(&format!("{API}/accounts/v1/accounts/me"), &[("Authorization", &bearer(&token))], None, None)
+                .ok()?;
         expiry(&body).ok()?.map(|t| plans::line(Some(t), chrono::Utc::now().timestamp()))
     }
 
@@ -297,7 +344,10 @@ pub(crate) fn device_line(a: &Account, list: Option<&[DeviceReply]>) -> Device {
     let name = list.and_then(|l| l.iter().find(|d| d.id == a.device_id)).map_or(a.device.as_str(), |d| d.name.as_str());
     let name = name.split(' ').map(capitalized).collect::<Vec<_>>().join(" ");
     Device {
-        line: format!("Its own device{}, removed when you sign out", if name.trim().is_empty() { String::new() } else { format!(", {name}") }),
+        line: format!(
+            "Its own device{}, removed when you sign out",
+            if name.trim().is_empty() { String::new() } else { format!(", {name}") }
+        ),
         url: Some(DEVICES.into()),
         used: list.map(|l| l.len() as i32),
     }
@@ -324,7 +374,10 @@ fn access_token(account: &str) -> Result<String> {
 
 /// The device Mullvad registered for `keys` although its reply never arrived, if the account lists one.
 fn adopted(token: &str, account: &str, keys: &wg_keys::Keys) -> Option<String> {
-    http::get(&format!("{API}/accounts/v1/devices"), &[("Authorization", &bearer(token))], None, None).and_then(|list| adopt(&list, account, keys)).ok().flatten()
+    http::get(&format!("{API}/accounts/v1/devices"), &[("Authorization", &bearer(token))], None, None)
+        .and_then(|list| adopt(&list, account, keys))
+        .ok()
+        .flatten()
 }
 
 pub(crate) fn adopt(list: &str, account: &str, keys: &wg_keys::Keys) -> Result<Option<String>> {
@@ -355,7 +408,13 @@ pub(crate) fn device((code, body): (u16, String), account: &str, private_key: &s
 }
 
 fn blob(account: &str, private_key: &str, d: DeviceReply) -> Result<String> {
-    encode(&Account { account: account.into(), private_key: private_key.into(), ipv4_address: d.ipv4_address, device_id: d.id, device: d.name })
+    encode(&Account {
+        account: account.into(),
+        private_key: private_key.into(),
+        ipv4_address: d.ipv4_address,
+        device_id: d.id,
+        device: d.name,
+    })
 }
 
 pub fn account(blob: &str) -> Result<Account> {
@@ -385,15 +444,23 @@ pub(crate) fn countries(l: &RelayList, owned_only: bool) -> Vec<Country> {
     groups
         .into_iter()
         .map(|(cc, rs)| {
-            let mut cities: Vec<(&str, &str)> =
-                rs.iter().map(|r| r.location.as_str()).collect::<IndexSet<_>>().into_iter().map(|code| (code, l.locations[code].city.as_str())).collect();
+            let mut cities: Vec<(&str, &str)> = rs
+                .iter()
+                .map(|r| r.location.as_str())
+                .collect::<IndexSet<_>>()
+                .into_iter()
+                .map(|code| (code, l.locations[code].city.as_str()))
+                .collect();
             cities.sort_by_key(|(_, city)| *city);
             Country {
                 id: stable_id(cc),
                 name: country(rs[0]),
                 code: cc.to_uppercase(),
                 server_count: rs.len() as i32,
-                cities: cities.into_iter().map(|(code, city)| City { id: stable_id(code), name: city.into(), key: Some(code.into()) }).collect(),
+                cities: cities
+                    .into_iter()
+                    .map(|(code, city)| City { id: stable_id(code), name: city.into(), key: Some(code.into()) })
+                    .collect(),
             }
         })
         .collect()
@@ -406,15 +473,25 @@ pub(crate) fn matching<'a>(l: &'a RelayList, loc: &Location, owned_only: bool) -
             (r.owned || !owned_only)
                 && match (&loc.region, &loc.country_code, &loc.country) {
                     (Some(region), ..) => r.location == *region,
-                    (None, Some(cc), _) => r.in_country && eq_ignore_case(r.location.split('-').next().unwrap_or_default(), cc),
-                    (None, None, Some(country)) => r.in_country && l.locations.get(&r.location).is_some_and(|x| x.country == *country),
+                    (None, Some(cc), _) => {
+                        r.in_country && eq_ignore_case(r.location.split('-').next().unwrap_or_default(), cc)
+                    }
+                    (None, None, Some(country)) => {
+                        r.in_country && l.locations.get(&r.location).is_some_and(|x| x.country == *country)
+                    }
                     (None, None, None) => r.in_country,
                 }
         })
         .collect()
 }
 
-pub(crate) fn link(l: Option<&RelayList>, loc: &Location, a: &Account, rnd: &mut impl Rng, owned_only: bool) -> Result<Link> {
+pub(crate) fn link(
+    l: Option<&RelayList>,
+    loc: &Location,
+    a: &Account,
+    rnd: &mut impl Rng,
+    owned_only: bool,
+) -> Result<Link> {
     let sv = match (&loc.pinned, l) {
         (Some(p), None) => p.clone(),
         (Some(p), Some(l)) => current(l, p)?,
@@ -423,19 +500,37 @@ pub(crate) fn link(l: Option<&RelayList>, loc: &Location, a: &Account, rnd: &mut
         (None, Some(l)) => {
             let rs = matching(l, loc, owned_only);
             if rs.is_empty() {
-                return Err(Error::Io(format!("No active {} server for {}", if owned_only { "Mullvad-owned" } else { "Mullvad" }, loc.label())));
+                return Err(Error::Io(format!(
+                    "No active {} server for {}",
+                    if owned_only { "Mullvad-owned" } else { "Mullvad" },
+                    loc.label()
+                )));
             }
             server(pick(&rs, rnd), l)
         }
     };
     let address = format!("{}/32", a.ipv4_address.split('/').next().unwrap_or_default());
-    let peer = WgPeer { dns: vec![DNS.into()], ..WgPeer::new(&sv.name, &a.private_key, vec![address], &sv.public_key, &format!("{}:{PORT}", sv.ip), vec!["0.0.0.0/0".into()]) };
+    let peer = WgPeer {
+        dns: vec![DNS.into()],
+        ..WgPeer::new(
+            &sv.name,
+            &a.private_key,
+            vec![address],
+            &sv.public_key,
+            &format!("{}:{PORT}", sv.ip),
+            vec!["0.0.0.0/0".into()],
+        )
+    };
     Ok(Link::Wg { server: sv, peer, ports: PORTS.to_vec(), entries: vec![] })
 }
 
 /// `p` as the fresh list has it, found by host name, else by IP.
 fn current(l: &RelayList, p: &Server) -> Result<Server> {
-    let r = l.usable().find(|r| r.hostname == p.host).or_else(|| l.usable().find(|r| r.ip == p.ip)).ok_or_else(|| Error::NoLongerOffered(p.name.clone()))?;
+    let r = l
+        .usable()
+        .find(|r| r.hostname == p.host)
+        .or_else(|| l.usable().find(|r| r.ip == p.ip))
+        .ok_or_else(|| Error::NoLongerOffered(p.name.clone()))?;
     Ok(server(r, l))
 }
 
@@ -457,7 +552,15 @@ fn pick<'a>(rs: &[&'a Relay], rnd: &mut impl Rng) -> &'a Relay {
 
 fn server(r: &Relay, l: &RelayList) -> Server {
     let city = l.locations.get(&r.location).map(|x| x.city.clone()).unwrap_or_default();
-    Server { name: r.hostname.clone(), host: r.hostname.clone(), ip: r.ip.clone(), public_key: r.public_key.clone(), load: 0, city, country: String::new() }
+    Server {
+        name: r.hostname.clone(),
+        host: r.hostname.clone(),
+        ip: r.ip.clone(),
+        public_key: r.public_key.clone(),
+        load: 0,
+        city,
+        country: String::new(),
+    }
 }
 
 #[cfg(test)]
@@ -541,7 +644,12 @@ mod tests {
         let mut sorted = names.clone();
         sorted.sort();
         assert_eq!(sorted, names);
-        assert!(cs.iter().all(|c| c.server_count > 0 && c.cities.iter().all(|city| city.key.as_deref().unwrap().starts_with(&format!("{}-", c.code.to_lowercase())))));
+        assert!(cs.iter().all(|c| {
+            c.server_count > 0
+                && c.cities
+                    .iter()
+                    .all(|city| city.key.as_deref().unwrap().starts_with(&format!("{}-", c.code.to_lowercase())))
+        }));
     }
 
     #[test]
@@ -557,14 +665,25 @@ mod tests {
     fn relay_keys_are_wire_guard_keys() {
         let list = list();
         assert!(!list.wireguard.relays.is_empty());
-        assert!(list.wireguard.relays.iter().all(|r| r.public_key.len() == 44 && STANDARD.decode(&r.public_key).unwrap().len() == 32));
+        assert!(
+            list.wireguard
+                .relays
+                .iter()
+                .all(|r| r.public_key.len() == 44 && STANDARD.decode(&r.public_key).unwrap().len() == 32)
+        );
     }
 
     #[test]
     fn country_link_uses_an_active_relay_in_that_country() {
         let (list, acct) = (list(), acct());
-        let eligible: HashSet<&str> = list.usable().filter(|r| r.location.starts_with("se-") && r.in_country).map(|r| r.hostname.as_str()).collect();
-        let seen: Vec<Link> = (1..=60).map(|i| link(Some(&list), &by_code("mullvad", "SE"), &acct, &mut seeded(i), false).unwrap()).collect();
+        let eligible: HashSet<&str> = list
+            .usable()
+            .filter(|r| r.location.starts_with("se-") && r.in_country)
+            .map(|r| r.hostname.as_str())
+            .collect();
+        let seen: Vec<Link> = (1..=60)
+            .map(|i| link(Some(&list), &by_code("mullvad", "SE"), &acct, &mut seeded(i), false).unwrap())
+            .collect();
         for l in &seen {
             assert!(eligible.contains(l.server().host.as_str()));
             let p = peer(l);
@@ -582,7 +701,9 @@ mod tests {
     fn city_link_includes_relays_hidden_from_the_country() {
         let (list, acct) = (list(), acct());
         let malmo = Location { region: Some("se-mma".into()), ..by_code("mullvad", "SE") };
-        let picks: Vec<Server> = (1..=60).map(|i| link(Some(&list), &malmo, &acct, &mut seeded(i), false).unwrap().server().clone()).collect();
+        let picks: Vec<Server> = (1..=60)
+            .map(|i| link(Some(&list), &malmo, &acct, &mut seeded(i), false).unwrap().server().clone())
+            .collect();
         assert!(picks.iter().all(|s| s.host.starts_with("se-mma-") && s.city == "Malmö"));
         assert!(picks.iter().any(|s| s.host == "se-mma-wg-004"));
     }
@@ -595,12 +716,16 @@ mod tests {
             {"hostname":"xx-aaa-wg-002","location":"xx-aaa","active":true,"ipv4_addr_in":"1.1.1.2","public_key":"k","weight":100}]}}"#,
         )
         .unwrap();
-        assert!((1..=30).all(|i| link(Some(&rs), &by_code("mullvad", "XX"), &acct(), &mut seeded(i), false).unwrap().server().host == "xx-aaa-wg-002"));
+        assert!((1..=30).all(|i| {
+            link(Some(&rs), &by_code("mullvad", "XX"), &acct(), &mut seeded(i), false).unwrap().server().host
+                == "xx-aaa-wg-002"
+        }));
     }
 
     #[test]
     fn pinned_server_needs_no_relay_list() {
-        let sv = link(Some(&list()), &by_code("mullvad", "NL"), &acct(), &mut rand::rng(), false).unwrap().server().clone();
+        let sv =
+            link(Some(&list()), &by_code("mullvad", "NL"), &acct(), &mut rand::rng(), false).unwrap().server().clone();
         let l = link(None, &pinned_to("mullvad", sv.clone()), &acct(), &mut rand::rng(), false).unwrap();
         assert_eq!(&sv, l.server());
         assert_eq!(format!("{}:51820", sv.ip), peer(&l).endpoint);
@@ -609,25 +734,47 @@ mod tests {
     #[test]
     fn missing_pinned_relay_is_no_longer_offered() {
         let list = list();
-        let sv = link(Some(&list), &by_code("mullvad", "NL"), &acct(), &mut rand::rng(), false).unwrap().server().clone();
+        let sv =
+            link(Some(&list), &by_code("mullvad", "NL"), &acct(), &mut rand::rng(), false).unwrap().server().clone();
         let gone = Server { host: "gone".into(), ip: "203.0.113.99".into(), ..sv };
-        assert!(matches!(link(Some(&list), &pinned_to("mullvad", gone), &acct(), &mut rand::rng(), false), Err(Error::NoLongerOffered(_))));
+        assert!(matches!(
+            link(Some(&list), &pinned_to("mullvad", gone), &acct(), &mut rand::rng(), false),
+            Err(Error::NoLongerOffered(_))
+        ));
     }
 
     #[test]
     fn owned_only_leaves_out_rented_servers() {
         let list = list();
-        let us = |owned: bool| countries(&list, owned).into_iter().find(|c| c.code == "US").unwrap().cities.into_iter().map(|c| c.key.unwrap()).collect::<Vec<_>>();
+        let us = |owned: bool| {
+            countries(&list, owned)
+                .into_iter()
+                .find(|c| c.code == "US")
+                .unwrap()
+                .cities
+                .into_iter()
+                .map(|c| c.key.unwrap())
+                .collect::<Vec<_>>()
+        };
         assert_eq!(vec!["us-lax", "us-nyc"], us(false));
         assert_eq!(vec!["us-nyc"], us(true));
-        assert!((1..=30).all(|i| link(Some(&list), &by_code("mullvad", "US"), &acct(), &mut seeded(i), true).unwrap().server().host.starts_with("us-nyc-")));
+        assert!((1..=30).all(|i| {
+            link(Some(&list), &by_code("mullvad", "US"), &acct(), &mut seeded(i), true)
+                .unwrap()
+                .server()
+                .host
+                .starts_with("us-nyc-")
+        }));
         let lax = Location { region: Some("us-lax".into()), ..by_code("mullvad", "US") };
         match link(Some(&list), &lax, &acct(), &mut rand::rng(), true) {
             Err(e) if is_io(&e) => assert!(e.to_string().contains("Mullvad-owned")),
             other => panic!("{other:?}"),
         }
         let rented = link(Some(&list), &lax, &acct(), &mut rand::rng(), false).unwrap().server().clone();
-        assert_eq!(&rented, link(Some(&list), &pinned_to("mullvad", rented.clone()), &acct(), &mut rand::rng(), true).unwrap().server());
+        assert_eq!(
+            &rented,
+            link(Some(&list), &pinned_to("mullvad", rented.clone()), &acct(), &mut rand::rng(), true).unwrap().server()
+        );
     }
 
     #[test]
@@ -636,14 +783,22 @@ mod tests {
         let Link::Wg { ports, .. } = &l else { panic!("not WireGuard") };
         assert_eq!(&vec![51820, 53, 123, 4500], ports);
         assert_eq!(Some("100.64.0.7".to_string()), Mullvad.blocking_dns(&|_| None));
-        assert_eq!(Some("100.64.0.47".to_string()), Mullvad.blocking_dns(&|k| Some(if k == "adult" || k == "social" { "on" } else { "off" }.into())));
+        assert_eq!(
+            Some("100.64.0.47".to_string()),
+            Mullvad.blocking_dns(&|k| Some(if k == "adult" || k == "social" { "on" } else { "off" }.into()))
+        );
         assert_eq!(Some("100.64.0.63".to_string()), Mullvad.blocking_dns(&|_| Some("on".into())));
-        assert_eq!(vec!["adult", "gambling", "social", "owned", "port"], Mullvad.options("").iter().map(|o| o.key.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["adult", "gambling", "social", "owned", "port"],
+            Mullvad.options("").iter().map(|o| o.key.as_str()).collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn unknown_country_fails() {
-        assert!(link(Some(&list()), &by_code("mullvad", "ZZ"), &acct(), &mut rand::rng(), false).is_err_and(|e| is_io(&e)));
+        assert!(
+            link(Some(&list()), &by_code("mullvad", "ZZ"), &acct(), &mut rand::rng(), false).is_err_and(|e| is_io(&e))
+        );
     }
 
     #[test]
@@ -667,7 +822,9 @@ mod tests {
             assert!(matches!(token((code, body.into())), Err(Error::Auth { .. })));
         }
         match device((400, r#"{"code":"MAX_DEVICES_REACHED","error":"x"}"#.into()), "1", "p") {
-            Err(Error::Auth { message, .. }) => assert!(message.contains("All 5 Mullvad devices are in use"), "{message}"),
+            Err(Error::Auth { message, .. }) => {
+                assert!(message.contains("All 5 Mullvad devices are in use"), "{message}")
+            }
             other => panic!("{other:?}"),
         }
         assert!(device((500, String::new()), "1", "p").is_err_and(|e| is_io(&e) && !matches!(e, Error::Auth { .. })));
@@ -677,29 +834,55 @@ mod tests {
     fn lost_registration_reply_is_reconciled_by_public_key() {
         let keys = wg_keys::Keys { private: "priv".into(), public: "ourpub".into() };
         let devices = r#"[{"id":"d-1","name":"a","pubkey":"other","ipv4_address":"10.68.0.1/32"},{"id":"d-2","name":"b","pubkey":"ourpub","ipv4_address":"10.68.0.2/32","hijack_dns":false}]"#;
-        let expected = Account { account: "1234567890123456".into(), private_key: "priv".into(), ipv4_address: "10.68.0.2/32".into(), device_id: "d-2".into(), device: "b".into() };
+        let expected = Account {
+            account: "1234567890123456".into(),
+            private_key: "priv".into(),
+            ipv4_address: "10.68.0.2/32".into(),
+            device_id: "d-2".into(),
+            device: "b".into(),
+        };
         assert_eq!(expected, account(&adopt(devices, "1234567890123456", &keys).unwrap().unwrap()).unwrap());
         assert_eq!(None, adopt("[]", "1234567890123456", &keys).unwrap());
-        assert_eq!(None, adopt(devices, "1234567890123456", &wg_keys::Keys { private: "p".into(), public: "unknown".into() }).unwrap());
+        assert_eq!(
+            None,
+            adopt(devices, "1234567890123456", &wg_keys::Keys { private: "p".into(), public: "unknown".into() })
+                .unwrap()
+        );
     }
 
     #[test]
     fn old_blob_without_device_name_still_loads() {
-        assert_eq!("", account(r#"{"account":"1","privateKey":"p","ipv4Address":"10.0.0.1/32","deviceId":"d"}"#).unwrap().device);
+        assert_eq!(
+            "",
+            account(r#"{"account":"1","privateKey":"p","ipv4Address":"10.0.0.1/32","deviceId":"d"}"#).unwrap().device
+        );
     }
 
     #[test]
     fn device_line_counts_slots_and_names_ours() {
         let list = devices(r#"[{"id":"d-1","name":"tidy cat","pubkey":"a","ipv4_address":"10.68.0.1/32"},{"id":"dev-1","name":"rapid otter","pubkey":"b","ipv4_address":"10.68.0.2/32"}]"#).unwrap();
         let url = Some("https://mullvad.net/account/devices".to_string());
-        assert_eq!(Device { line: "Its own device, Rapid Otter, removed when you sign out".into(), url: url.clone(), used: Some(2) }, device_line(&acct(), Some(&list)));
-        assert_eq!(Device { line: "Its own device, Old Name, removed when you sign out".into(), url, used: None }, device_line(&Account { device: "old name".into(), ..acct() }, None));
+        assert_eq!(
+            Device {
+                line: "Its own device, Rapid Otter, removed when you sign out".into(),
+                url: url.clone(),
+                used: Some(2)
+            },
+            device_line(&acct(), Some(&list))
+        );
+        assert_eq!(
+            Device { line: "Its own device, Old Name, removed when you sign out".into(), url, used: None },
+            device_line(&Account { device: "old name".into(), ..acct() }, None)
+        );
         assert_eq!("Its own device, removed when you sign out", device_line(&acct(), None).line);
     }
 
     #[test]
     fn expiry_is_read_from_account_reply() {
-        assert_eq!(Some(1795334400), expiry(r#"{"id":"x","expiry":"2026-11-22T08:00:00+00:00","max_devices":5}"#).unwrap());
+        assert_eq!(
+            Some(1795334400),
+            expiry(r#"{"id":"x","expiry":"2026-11-22T08:00:00+00:00","max_devices":5}"#).unwrap()
+        );
         assert_eq!(Some(1795334400), expiry(r#"{"expiry":"2026-11-22T08:00:00Z"}"#).unwrap());
         assert_eq!(None, expiry(r#"{"id":"x"}"#).unwrap());
         assert_eq!(None, expiry(r#"{"expiry":"soon"}"#).unwrap());
@@ -708,7 +891,12 @@ mod tests {
     #[test]
     fn parse_failures_do_not_quote_the_reply() {
         let bad = r#"{"access_token": SECRET-TOKEN"#;
-        let failures = [token((200, bad.into())).err(), device((201, bad.into()), "1", "p").err(), account(r#"{"account":"SECRET-ACCT" "#).err(), parse("SECRET-LIST").err()];
+        let failures = [
+            token((200, bad.into())).err(),
+            device((201, bad.into()), "1", "p").err(),
+            account(r#"{"account":"SECRET-ACCT" "#).err(),
+            parse("SECRET-LIST").err(),
+        ];
         for e in failures {
             let e = e.expect("refused");
             assert!(is_io(&e) && !e.to_string().contains("SECRET"), "{e}");

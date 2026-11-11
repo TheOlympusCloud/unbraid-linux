@@ -316,7 +316,8 @@ fn send(m: Msg) -> bool {
         let (tx, rx) = mpsc::unbounded_channel();
         let me = tx.clone();
         // Made on the runtime: the engine's channel starts a task of its own.
-        app::runtime().spawn(async move { Session::new(live(), app::store().clone(), engine::get(), me).run(rx).await });
+        app::runtime()
+            .spawn(async move { Session::new(live(), app::store().clone(), engine::get(), me).run(rx).await });
         tx
     });
     inbox.send(m).is_ok()
@@ -470,7 +471,10 @@ struct Session {
 impl Session {
     fn new(live: &'static Live, store: Arc<Store>, engine: &'static Engine, me: Inbox) -> Session {
         // Only a program the engine can tell apart: one that other programs share would take them out of the VPN too.
-        let own = std::env::current_exe().ok().filter(|p| apps::unroutable(p).is_none()).map(|p| p.to_string_lossy().into_owned());
+        let own = std::env::current_exe()
+            .ok()
+            .filter(|p| apps::unroutable(p).is_none())
+            .map(|p| p.to_string_lossy().into_owned());
         Session {
             live,
             store,
@@ -619,7 +623,8 @@ impl Session {
         }
         // Anything edited while connecting is picked up here: only the applied setup is skipped. Setup edits and
         // sign-ins and sign-outs both change what the engine must run.
-        self.health = Some(tokio::spawn(watch_health(self.me.clone(), self.live, self.net.clone(), self.store.clone())));
+        self.health =
+            Some(tokio::spawn(watch_health(self.me.clone(), self.live, self.net.clone(), self.store.clone())));
         self.watch = Some(tokio::spawn(watch_edits(self.store.clone(), self.me.clone())));
         Ok(())
     }
@@ -647,7 +652,10 @@ impl Session {
             // a new table that couldn't be noted down doesn't start, or the next process would hand it out again.
             if self.last_block != Some(input.fake_block) {
                 let (store, block) = (self.store.clone(), input.fake_block);
-                engine(blocking(move || store.set_fake_block(block)).await, &format!("{APP} couldn't save its state. Try again."))?;
+                engine(
+                    blocking(move || store.set_fake_block(block)).await,
+                    &format!("{APP} couldn't save its state. Try again."),
+                )?;
             }
             self.last_block = Some(input.fake_block);
             self.restarting = true;
@@ -665,7 +673,13 @@ impl Session {
         *self.live.tunnel_dns.write().unwrap() = compiler::probe_dns(&json).unwrap_or_default();
         self.last_good = Some(json);
         let mut tags = compiler::shared(setup, &link_picker::ported(setup, links, &self.port_step), &blocked)?;
-        tags.extend(setup.active_routes().into_iter().filter(|r| r.ts_exit.is_some()).map(|r| (r.id.clone(), TS_TAG.to_string())));
+        tags.extend(
+            setup
+                .active_routes()
+                .into_iter()
+                .filter(|r| r.ts_exit.is_some())
+                .map(|r| (r.id.clone(), TS_TAG.to_string())),
+        );
         *self.live.tags.write().unwrap() = tags;
         let was = self.live.running.write().unwrap().replace(setup.clone());
         // Published after tags and running: whoever sees this engine number also sees the tunnels it runs. The new
@@ -700,14 +714,28 @@ impl Session {
 
     /// Compiled as under Android's lockdown, where the system leaves no app out (Linux can't), then made a Linux config.
     /// The paths are the engine's own: it keeps them in its root-only folder for this user.
-    fn input(&self, setup: &Setup, links: &IndexMap<String, Link>, blocked: &IndexSet<String>, probe: Option<(u16, String)>, new_table: bool) -> Input {
+    fn input(
+        &self,
+        setup: &Setup,
+        links: &IndexMap<String, Link>,
+        blocked: &IndexSet<String>,
+        probe: Option<(u16, String)>,
+        new_table: bool,
+    ) -> Input {
         Input {
             ts_suffix: self.store.ts_suffix(),
             probe,
             fake_block: self.fake_block(new_table),
             blocked: blocked.clone(),
             ts_login_pending: self.ts_login_pending,
-            ..Input::new(setup.clone(), link_picker::ported(setup, links, &self.port_step), "app.unbraid", true, "tailscale", "cache.db")
+            ..Input::new(
+                setup.clone(),
+                link_picker::ported(setup, links, &self.port_step),
+                "app.unbraid",
+                true,
+                "tailscale",
+                "cache.db",
+            )
         }
     }
 
@@ -754,10 +782,18 @@ impl Session {
         // lookups before it failed), noted down before the engine can hand any of it out.
         let fake_block = compiler::next_block(self.last_block.unwrap_or(last.fake_block), false);
         let ts_login_pending = last.ts_login_pending && self.ts_login_pending;
-        let input = Input { setup, ts_suffix: self.store.ts_suffix(), probe: Some(next.clone()), fake_block, ts_login_pending, ..last };
+        let input = Input {
+            setup,
+            ts_suffix: self.store.ts_suffix(),
+            probe: Some(next.clone()),
+            fake_block,
+            ts_login_pending,
+            ..last
+        };
         let Ok(json) = compile(&input, &self.own).await else { return false };
         let store = self.store.clone();
-        if blocking(move || store.set_fake_block(fake_block)).await.is_err() || self.engine.start(&json).await.is_err() {
+        if blocking(move || store.set_fake_block(fake_block)).await.is_err() || self.engine.start(&json).await.is_err()
+        {
             return false;
         }
         self.starts += 1;
@@ -789,20 +825,38 @@ impl Session {
         // While a provider is asked for a server, apps moving off Direct already leave through their new route, or wait
         // blocked if that is the one still waiting: never on their real address for the time it takes. A tunnel whose
         // account was signed out or refused stops now too, not once the others are found.
-        let stop_now = ready.blocked.iter().any(|(id, e)| matches!(e, Error::Auth { .. }) && self.links.contains_key(id));
+        let stop_now =
+            ready.blocked.iter().any(|(id, e)| matches!(e, Error::Auth { .. }) && self.links.contains_key(id));
         let routes: IndexSet<String> = setup.active_routes().into_iter().map(|r| r.id.clone()).collect();
-        if (stop_now || link_picker::leaves_direct(self.applied.as_ref(), &setup, &routes)) && !self.install(&setup, &ready, &accounts).await {
+        if (stop_now || link_picker::leaves_direct(self.applied.as_ref(), &setup, &routes))
+            && !self.install(&setup, &ready, &accounts).await
+        {
             return;
         }
         let refused = self.refused_for(&setup, &accounts);
         let mut avoid = r.avoid;
         avoid.extend(self.live.failing());
         let pending = Pending { setup: setup.clone(), accounts: accounts.clone(), generation: self.generation };
-        let (applied, applied_accounts, store, me) = (self.applied.clone(), self.applied_accounts.clone(), self.store.clone(), self.me.clone());
+        let (applied, applied_accounts, store, me) =
+            (self.applied.clone(), self.applied_accounts.clone(), self.store.clone(), self.me.clone());
         tokio::spawn(async move {
             // A route without a tunnel (signed out, refused, unreachable) is blocked; the others keep running. Tunnels
             // come from the offline pass, which already dropped any a changed location or account can't keep.
-            let picked = blocking(move || link_picker::pick(&setup, &ready.links, applied.as_ref(), &applied_accounts, &accounts, &store.last_links(), &avoid, &refused, false, &providers::get)).await;
+            let picked = blocking(move || {
+                link_picker::pick(
+                    &setup,
+                    &ready.links,
+                    applied.as_ref(),
+                    &applied_accounts,
+                    &accounts,
+                    &store.last_links(),
+                    &avoid,
+                    &refused,
+                    false,
+                    &providers::get,
+                )
+            })
+            .await;
             let _ = me.send(Msg::Picked(Box::new((pending, picked))));
         });
     }
@@ -810,7 +864,11 @@ impl Session {
     /// What the providers answered a reload: stopped, reloaded or edited meanwhile, the newer state wins (the watcher
     /// reloads an edit).
     async fn picked(&mut self, p: Pending, picked: Picked) {
-        if self.phase() != Phase::On || self.generation != p.generation || self.store.current() != p.setup || self.store.current_accounts() != p.accounts {
+        if self.phase() != Phase::On
+            || self.generation != p.generation
+            || self.store.current() != p.setup
+            || self.store.current_accounts() != p.accounts
+        {
             return;
         }
         self.note_refusals(&p.setup, &p.accounts, &picked);
@@ -827,7 +885,9 @@ impl Session {
             self.live.state.send_modify(|v| v.refused = 0);
         }
         let now = (setup, accounts);
-        if (self.applied.as_ref() != Some(&now.0) || now.1 != self.applied_accounts) && self.rejected.as_ref() != Some(&now) {
+        if (self.applied.as_ref() != Some(&now.0) || now.1 != self.applied_accounts)
+            && self.rejected.as_ref() != Some(&now)
+        {
             self.reload(Reload::default()).await;
         }
     }
@@ -836,7 +896,8 @@ impl Session {
     async fn install(&mut self, setup: &Setup, picked: &Picked, accounts: &IndexMap<String, String>) -> bool {
         let e = match self.apply(setup, picked, accounts).await {
             Ok(()) => {
-                let (servers, error, stuck) = (servers(&picked.links), blocked_text(setup, &picked.blocked), stuck(setup, &picked.blocked));
+                let (servers, error, stuck) =
+                    (servers(&picked.links), blocked_text(setup, &picked.blocked), stuck(setup, &picked.blocked));
                 self.live.state.send_modify(|v| {
                     v.servers = servers;
                     v.error = error;
@@ -881,12 +942,31 @@ impl Session {
     }
 
     /// Tunnels for `setup`'s active routes ([`link_picker::pick`]); providers are asked, off this task, unless `offline`.
-    async fn pick_links(&mut self, setup: &Setup, keep: IndexMap<String, Link>, accounts: &IndexMap<String, String>, mut avoid: IndexSet<String>, offline: bool) -> Picked {
+    async fn pick_links(
+        &mut self,
+        setup: &Setup,
+        keep: IndexMap<String, Link>,
+        accounts: &IndexMap<String, String>,
+        mut avoid: IndexSet<String>,
+        offline: bool,
+    ) -> Picked {
         let refused = self.refused_for(setup, accounts);
         avoid.extend(self.live.failing());
-        let (s, a, applied, applied_accounts, store) = (setup.clone(), accounts.clone(), self.applied.clone(), self.applied_accounts.clone(), self.store.clone());
+        let (s, a, applied, applied_accounts, store) =
+            (setup.clone(), accounts.clone(), self.applied.clone(), self.applied_accounts.clone(), self.store.clone());
         let r = blocking(move || {
-            let r = link_picker::pick(&s, &keep, applied.as_ref(), &applied_accounts, &a, &store.last_links(), &avoid, &refused, offline, &providers::get);
+            let r = link_picker::pick(
+                &s,
+                &keep,
+                applied.as_ref(),
+                &applied_accounts,
+                &a,
+                &store.last_links(),
+                &avoid,
+                &refused,
+                offline,
+                &providers::get,
+            );
             // Only a fallback cache: failing to write it never stops a connection.
             if !offline {
                 store.remember_links(&r.remember);
@@ -931,7 +1011,12 @@ impl Session {
     fn dropped(&mut self, dropped: &[String], accounts: &IndexMap<String, String>) {
         for p in dropped {
             let name = providers::get(p).map_or(p.as_str(), |x| x.name());
-            let e = Error::Auth { message: format!("{name} no longer has this computer (it was removed from your account). Sign in again"), url: None };
+            let e = Error::Auth {
+                message: format!(
+                    "{name} no longer has this computer (it was removed from your account). Sign in again"
+                ),
+                url: None,
+            };
             self.refusals.insert(p.clone(), (accounts.get(p).cloned(), e));
         }
     }
@@ -968,7 +1053,9 @@ impl Session {
         if self.phase() != Phase::On || self.starts != r.engine || self.net.network() != r.network {
             return None;
         }
-        let failing = |c: &Checks| -> IndexSet<String> { c.streaks.keys().flat_map(|t| r.servers.get(t).into_iter().flatten().cloned()).collect() };
+        let failing = |c: &Checks| -> IndexSet<String> {
+            c.streaks.keys().flat_map(|t| r.servers.get(t).into_iter().flatten().cloned()).collect()
+        };
         let Some(down) = &r.down else {
             // Most likely the computer's own network: no server is blamed for these checks.
             if r.regular {
@@ -1002,18 +1089,25 @@ impl Session {
         }
         // The next connect, even a manual one, avoids them.
         *self.live.failing.write().unwrap() = failing(c);
-        let dropping: IndexSet<String> = r.by_tag.iter().filter(|(t, _)| health::dropping(c.history.get(*t).map_or(&[][..], Vec::as_slice))).flat_map(|(_, ids)| ids.iter().cloned()).collect();
+        let dropping: IndexSet<String> = r
+            .by_tag
+            .iter()
+            .filter(|(t, _)| health::dropping(c.history.get(*t).map_or(&[][..], Vec::as_slice)))
+            .flat_map(|(_, ids)| ids.iter().cloned())
+            .collect();
         if dropping != self.live.state.borrow().dropping {
             self.live.state.send_modify(|v| v.dropping = dropping);
         }
-        let dead_tags: Vec<&String> = r.checked.iter().filter(|t| c.streaks.get(*t).is_some_and(|s| health::dead(s, r.now, c.hold(t)))).collect();
+        let dead_tags: Vec<&String> =
+            r.checked.iter().filter(|t| c.streaks.get(*t).is_some_and(|s| health::dead(s, r.now, c.hold(t)))).collect();
         if dead_tags.is_empty() {
             return None;
         }
         for t in &dead_tags {
             c.holds.insert((*t).clone(), r.now + health::COOLDOWN);
         }
-        let dead: Vec<&String> = r.by_tag.iter().filter(|(t, _)| dead_tags.contains(t)).flat_map(|(_, ids)| ids).collect();
+        let dead: Vec<&String> =
+            r.by_tag.iter().filter(|(t, _)| dead_tags.contains(t)).flat_map(|(_, ids)| ids).collect();
         let s = self.live.running()?;
         // A dead tunnel on Automatic also tries its provider's next port: a failed check can't tell a blocked port from a
         // dead server.
@@ -1028,11 +1122,29 @@ impl Session {
         for p in &stepped {
             *self.port_step.entry(p.clone()).or_default() += 1;
         }
-        let movable: Vec<&String> = dead.iter().copied().filter(|id| s.route(Some(id)).is_some_and(|r| r.loc.pinned.is_none() && r.loc.group.as_deref() != Some(DEDICATED_IP))).collect();
-        log::w(TAG, &format!("health: {} route(s) stopped answering, {} to move to another server", dead.len(), movable.len()));
+        let movable: Vec<&String> = dead
+            .iter()
+            .copied()
+            .filter(|id| {
+                s.route(Some(id))
+                    .is_some_and(|r| r.loc.pinned.is_none() && r.loc.group.as_deref() != Some(DEDICATED_IP))
+            })
+            .collect();
+        log::w(
+            TAG,
+            &format!("health: {} route(s) stopped answering, {} to move to another server", dead.len(), movable.len()),
+        );
         Some(Move {
-            keep: self.links.iter().filter(|(id, _)| !movable.contains(id)).map(|(id, l)| (id.clone(), l.clone())).collect(),
-            avoid: movable.iter().filter_map(|id| Some(link_picker::server_key(s.route(Some(id))?, self.links.get(*id)?))).collect(),
+            keep: self
+                .links
+                .iter()
+                .filter(|(id, _)| !movable.contains(id))
+                .map(|(id, l)| (id.clone(), l.clone()))
+                .collect(),
+            avoid: movable
+                .iter()
+                .filter_map(|id| Some(link_picker::server_key(s.route(Some(id))?, self.links.get(*id)?)))
+                .collect(),
             generation: self.generation,
             providers: dead.iter().filter_map(|id| s.route(Some(id)).map(|r| r.loc.provider.clone())).collect(),
             any_movable: !movable.is_empty() || !stepped.is_empty(),
@@ -1074,7 +1186,11 @@ impl Session {
             .flat_map(|g| &g.peers)
             .filter(|p| p.exit_node_option && !p.tailscale_i_ps.is_empty())
             .map(|p| TsNode {
-                name: if p.host_name.is_empty() { p.dns_name.split('.').next().unwrap_or_default().into() } else { p.host_name.clone() },
+                name: if p.host_name.is_empty() {
+                    p.dns_name.split('.').next().unwrap_or_default().into()
+                } else {
+                    p.host_name.clone()
+                },
                 ip: p.tailscale_i_ps[0].clone(),
                 online: p.online,
                 id: p.stable_id.clone(),
@@ -1084,7 +1200,11 @@ impl Session {
         let running = ep.backend_state == "Running";
         let suffix = compiler::ts_suffix(Some(&ep.magic_dns_suffix));
         let stored = self.store.ts_suffix();
-        let (url, backend, reported) = (Some(ep.auth_url.clone()).filter(|u| !u.is_empty()), ep.backend_state.clone(), if running { suffix.clone() } else { stored.clone() });
+        let (url, backend, reported) = (
+            Some(ep.auth_url.clone()).filter(|u| !u.is_empty()),
+            ep.backend_state.clone(),
+            if running { suffix.clone() } else { stored.clone() },
+        );
         self.live.state.send_modify(|v| {
             v.ts_login_url = url;
             v.ts_state = Some(backend);
@@ -1158,7 +1278,8 @@ impl Session {
     /// The engine stopped on its own while connection `mine` ran: said, like a failed connect, unless it came back, is
     /// being restarted, or that connection already ended.
     async fn lost(&mut self, mine: i32, error: Option<String>) {
-        if self.engine_up.load(Ordering::SeqCst) || self.restarting || self.session != mine || self.phase() != Phase::On {
+        if self.engine_up.load(Ordering::SeqCst) || self.restarting || self.session != mine || self.phase() != Phase::On
+        {
             return;
         }
         let why = match error.filter(|e| !e.trim().is_empty()) {
@@ -1225,13 +1346,21 @@ impl Session {
             let (wake, me) = (clock::elapsed_realtime() + ms, self.me.clone());
             self.resume = Some(tokio::spawn(async move {
                 while clock::elapsed_realtime() < wake {
-                    tokio::time::sleep(Duration::from_millis((wake - clock::elapsed_realtime()).clamp(1, 15_000) as u64)).await;
+                    tokio::time::sleep(Duration::from_millis(
+                        (wake - clock::elapsed_realtime()).clamp(1, 15_000) as u64
+                    ))
+                    .await;
                 }
                 let _ = me.send(Msg::Resume(pause));
             }));
         }
         self.live.summary.send_replace(paused_text(until));
-        self.live.state.send_replace(VpnState { phase: Phase::Paused, paused_until: until, paused_at: now_ms(), ..VpnState::default() });
+        self.live.state.send_replace(VpnState {
+            phase: Phase::Paused,
+            paused_until: until,
+            paused_at: now_ms(),
+            ..VpnState::default()
+        });
     }
 
     /// What the tray and the command line show of the running connection.
@@ -1309,10 +1438,16 @@ async fn watch_health(me: Inbox, live: &'static Live, net: Arc<NetMonitor>, stor
         // A provider whose new key is still reaching its servers isn't judged yet.
         let setting_up = providers::setting_up(now_ms());
         let running = live.running();
-        let settling = |id: &String| running.as_ref().and_then(|s| s.route(Some(id))).is_some_and(|r| setting_up.contains(&r.loc.provider));
+        let settling = |id: &String| {
+            running.as_ref().and_then(|s| s.route(Some(id))).is_some_and(|r| setting_up.contains(&r.loc.provider))
+        };
         // A regular round checks every tunnel, a quick one only those due again.
         let due = |t: &String| c.streaks.get(t).and_then(|s| health::due(s, c.hold(t))).is_some_and(|d| d <= now);
-        let checked: IndexSet<String> = by_tag.iter().filter(|(t, ids)| !ids.iter().any(settling) && (regular || due(t))).map(|(t, _)| t.clone()).collect();
+        let checked: IndexSet<String> = by_tag
+            .iter()
+            .filter(|(t, ids)| !ids.iter().any(settling) && (regular || due(t)))
+            .map(|(t, _)| t.clone())
+            .collect();
         if checked.is_empty() {
             if regular {
                 round = now + jitter() * c.slow;
@@ -1343,7 +1478,12 @@ async fn watch_health(me: Inbox, live: &'static Live, net: Arc<NetMonitor>, stor
         // A dead tunnel can mean the provider dropped this computer (its device removed on its website).
         let accounts = store.current_accounts();
         let (all, ps) = (accounts.clone(), m.providers.clone());
-        let dropped: Vec<String> = blocking(move || ps.into_iter().filter(|p| all.get(p).is_some_and(|a| providers::get(p).is_some_and(|x| x.revoked(a)))).collect()).await;
+        let dropped: Vec<String> = blocking(move || {
+            ps.into_iter()
+                .filter(|p| all.get(p).is_some_and(|a| providers::get(p).is_some_and(|x| x.revoked(a))))
+                .collect()
+        })
+        .await;
         if !dropped.is_empty() {
             let d = dropped.clone();
             locked(&me, move |s| s.dropped(&d, &accounts)).await;
@@ -1452,7 +1592,8 @@ fn stuck(setup: &Setup, blocked: &IndexMap<String, Error>) -> IndexMap<String, b
 /// One line for Routes: which routes' apps are blocked and why.
 fn blocked_text(setup: &Setup, blocked: &IndexMap<String, Error>) -> Option<String> {
     let (_, e) = blocked.first()?;
-    let names: Vec<String> = blocked.keys().map(|id| setup.route(Some(id)).map_or_else(|| id.clone(), |r| r.name())).collect();
+    let names: Vec<String> =
+        blocked.keys().map(|id| setup.route(Some(id)).map_or_else(|| id.clone(), |r| r.name())).collect();
     Some(format!("Apps on {} are blocked: {}", names.join(", "), redact::message(e, "no connection")))
 }
 
@@ -1461,7 +1602,13 @@ fn summary(setup: &Setup) -> String {
     let line = setup
         .active_routes()
         .iter()
-        .map(|r| if r.id == setup.default_route { format!("{} default", r.code()) } else { format!("{} {}", r.code(), setup.apps.values().filter(|v| **v == r.id).count()) })
+        .map(|r| {
+            if r.id == setup.default_route {
+                format!("{} default", r.code())
+            } else {
+                format!("{} {}", r.code(), setup.apps.values().filter(|v| **v == r.id).count())
+            }
+        })
         .collect::<Vec<_>>()
         .join("  ·  ");
     if line.is_empty() { "Only selected apps".into() } else { line }
@@ -1472,7 +1619,9 @@ fn paused_text(until: i64) -> String {
     if until <= 0 {
         return "Paused".into();
     }
-    let at = chrono::DateTime::from_timestamp_millis(until).map(|t| t.with_timezone(&chrono::Local).format("%H:%M").to_string()).unwrap_or_default();
+    let at = chrono::DateTime::from_timestamp_millis(until)
+        .map(|t| t.with_timezone(&chrono::Local).format("%H:%M").to_string())
+        .unwrap_or_default();
     format!("Paused until {at}")
 }
 
@@ -1659,7 +1808,12 @@ mod tests {
     /// As if `setup` had connected.
     fn connected(s: &mut Session, setup: &Setup) {
         s.store.update(|_| setup.clone());
-        s.live.state.send_replace(VpnState { phase: Phase::On, since: now_ms(), engine: s.starts, ..VpnState::default() });
+        s.live.state.send_replace(VpnState {
+            phase: Phase::On,
+            since: now_ms(),
+            engine: s.starts,
+            ..VpnState::default()
+        });
         *s.live.running.write().unwrap() = Some(setup.clone());
         s.applied = Some(setup.clone());
     }
@@ -1679,7 +1833,12 @@ mod tests {
         s.handle(Cmd::Start(3)).await;
         let v = s.live.state();
         assert_eq!((Phase::Off, Some(REJECTED)), (v.phase, v.error.as_deref()));
-        assert!(s.live.running().is_none() && s.live.probe().is_none() && s.live.tags().is_empty() && s.live.summary.borrow().is_empty());
+        assert!(
+            s.live.running().is_none()
+                && s.live.probe().is_none()
+                && s.live.tags().is_empty()
+                && s.live.summary.borrow().is_empty()
+        );
         connected(&mut s, &base());
         s.handle(Cmd::Start(4)).await;
         assert_eq!(Phase::On, s.phase());
@@ -1716,7 +1875,10 @@ mod tests {
         // Until resumed by hand: no timer; a stop ends it, a start resumes it.
         connected(&mut s, &base());
         s.handle(Cmd::Pause(3, 0)).await;
-        assert_eq!((Phase::Paused, 0, "Paused"), (s.phase(), s.live.state().paused_until, s.live.summary.borrow().as_str()));
+        assert_eq!(
+            (Phase::Paused, 0, "Paused"),
+            (s.phase(), s.live.state().paused_until, s.live.summary.borrow().as_str())
+        );
         assert!(s.resume.is_none());
         s.handle(Cmd::Stop(4)).await;
         assert_eq!(VpnState::default(), s.live.state());
@@ -1734,17 +1896,33 @@ mod tests {
         assert_eq!("NL default  ·  US 2", summary(&s));
         s.testing.insert("it".into()); // up only for a speed test
         assert_eq!("NL default  ·  US 2  ·  IT 0", summary(&s));
-        assert_eq!("Only selected apps", summary(&Setup { default_route: DIRECT.into(), apps: IndexMap::new(), ..base() }));
+        assert_eq!(
+            "Only selected apps",
+            summary(&Setup { default_route: DIRECT.into(), apps: IndexMap::new(), ..base() })
+        );
         assert_eq!("Paused", paused_text(0));
         let auth = || Error::Auth { message: "Sign in to NordVPN for Netherlands".into(), url: None };
-        let blocked: IndexMap<String, Error> = [("nl".to_string(), auth()), ("us".to_string(), Error::Io("connect timed out".into()))].into_iter().collect();
-        assert_eq!(Some("Apps on Netherlands, United States are blocked: Sign in to NordVPN for Netherlands".into()), blocked_text(&base(), &blocked));
-        let io: IndexMap<String, Error> = [("us".to_string(), Error::Io("connect timed out".into()))].into_iter().collect();
-        assert_eq!(Some("Apps on United States are blocked: Couldn't reach the server. Check the connection.".into()), blocked_text(&base(), &io));
+        let blocked: IndexMap<String, Error> =
+            [("nl".to_string(), auth()), ("us".to_string(), Error::Io("connect timed out".into()))]
+                .into_iter()
+                .collect();
+        assert_eq!(
+            Some("Apps on Netherlands, United States are blocked: Sign in to NordVPN for Netherlands".into()),
+            blocked_text(&base(), &blocked)
+        );
+        let io: IndexMap<String, Error> =
+            [("us".to_string(), Error::Io("connect timed out".into()))].into_iter().collect();
+        assert_eq!(
+            Some("Apps on United States are blocked: Couldn't reach the server. Check the connection.".into()),
+            blocked_text(&base(), &io)
+        );
         assert_eq!(None, blocked_text(&base(), &IndexMap::new()));
         // Providers with blocked routes, and whether one refused its account; an imported route has no provider.
         let mut s = base();
-        s.routes.push(Route { wg: Some(WgPeer::new("Home", "k", vec![], "p", "h.example:51820", vec![])), ..Route::new("wg", Location::of("nord")) });
+        s.routes.push(Route {
+            wg: Some(WgPeer::new("Home", "k", vec![], "p", "h.example:51820", vec![])),
+            ..Route::new("wg", Location::of("nord"))
+        });
         s.apps.insert("ssh".into(), "wg".into());
         let mut b = io.clone();
         b.insert("wg".into(), Error::Fail("unreachable".into()));
@@ -1757,9 +1935,14 @@ mod tests {
     /// connection with what it said, unless it came back or that connection already ended.
     #[tokio::test]
     async fn engine_failures_and_losses() {
-        let failed = |e: tonic::Status| engine::<(), _>(Err(e), "The connection engine couldn't start.").unwrap_err().to_string();
+        let failed = |e: tonic::Status| {
+            engine::<(), _>(Err(e), "The connection engine couldn't start.").unwrap_err().to_string()
+        };
         assert_eq!(engine::MISSING, failed(tonic::Status::unavailable("connect: no such file")));
-        assert_eq!("The connection engine couldn't start.", failed(tonic::Status::invalid_argument("private_key: \"aGVsbG8=\"")));
+        assert_eq!(
+            "The connection engine couldn't start.",
+            failed(tonic::Status::invalid_argument("private_key: \"aGVsbG8=\""))
+        );
         let dir = tempfile::tempdir().unwrap();
         let mut s = session(dir.path());
         connected(&mut s, &base());
@@ -1787,7 +1970,10 @@ mod tests {
         let edit = |store: &Store| Msg::Edited(Box::new((store.current(), store.current_accounts())));
         s.on(edit(&s.store)).await;
         let v = s.live.state();
-        assert_eq!((Phase::On, Some(REJECTED), setup_hash(&s.store.current())), (v.phase, v.error.as_deref(), v.refused));
+        assert_eq!(
+            (Phase::On, Some(REJECTED), setup_hash(&s.store.current())),
+            (v.phase, v.error.as_deref(), v.refused)
+        );
         assert_eq!(Some(&setup), s.applied.as_ref());
         assert!(s.rejected.is_some());
         s.store.update(|_| setup.clone());
@@ -1802,26 +1988,48 @@ mod tests {
     async fn dead_tunnels_move_and_step_ports() {
         let dir = tempfile::tempdir().unwrap();
         let mut s = session(dir.path());
-        let pin = Server { name: "ch-zrh-wg-001".into(), host: "ch-zrh-wg-001".into(), ip: "193.32.127.66".into(), ..Server::default() };
+        let pin = Server {
+            name: "ch-zrh-wg-001".into(),
+            host: "ch-zrh-wg-001".into(),
+            ip: "193.32.127.66".into(),
+            ..Server::default()
+        };
         let setup = Setup {
             routes: vec![
                 Route::new("se", Location::country("mullvad", 1, "SE", "Sweden")),
-                Route::new("ch", Location { pinned: Some(pin), ..Location::country("mullvad", 2, "CH", "Switzerland") }),
+                Route::new(
+                    "ch",
+                    Location { pinned: Some(pin), ..Location::country("mullvad", 2, "CH", "Switzerland") },
+                ),
                 Route::new("nl", Location::country("nord", 153, "NL", "Netherlands")),
             ],
             default_route: "se".into(),
-            apps: [("firefox".to_string(), "ch".to_string()), ("mpv".to_string(), "nl".to_string())].into_iter().collect(),
+            apps: [("firefox".to_string(), "ch".to_string()), ("mpv".to_string(), "nl".to_string())]
+                .into_iter()
+                .collect(),
             ..Setup::default()
         };
         let wg = |ip: &str, ports: Vec<i32>| Link::Wg {
             server: Server { name: ip.into(), host: ip.into(), ip: ip.into(), ..Server::default() },
-            peer: WgPeer::new("x", "k", vec!["10.64.0.2/32".into()], "p", &format!("{ip}:51820"), vec!["0.0.0.0/0".into()]),
+            peer: WgPeer::new(
+                "x",
+                "k",
+                vec!["10.64.0.2/32".into()],
+                "p",
+                &format!("{ip}:51820"),
+                vec!["0.0.0.0/0".into()],
+            ),
             ports,
             entries: vec![],
         };
-        s.links = IndexMap::from([("se".into(), wg("185.65.134.1", vec![51820, 53, 443])), ("ch".into(), wg("193.32.127.66", vec![51820, 53])), ("nl".into(), wg("194.0.0.1", vec![51820, 443]))]);
+        s.links = IndexMap::from([
+            ("se".into(), wg("185.65.134.1", vec![51820, 53, 443])),
+            ("ch".into(), wg("193.32.127.66", vec![51820, 53])),
+            ("nl".into(), wg("194.0.0.1", vec![51820, 443])),
+        ]);
         connected(&mut s, &setup);
-        *s.live.tags.write().unwrap() = IndexMap::from([("se".into(), "r-se".into()), ("ch".into(), "r-ch".into()), ("nl".into(), "r-nl".into())]);
+        *s.live.tags.write().unwrap() =
+            IndexMap::from([("se".into(), "r-se".into()), ("ch".into(), "r-ch".into()), ("nl".into(), "r-nl".into())]);
         let (engine, by_tag, servers) = s.checked_tags();
         assert_eq!(vec!["mullvad|193.32.127.66".to_string()], servers["r-ch"]);
         // Every tunnel has failed for over a minute; this is its fourth failed check.
@@ -1831,7 +2039,16 @@ mod tests {
             c.streaks.insert(t.clone(), Streak { fails: 3, since: now - 61_000, last: now - 20_000 });
         }
         let checked: IndexSet<String> = by_tag.keys().cloned().collect();
-        let r = Round { engine, network: None, regular: false, checked: checked.clone(), down: Some(checked), now, by_tag, servers };
+        let r = Round {
+            engine,
+            network: None,
+            regular: false,
+            checked: checked.clone(),
+            down: Some(checked),
+            now,
+            by_tag,
+            servers,
+        };
         let m = s.judge(&mut c, &r).unwrap();
         assert_eq!(vec!["ch"], m.keep.keys().collect::<Vec<_>>());
         assert_eq!(IndexSet::from(["mullvad|185.65.134.1".to_string(), "nord|194.0.0.1".to_string()]), m.avoid);
@@ -1883,9 +2100,20 @@ mod tests {
         };
         s.tailscale(&ep).await;
         let v = s.live.state();
-        assert_eq!((Some("https://login.tailscale.com/a/1a2b3c"), Some("NeedsLogin")), (v.ts_login_url.as_deref(), v.ts_state.as_deref()));
-        let node = |name: &str, ip: &str, online: bool, id: &str| TsNode { name: name.into(), ip: ip.into(), online, id: id.into() };
-        assert_eq!(vec![node("NAS", "100.64.0.5", false, "nNas"), node("pi", "100.64.0.6", true, "nPi")], v.ts_exit_nodes);
+        assert_eq!(
+            (Some("https://login.tailscale.com/a/1a2b3c"), Some("NeedsLogin")),
+            (v.ts_login_url.as_deref(), v.ts_state.as_deref())
+        );
+        let node = |name: &str, ip: &str, online: bool, id: &str| TsNode {
+            name: name.into(),
+            ip: ip.into(),
+            online,
+            id: id.into(),
+        };
+        assert_eq!(
+            vec![node("NAS", "100.64.0.5", false, "nNas"), node("pi", "100.64.0.6", true, "nPi")],
+            v.ts_exit_nodes
+        );
         assert!(s.ts_login_pending);
         ep.backend_state = "Running".into();
         ep.auth_url.clear();
@@ -1952,7 +2180,10 @@ mod tests {
         look(&on(1, h), &store, Some(home.clone())).await;
         assert_eq!(None, *switching().borrow());
         assert_eq!(Some(Refused { to: "Travel".into(), kept: Some("Home".into()) }), *refused().borrow());
-        assert_eq!(("Home", "nl"), (store.current().profile.as_deref().unwrap(), store.current().default_route.as_str()));
+        assert_eq!(
+            ("Home", "nl"),
+            (store.current().profile.as_deref().unwrap(), store.current().default_route.as_str())
+        );
         started("Home");
         assert_eq!(None, *refused().borrow());
     }

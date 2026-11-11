@@ -1,8 +1,9 @@
 //! Settings in two panes, its dialogs, and the prompts that import a server of the user's own.
 
 use super::{
-    AppWindow, ImportPrompt, ImporterPage, SettingsAct, SettingsDialog, SettingsEnd, SettingsGlyph, SettingsGroup, SettingsInput, SettingsLicence, SettingsPage,
-    SettingsRow, SettingsSubject, SettingsTone, Win, list, post, text, with,
+    AppWindow, ImportPrompt, ImporterPage, SettingsAct, SettingsDialog, SettingsEnd, SettingsGlyph, SettingsGroup,
+    SettingsInput, SettingsLicence, SettingsPage, SettingsRow, SettingsSubject, SettingsTone, Win, list, post, text,
+    with,
 };
 use crate::autostart::Autostart;
 use crate::desktop_settings::{self as ds, Theme};
@@ -94,7 +95,17 @@ fn dialog(d: &logic::Dialog) -> SettingsDialog {
         sheet: d.sheet,
         title: text(&d.title),
         text: text(&d.text),
-        inputs: list(d.inputs.iter().map(|i| SettingsInput { label: text(&i.label), placeholder: text(&i.placeholder), value: text(&i.value), secret: i.secret }).collect()),
+        inputs: list(
+            d.inputs
+                .iter()
+                .map(|i| SettingsInput {
+                    label: text(&i.label),
+                    placeholder: text(&i.placeholder),
+                    value: text(&i.value),
+                    secret: i.secret,
+                })
+                .collect(),
+        ),
         hint: text(&d.hint),
         error: text(&d.error),
         rows: list(d.rows.iter().map(row).collect()),
@@ -132,7 +143,11 @@ pub(super) fn import_file(win: &Win, kind: &str, prefix: Option<&str>) {
     win.ui.import_draft.send_modify(|d| d.file(kind, prefix));
     app::runtime().spawn(async {
         let Some(file) = desktop::pick_file(importer::PICK_TITLE, false).await else { return };
-        let Ok((read, name)) = tokio::task::spawn_blocking(move || (importer::read_capped(&file), importer::file_name(&file))).await else { return };
+        let Ok((read, name)) =
+            tokio::task::spawn_blocking(move || (importer::read_capped(&file), importer::file_name(&file))).await
+        else {
+            return;
+        };
         post(move |win| {
             let mut error = None;
             win.ui.import_draft.send_modify(|d| error = d.picked(read.as_deref(), &name));
@@ -348,7 +363,9 @@ pub(super) fn show(win: &Win, setup: &Setup, vpn: &VpnState) {
     let tags = crate::vpn::live().tags();
     let notice = ui.notice.borrow().clone();
     let data = paths::data().ok();
-    let key_file = data.filter(|d| keyring::in_file(d)).map(|d| d.to_string_lossy().replacen(&*paths::home().to_string_lossy(), "~", 1));
+    let key_file = data
+        .filter(|d| keyring::in_file(d))
+        .map(|d| d.to_string_lossy().replacen(&*paths::home().to_string_lossy(), "~", 1));
     let v = logic::view(&logic::Inputs {
         setup,
         vpn,
@@ -378,7 +395,17 @@ pub(super) fn show(win: &Win, setup: &Setup, vpn: &VpnState) {
         let old = g.last.as_ref();
         p.set_version(text(&v.version));
         if old.is_none_or(|o| o.subjects != v.subjects) {
-            p.set_subjects(list(v.subjects.iter().map(|s| SettingsSubject { key: text(&s.key), title: text(&s.title), icon: glyph(s.icon), group: text(&s.group) }).collect()));
+            p.set_subjects(list(
+                v.subjects
+                    .iter()
+                    .map(|s| SettingsSubject {
+                        key: text(&s.key),
+                        title: text(&s.title),
+                        icon: glyph(s.icon),
+                        group: text(&s.group),
+                    })
+                    .collect(),
+            ));
         }
         p.set_subject(text(&v.subject));
         p.set_page(text(&v.page));
@@ -391,7 +418,9 @@ pub(super) fn show(win: &Win, setup: &Setup, vpn: &VpnState) {
             p.set_groups(list(v.groups.iter().map(group).collect()));
         }
         if old.is_none_or(|o| o.licences != v.licences) {
-            p.set_licences(list(v.licences.iter().map(|l| SettingsLicence { title: text(&l.title), text: text(&l.text) }).collect()));
+            p.set_licences(list(
+                v.licences.iter().map(|l| SettingsLicence { title: text(&l.title), text: text(&l.text) }).collect(),
+            ));
         }
         if old.is_none_or(|o| o.dialogs != v.dialogs) {
             p.set_dialogs(list(v.dialogs.iter().map(dialog).collect()));

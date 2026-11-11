@@ -50,7 +50,14 @@ const LOCATE: &str = "locate.measurementlab.net";
 /// [`limited`] when M-Lab is rate-limiting the exit's address.
 pub fn locate(tag: &str, country: Option<&str>) -> Result<Option<Server>> {
     let q = client() + &country.map(|c| format!("&country={c}&strict=true")).unwrap_or_default();
-    let body = match probe::get(tag, LOCATE, &format!("/v2/nearest/ndt/ndt7?{q}"), 256 * 1024, "application/json", &Raw::default()) {
+    let body = match probe::get(
+        tag,
+        LOCATE,
+        &format!("/v2/nearest/ndt/ndt7?{q}"),
+        256 * 1024,
+        "application/json",
+        &Raw::default(),
+    ) {
         Err(Error::State(m)) if m.starts_with("HTTP 204") => return Err(Error::Status { code: 204 }),
         Err(Error::State(m)) if country.is_some() && m.starts_with("HTTP") => return Ok(None),
         r => r?,
@@ -71,7 +78,8 @@ pub fn locate(tag: &str, country: Option<&str>) -> Result<Option<Server>> {
             Some(_) => return Err(bad()),
         };
         let urls = r.get("urls").and_then(Value::as_object).ok_or_else(bad)?;
-        let field = |o: Option<&Map<String, Value>>, k: &str| o.map_or(Ok(String::new()), |o| str(o, k)).map_err(|_| bad());
+        let field =
+            |o: Option<&Map<String, Value>>, k: &str| o.map_or(Ok(String::new()), |o| str(o, k)).map_err(|_| bad());
         all.push(Server {
             machine: field(Some(r), "machine")?,
             city: field(loc, "city")?,
@@ -116,16 +124,27 @@ pub struct Ping {
 /// resolves its name. Measured by the app: many M-Lab sites sit behind a cloud proxy, so the server's own round-trip
 /// figure only sees the proxy next to it. The median shrugs off one slow handshake, unlike the mean.
 pub fn ping(tag: &str, server: &Server) -> Result<Ping> {
-    let host = Url::parse(&server.download).ok().and_then(|u| u.host_str().map(String::from)).ok_or_else(|| Error::Invalid("No test server address".into()))?;
+    let host = Url::parse(&server.download)
+        .ok()
+        .and_then(|u| u.host_str().map(String::from))
+        .ok_or_else(|| Error::Invalid("No test server address".into()))?;
     probe::handshake_ms(tag, &host, 443)?;
-    let mut ms = (0..5).map(|_| probe::handshake_ms(tag, &host, 443).map(|m| (m as i32).max(1))).collect::<Result<Vec<_>>>()?;
+    let mut ms =
+        (0..5).map(|_| probe::handshake_ms(tag, &host, 443).map(|m| (m as i32).max(1))).collect::<Result<Vec<_>>>()?;
     ms.sort();
     Ok(Ping { median: ms[2], low: ms[0], high: ms[4] })
 }
 
 /// Receives until the server ends the test; `rate` gets bits/s every quarter second. `sample` gets the time
 /// (elapsed-realtime ms) and running count at most every 20 ms and at the end (`extra` URL parameters tag a combined run).
-pub fn download(tag: &str, url: &str, stop: impl Fn() -> bool, extra: &str, sample: impl Fn(i64, i64), rate: impl Fn(i64)) -> Result<i64> {
+pub fn download(
+    tag: &str,
+    url: &str,
+    stop: impl Fn() -> bool,
+    extra: &str,
+    sample: impl Fn(i64, i64),
+    rate: impl Fn(i64),
+) -> Result<i64> {
     let mut c = socket(tag, url, extra)?;
     let start = elapsed_realtime();
     let (got, noted) = (Cell::new(0i64), Cell::new(start));
@@ -183,7 +202,14 @@ pub fn download(tag: &str, url: &str, stop: impl Fn() -> bool, extra: &str, samp
 /// Sends for ten seconds; the rate is what the server says it received (its TCPInfo), not what left the app's
 /// buffers. The live figure falls back to bytes sent until the server's first report. `sample` gets the server's
 /// received count as each report arrives, timed by the server's own clock from the connection's start.
-pub fn upload(tag: &str, url: &str, stop: impl Fn() -> bool, extra: &str, sample: impl Fn(i64, i64) + Sync, rate: impl Fn(i64)) -> Result<i64> {
+pub fn upload(
+    tag: &str,
+    url: &str,
+    stop: impl Fn() -> bool,
+    extra: &str,
+    sample: impl Fn(i64, i64) + Sync,
+    rate: impl Fn(i64),
+) -> Result<i64> {
     let mut c = socket(tag, url, extra)?;
     let opened = elapsed_realtime();
     sample(opened, 0);
@@ -289,7 +315,11 @@ fn socket(tag: &str, url: &str, extra: &str) -> Result<Conn> {
         rand::rng().fill_bytes(&mut nonce);
         let key = BASE64.encode(nonce);
         let client = client();
-        let query = [u.query(), Some(client.as_str()), Some(extra).filter(|e| !e.is_empty())].into_iter().flatten().collect::<Vec<_>>().join("&");
+        let query = [u.query(), Some(client.as_str()), Some(extra).filter(|e| !e.is_empty())]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("&");
         c.output.write_all(
             format!(
                 "GET {}?{query} HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: net.measurementlab.ndt.v7\r\nUser-Agent: unbraid/{}\r\n\r\n",
@@ -301,7 +331,8 @@ fn socket(tag: &str, url: &str, extra: &str) -> Result<Conn> {
         let head = probe::head(&mut c.input)?;
         let accept = BASE64.encode(Sha1::digest(format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11")));
         let accepted = |l: &String| {
-            l.get(..21).is_some_and(|p| p.eq_ignore_ascii_case("Sec-WebSocket-Accept:")) && l.split_once(':').map_or(l.as_str(), |(_, v)| v).trim() == accept
+            l.get(..21).is_some_and(|p| p.eq_ignore_ascii_case("Sec-WebSocket-Accept:"))
+                && l.split_once(':').map_or(l.as_str(), |(_, v)| v).trim() == accept
         };
         if head.first().and_then(|s| s.split(' ').nth(1)) != Some("101") || !head.iter().any(accepted) {
             return Err(Error::Io(REFUSED.into()));

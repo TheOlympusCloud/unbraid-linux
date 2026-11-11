@@ -1,9 +1,6 @@
 //! Unbraid by TheOlympus: every app its own VPN exit, on Linux. The app around the engine (sing-box's Linux daemon,
 //! `unbraid-engine`): the setup and its store, providers, the engine's config, statistics and the window.
 
-pub mod error;
-pub mod model;
-pub mod providers;
 pub mod app;
 pub mod apps;
 pub mod autostart;
@@ -13,6 +10,7 @@ pub mod compiler;
 pub mod desktop;
 pub mod desktop_settings;
 pub mod engine;
+pub mod error;
 pub mod exit_check;
 pub mod health;
 pub mod http;
@@ -23,11 +21,13 @@ pub mod link_picker;
 pub mod linux_pass;
 pub mod log;
 pub mod manual;
+pub mod model;
 pub mod ndt7;
 pub mod net;
 pub mod paths;
 pub mod prefs;
 pub mod probe;
+pub mod providers;
 pub mod redact;
 pub mod snapshot;
 pub mod speed_test;

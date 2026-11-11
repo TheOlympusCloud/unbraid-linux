@@ -11,7 +11,9 @@ use std::sync::{LazyLock, OnceLock};
 /// The setup, sealed secrets, caches and statistics: $XDG_DATA_HOME/unbraid, which only this user may open.
 pub fn data() -> Result<&'static Path> {
     static DATA: OnceLock<PathBuf> = OnceLock::new();
-    once(&DATA, || private(env("XDG_DATA_HOME").map_or_else(|| home().join(".local/share"), PathBuf::from).join("unbraid")))
+    once(&DATA, || {
+        private(env("XDG_DATA_HOME").map_or_else(|| home().join(".local/share"), PathBuf::from).join("unbraid"))
+    })
 }
 
 /// The running app's socket, one instance per user: $XDG_RUNTIME_DIR/unbraid (the data folder without one).

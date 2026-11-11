@@ -23,7 +23,9 @@ impl SqliteDatabase {
         let mut st = self.c.prepare(sql).map_err(db)?;
         let n = st.column_count();
         let rows = st
-            .query_map(rusqlite::params_from_iter(args), |r| (0..n).map(|i| r.get::<_, Value>(i)).collect::<rusqlite::Result<Vec<_>>>())
+            .query_map(rusqlite::params_from_iter(args), |r| {
+                (0..n).map(|i| r.get::<_, Value>(i)).collect::<rusqlite::Result<Vec<_>>>()
+            })
             .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
             .map_err(db)?;
         Ok(Cursor { rows: rows.into_iter(), row: Vec::new() })
@@ -113,7 +115,11 @@ impl<S: Schema> SqliteOpenHelper<S> {
                 let (old, want, schema) = (d.version()?, self.version, &mut self.schema);
                 if old != want {
                     d.transaction(|d| {
-                        if old == 0 { schema.on_create(d)? } else { schema.on_upgrade(d, old, want)? }
+                        if old == 0 {
+                            schema.on_create(d)?
+                        } else {
+                            schema.on_upgrade(d, old, want)?
+                        }
                         d.set_version(want)
                     })?;
                 }
@@ -170,7 +176,13 @@ mod tests {
         assert_eq!(vec![(1i64, "x".to_string(), 7)], rows);
         assert_eq!(vec!["upgrade 1>2"], h.schema.steps);
         let d = h.writable_database().unwrap();
-        assert!(d.transaction(|d| { d.exec_sql("INSERT INTO t VALUES(2,'y',0)", [])?; Err::<(), _>(Error::State("rolled back".into())) }).is_err());
+        assert!(
+            d.transaction(|d| {
+                d.exec_sql("INSERT INTO t VALUES(2,'y',0)", [])?;
+                Err::<(), _>(Error::State("rolled back".into()))
+            })
+            .is_err()
+        );
         let mut c = d.raw_query("SELECT COUNT(*) FROM t", &[]).unwrap();
         assert!(c.move_to_next());
         assert_eq!(1, c.get_int(0).unwrap());

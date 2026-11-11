@@ -31,7 +31,8 @@ static HOST: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z0-9-]+\.nordvp
 /// Nord's profiles rely on `cipher AES-256-CBC`, which OpenVPN 2.6 (and the engine) ignore for negotiation; Nord's
 /// servers still need CBC offered, so the 2.6-style equivalent is spelled out (verified live: without it the tunnel
 /// never comes up).
-const LEGACY_CIPHERS: &str = "\ndata-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-256-CBC\ndata-ciphers-fallback AES-256-CBC\n";
+const LEGACY_CIPHERS: &str =
+    "\ndata-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-256-CBC\ndata-ciphers-fallback AES-256-CBC\n";
 
 pub struct Nord;
 
@@ -98,18 +99,28 @@ impl Provider for Nord {
             // A pinned server as Nord lists it now (address and key can change); as saved when the list can't be read.
             Some(p) => {
                 // A Dedicated IP server comes from the account's own list, which a refused login must not hide.
-                let list = if dedicated_ip { nord_api::dedicated(&a.token, &tech).map(Some) } else { loc.country_id.map(|c| nord_api::in_place(c, loc.city_id, &tech)).transpose() };
+                let list = if dedicated_ip {
+                    nord_api::dedicated(&a.token, &tech).map(Some)
+                } else {
+                    loc.country_id.map(|c| nord_api::in_place(c, loc.city_id, &tech)).transpose()
+                };
                 let list = match list {
                     Err(e @ Error::Auth { .. }) => return Err(e),
                     list => list.ok().flatten(),
                 };
                 as_listed(p, list)?
             }
-            None if dedicated_ip => dedicated(&a, loc, &tech)?.into_iter().next().ok_or_else(|| Error::Io(format!("Your Dedicated IP isn't in {}", loc.label())))?,
+            None if dedicated_ip => dedicated(&a, loc, &tech)?
+                .into_iter()
+                .next()
+                .ok_or_else(|| Error::Io(format!("Your Dedicated IP isn't in {}", loc.label())))?,
             // One of the three least loaded, not always the first: Nord gives an account one WireGuard key for every
             // device, and two devices with one key on one server knock each other off. Every device at the same place
             // (and Nord's own apps) is told the same first choice.
-            None => nord_api::recommend(loc, 3, &tech)?.choose(&mut rand::rng()).cloned().ok_or_else(|| Error::Io(format!("No NordVPN server for {}", loc.label())))?,
+            None => nord_api::recommend(loc, 3, &tech)?
+                .choose(&mut rand::rng())
+                .cloned()
+                .ok_or_else(|| Error::Io(format!("No NordVPN server for {}", loc.label())))?,
         };
         if tech == "wireguard_udp" {
             return Ok(Link::Wg { peer: peer(&sv, &a.key), server: sv, ports: vec![], entries: vec![] });
@@ -123,7 +134,12 @@ impl Provider for Nord {
         };
         let proto = tech.strip_prefix("openvpn_").unwrap_or(&tech);
         require!(HOST.is_match(&sv.host), "Unexpected server name");
-        let text = http::get(&format!("https://downloads.nordcdn.com/configs/files/ovpn_{proto}/servers/{}.{proto}.ovpn", sv.host), &[], None, None)?;
+        let text = http::get(
+            &format!("https://downloads.nordcdn.com/configs/files/ovpn_{proto}/servers/{}.{proto}.ovpn", sv.host),
+            &[],
+            None,
+            None,
+        )?;
         let profile = manual::parse_ovpn(&with_legacy_ciphers(&text), &sv.name, &user, &pass)?;
         Ok(Link::Ovpn { server: sv, profile })
     }
@@ -157,7 +173,10 @@ pub fn group_countries(group: &str) -> Result<IndexSet<String>> {
 fn dedicated(a: &Account, loc: &Location, tech: &str) -> Result<Vec<Server>> {
     let mine = nord_api::dedicated(&a.token, tech)?;
     if mine.is_empty() {
-        return Err(Error::Io("This NordVPN account has no Dedicated IP. Add one in your Nord Account, or pick another server group.".into()));
+        return Err(Error::Io(
+            "This NordVPN account has no Dedicated IP. Add one in your Nord Account, or pick another server group."
+                .into(),
+        ));
     }
     Ok(mine.into_iter().filter(|s| loc.country_code.as_ref().is_none_or(|c| eq_ignore_case(&s.country, c))).collect())
 }
@@ -167,7 +186,14 @@ pub(crate) fn with_legacy_ciphers(profile: &str) -> String {
 }
 
 pub fn peer(sv: &Server, key: &str) -> WgPeer {
-    WgPeer::new(&sv.name, key, vec!["10.5.0.2/32".into()], &sv.public_key, &format!("{}:51820", sv.ip), vec!["0.0.0.0/0".into()])
+    WgPeer::new(
+        &sv.name,
+        key,
+        vec!["10.5.0.2/32".into()],
+        &sv.public_key,
+        &format!("{}:51820", sv.ip),
+        vec!["0.0.0.0/0".into()],
+    )
 }
 
 #[cfg(test)]
@@ -192,7 +218,10 @@ mod tests {
             assert_eq!(Some("15s"), ep["ping_interval"].as_str());
             let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/manual");
             std::fs::create_dir_all(&dir).unwrap();
-            let cfg = format!(r#"{{"log":{{"level":"warn"}},"endpoints":[{}],"route":{{"final":"r-nord"}}}}"#, Value::Object(ep));
+            let cfg = format!(
+                r#"{{"log":{{"level":"warn"}},"endpoints":[{}],"route":{{"final":"r-nord"}}}}"#,
+                Value::Object(ep)
+            );
             std::fs::write(dir.join(format!("nord-{n}.json")), cfg).unwrap();
         }
     }
@@ -201,8 +230,12 @@ mod tests {
     fn nord_profiles_still_offer_the_cbc_cipher_nord_servers_need() {
         let p = manual::parse_ovpn(&with_legacy_ciphers(&ovpn("nord-double.udp.ovpn")), "dv", "user", "pass").unwrap();
         let ep = manual::ovpn_endpoint("r", &p).unwrap();
-        let ciphers: Vec<String> = ep["data_ciphers"].as_array().unwrap().iter().map(|c| c.as_str().unwrap().to_uppercase()).collect();
-        assert!(ciphers.contains(&"AES-256-CBC".to_string()) && ciphers.contains(&"AES-256-GCM".to_string()), "{ciphers:?}");
+        let ciphers: Vec<String> =
+            ep["data_ciphers"].as_array().unwrap().iter().map(|c| c.as_str().unwrap().to_uppercase()).collect();
+        assert!(
+            ciphers.contains(&"AES-256-CBC".to_string()) && ciphers.contains(&"AES-256-GCM".to_string()),
+            "{ciphers:?}"
+        );
         assert_eq!("AES-256-CBC", ep["data_ciphers_fallback"].as_str().unwrap().to_uppercase());
     }
 }

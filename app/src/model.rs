@@ -53,14 +53,31 @@ fn is_nord(p: &str) -> bool {
 
 impl Default for Location {
     fn default() -> Self {
-        Location { provider: "nord".into(), country_id: None, country_code: None, country: None, city_id: None, city: None, region: None, group: None, protocol: None, pinned: None }
+        Location {
+            provider: "nord".into(),
+            country_id: None,
+            country_code: None,
+            country: None,
+            city_id: None,
+            city: None,
+            region: None,
+            group: None,
+            protocol: None,
+            pinned: None,
+        }
     }
 }
 
 impl Location {
     /// A provider's country, as the Kotlin `Location(provider, countryId, countryCode, country)` constructor made one.
     pub fn country(provider: &str, id: i32, code: &str, name: &str) -> Self {
-        Location { provider: provider.into(), country_id: Some(id), country_code: Some(code.into()), country: Some(name.into()), ..Default::default() }
+        Location {
+            provider: provider.into(),
+            country_id: Some(id),
+            country_code: Some(code.into()),
+            country: Some(name.into()),
+            ..Default::default()
+        }
     }
 
     pub fn of(provider: &str) -> Self {
@@ -89,7 +106,15 @@ impl Location {
         Location {
             country_id: self.country_id.filter(|_| nord),
             city_id: self.city_id.filter(|_| nord),
-            pinned: self.pinned.as_ref().map(|p| Server { name: p.name.clone(), host: String::new(), ip: String::new(), public_key: String::new(), load: -1, city: String::new(), country: String::new() }),
+            pinned: self.pinned.as_ref().map(|p| Server {
+                name: p.name.clone(),
+                host: String::new(),
+                ip: String::new(),
+                public_key: String::new(),
+                load: -1,
+                city: String::new(),
+                country: String::new(),
+            }),
             ..self.clone()
         }
     }
@@ -143,8 +168,26 @@ fn is_default_mtu(m: &i32) -> bool {
 }
 
 impl WgPeer {
-    pub fn new(name: &str, private_key: &str, address: Vec<String>, public_key: &str, endpoint: &str, allowed_ips: Vec<String>) -> Self {
-        WgPeer { name: name.into(), private_key: private_key.into(), address, public_key: public_key.into(), preshared_key: None, endpoint: endpoint.into(), allowed_ips, dns: vec![], mtu: 1420, keepalive: None }
+    pub fn new(
+        name: &str,
+        private_key: &str,
+        address: Vec<String>,
+        public_key: &str,
+        endpoint: &str,
+        allowed_ips: Vec<String>,
+    ) -> Self {
+        WgPeer {
+            name: name.into(),
+            private_key: private_key.into(),
+            address,
+            public_key: public_key.into(),
+            preshared_key: None,
+            endpoint: endpoint.into(),
+            allowed_ips,
+            dns: vec![],
+            mtu: 1420,
+            keepalive: None,
+        }
     }
 }
 
@@ -206,7 +249,18 @@ pub struct Route {
 
 impl Route {
     pub fn new(id: &str, loc: Location) -> Self {
-        Route { id: id.into(), loc, wg: None, ovpn: None, ss: None, ts_exit: None, ts_name: None, hue: 0, filter: None, own: None }
+        Route {
+            id: id.into(),
+            loc,
+            wg: None,
+            ovpn: None,
+            ss: None,
+            ts_exit: None,
+            ts_name: None,
+            hue: 0,
+            filter: None,
+            own: None,
+        }
     }
 
     pub fn name(&self) -> String {
@@ -219,7 +273,11 @@ impl Route {
         if let Some(s) = &self.ss {
             return s.name.clone();
         }
-        self.ts_name.clone().or_else(|| self.ts_exit.clone()).or_else(|| self.loc.country.clone()).unwrap_or_else(|| "Fastest".into())
+        self.ts_name
+            .clone()
+            .or_else(|| self.ts_exit.clone())
+            .or_else(|| self.loc.country.clone())
+            .unwrap_or_else(|| "Fastest".into())
     }
 
     pub fn code(&self) -> String {
@@ -320,7 +378,12 @@ pub struct OwnServer {
 
 impl OwnServer {
     pub fn name(&self) -> String {
-        self.wg.as_ref().map(|w| w.name.clone()).or_else(|| self.ovpn.as_ref().map(|o| o.name.clone())).or_else(|| self.ss.as_ref().map(|s| s.name.clone())).unwrap_or_default()
+        self.wg
+            .as_ref()
+            .map(|w| w.name.clone())
+            .or_else(|| self.ovpn.as_ref().map(|o| o.name.clone()))
+            .or_else(|| self.ss.as_ref().map(|s| s.name.clone()))
+            .unwrap_or_default()
     }
     pub fn kind(&self) -> &'static str {
         if self.wg.is_some() {
@@ -361,7 +424,10 @@ impl Profile {
         Profile { name: name.into(), default_route: default_route.into(), apps: IndexMap::new(), added: vec![] }
     }
     pub fn with_apps(name: &str, default_route: &str, apps: &[(&str, &str)]) -> Self {
-        Profile { apps: apps.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(), ..Profile::new(name, default_route) }
+        Profile {
+            apps: apps.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            ..Profile::new(name, default_route)
+        }
     }
     pub fn ready(&self) -> bool {
         !self.default_route.is_empty()
@@ -377,7 +443,10 @@ impl Profile {
 }
 
 /// Bidirectional controls and line separators, refused in profile names.
-const BIDI: &[char] = &['\u{200E}', '\u{200F}', '\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}', '\u{202E}', '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}', '\u{061C}', '\u{2028}', '\u{2029}'];
+const BIDI: &[char] = &[
+    '\u{200E}', '\u{200F}', '\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}', '\u{202E}', '\u{2066}', '\u{2067}',
+    '\u{2068}', '\u{2069}', '\u{061C}', '\u{2028}', '\u{2029}',
+];
 
 /// Characters people see in `s` ([`PROFILE_NAME`] counts these, not bytes).
 pub fn graphemes(s: &str) -> usize {
@@ -459,7 +528,11 @@ impl Default for Setup {
             routes: vec![Route::new("nl", Location::country("nord", 153, "NL", "Netherlands"))],
             default_route: "nl".into(),
             apps: IndexMap::new(),
-            favorites: vec![Location::country("nord", 228, "US", "United States"), Location::country("nord", 106, "IT", "Italy"), Location::country("nord", 153, "NL", "Netherlands")],
+            favorites: vec![
+                Location::country("nord", 228, "US", "United States"),
+                Location::country("nord", 106, "IT", "Italy"),
+                Location::country("nord", 153, "NL", "Netherlands"),
+            ],
             home: Home::default(),
             prefs: Prefs::default(),
             servers: vec![],
@@ -483,13 +556,29 @@ impl Setup {
     pub fn saved(&self) -> Vec<Profile> {
         self.profiles
             .iter()
-            .map(|p| if Some(&p.name) == self.profile.as_ref() { Profile { default_route: self.default_route.clone(), apps: self.apps.clone(), added: self.added.clone(), ..p.clone() } } else { p.clone() })
+            .map(|p| {
+                if Some(&p.name) == self.profile.as_ref() {
+                    Profile {
+                        default_route: self.default_route.clone(),
+                        apps: self.apps.clone(),
+                        added: self.added.clone(),
+                        ..p.clone()
+                    }
+                } else {
+                    p.clone()
+                }
+            })
             .collect()
     }
 
     /// The live setup as a profile: what is in use.
     fn live(&self) -> Profile {
-        Profile { name: self.profile.clone().unwrap_or_default(), default_route: self.default_route.clone(), apps: self.apps.clone(), added: self.added.clone() }
+        Profile {
+            name: self.profile.clone().unwrap_or_default(),
+            default_route: self.default_route.clone(),
+            apps: self.apps.clone(),
+            added: self.added.clone(),
+        }
     }
 
     /// Switches to profile `name` (not an empty one); the one in use keeps what it has now.
@@ -498,7 +587,14 @@ impl Setup {
             return self.clone();
         }
         match self.profiles.iter().find(|p| p.name == name && p.ready()) {
-            Some(p) => Setup { profiles: self.saved(), profile: Some(p.name.clone()), default_route: p.default_route.clone(), apps: p.apps.clone(), added: p.added.clone(), ..self.clone() },
+            Some(p) => Setup {
+                profiles: self.saved(),
+                profile: Some(p.name.clone()),
+                default_route: p.default_route.clone(),
+                apps: p.apps.clone(),
+                added: p.added.clone(),
+                ..self.clone()
+            },
             None => self.clone(),
         }
     }
@@ -516,7 +612,12 @@ impl Setup {
             self.added.clone()
         };
         let mut profiles = self.saved();
-        profiles.push(Profile { name: name.into(), default_route: self.default_route.clone(), apps: self.apps.clone(), added: keep.clone() });
+        profiles.push(Profile {
+            name: name.into(),
+            default_route: self.default_route.clone(),
+            apps: self.apps.clone(),
+            added: keep.clone(),
+        });
         Setup { profiles, profile: Some(name.into()), added: keep, ..self.clone() }
     }
 
@@ -529,8 +630,17 @@ impl Setup {
 
     /// The setup as profile `name` routes it (its default and exceptions), for showing it; itself for the one in use or none.
     pub fn view_as(&self, name: Option<&str>) -> Setup {
-        match self.profiles.iter().find(|p| name.is_some() && Some(p.name.as_str()) == name && name != self.profile.as_deref()) {
-            Some(p) => Setup { default_route: p.default_route.clone(), apps: p.apps.clone(), added: p.added.clone(), ..self.clone() },
+        match self
+            .profiles
+            .iter()
+            .find(|p| name.is_some() && Some(p.name.as_str()) == name && name != self.profile.as_deref())
+        {
+            Some(p) => Setup {
+                default_route: p.default_route.clone(),
+                apps: p.apps.clone(),
+                added: p.added.clone(),
+                ..self.clone()
+            },
             None => self.clone(),
         }
     }
@@ -547,17 +657,30 @@ impl Setup {
 
     /// Changes the default and exceptions of profile `name` with `f`: only its saved copy, unless it is the one in use (or none).
     pub fn editing(&self, name: Option<&str>, f: impl Fn(Profile) -> Profile) -> Setup {
-        let in_use = name.is_none() || name == self.profile.as_deref() || !self.profiles.iter().any(|p| Some(p.name.as_str()) == name);
+        let in_use = name.is_none()
+            || name == self.profile.as_deref()
+            || !self.profiles.iter().any(|p| Some(p.name.as_str()) == name);
         if in_use {
             let p = f(self.live());
             return Setup { default_route: p.default_route, apps: p.apps, added: p.added, ..self.clone() };
         }
-        Setup { profiles: self.profiles.iter().map(|p| if Some(p.name.as_str()) == name { f(p.clone()) } else { p.clone() }).collect(), ..self.clone() }
+        Setup {
+            profiles: self
+                .profiles
+                .iter()
+                .map(|p| if Some(p.name.as_str()) == name { f(p.clone()) } else { p.clone() })
+                .collect(),
+            ..self.clone()
+        }
     }
 
     pub fn rename(&self, old: &str, new: &str) -> Setup {
         Setup {
-            profiles: self.profiles.iter().map(|p| if p.name == old { Profile { name: new.into(), ..p.clone() } } else { p.clone() }).collect(),
+            profiles: self
+                .profiles
+                .iter()
+                .map(|p| if p.name == old { Profile { name: new.into(), ..p.clone() } } else { p.clone() })
+                .collect(),
             profile: if self.profile.as_deref() == Some(old) { Some(new.into()) } else { self.profile.clone() },
             ..self.clone()
         }
@@ -565,7 +688,11 @@ impl Setup {
 
     /// Deletes profile `name`. The current routes stay as they are, even when it was the one in use.
     pub fn forget(&self, name: &str) -> Setup {
-        Setup { profiles: self.profiles.iter().filter(|p| p.name != name).cloned().collect(), profile: self.profile.clone().filter(|p| p != name), ..self.clone() }
+        Setup {
+            profiles: self.profiles.iter().filter(|p| p.name != name).cloned().collect(),
+            profile: self.profile.clone().filter(|p| p != name),
+            ..self.clone()
+        }
     }
 
     /// Back to what `ran` (the setup the engine still runs after refusing a switch) uses: its profile when still saved,
@@ -573,7 +700,11 @@ impl Setup {
     pub fn back(&self, ran: &Setup) -> Setup {
         let ok = |id: &str| id == DIRECT || self.route(Some(id)).is_some();
         // Its profile again only if still as it ran: one edited meanwhile keeps those edits, the routes run unprofiled.
-        let same = self.profiles.iter().find(|p| Some(&p.name) == ran.profile.as_ref()).filter(|p| p.default_route == ran.default_route && p.apps == ran.apps && p.added == ran.added);
+        let same = self
+            .profiles
+            .iter()
+            .find(|p| Some(&p.name) == ran.profile.as_ref())
+            .filter(|p| p.default_route == ran.default_route && p.apps == ran.apps && p.added == ran.added);
         Setup {
             profiles: self.saved(),
             profile: same.map(|p| p.name.clone()),
@@ -608,7 +739,12 @@ impl Setup {
     /// Profiles left pointing at a removed route: its apps follow the profile's default, a removed default becomes the first route.
     pub fn tidy(&self) -> Setup {
         let ok = |id: &str| id == DIRECT || id.is_empty() || self.routes.iter().any(|r| r.id == id);
-        if self.added.iter().all(|a| ok(a)) && self.profiles.iter().all(|p| ok(&p.default_route) && p.apps.values().all(|v| ok(v)) && p.added.iter().all(|a| ok(a))) {
+        if self.added.iter().all(|a| ok(a))
+            && self
+                .profiles
+                .iter()
+                .all(|p| ok(&p.default_route) && p.apps.values().all(|v| ok(v)) && p.added.iter().all(|a| ok(a)))
+        {
             return self.clone();
         }
         let first = self.routes.first().map(|r| r.id.clone()).unwrap_or_else(|| DIRECT.into());
@@ -619,7 +755,17 @@ impl Setup {
                 .iter()
                 .map(|p| {
                     let d = if ok(&p.default_route) { p.default_route.clone() } else { first.clone() };
-                    Profile { apps: p.apps.iter().filter(|(_, v)| ok(v) && **v != d).map(|(k, v)| (k.clone(), v.clone())).collect(), added: p.added.iter().filter(|a| ok(a)).cloned().collect(), default_route: d, name: p.name.clone() }
+                    Profile {
+                        apps: p
+                            .apps
+                            .iter()
+                            .filter(|(_, v)| ok(v) && **v != d)
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect(),
+                        added: p.added.iter().filter(|a| ok(a)).cloned().collect(),
+                        default_route: d,
+                        name: p.name.clone(),
+                    }
                 })
                 .collect(),
             ..self.clone()
@@ -632,7 +778,12 @@ impl Setup {
 
     /// Routes that carry traffic right now: the default plus any with apps (and those up for a speed test).
     pub fn active_routes(&self) -> Vec<&Route> {
-        self.routes.iter().filter(|r| r.id == self.default_route || self.testing.contains(&r.id) || self.apps.values().any(|v| *v == r.id)).collect()
+        self.routes
+            .iter()
+            .filter(|r| {
+                r.id == self.default_route || self.testing.contains(&r.id) || self.apps.values().any(|v| *v == r.id)
+            })
+            .collect()
     }
 
     /// The Tailscale exit node in use, if any active route goes out through one (Tailscale allows one at a time).
@@ -647,17 +798,25 @@ impl Setup {
 
     /// Nothing goes through a VPN (Direct default, no app on a route, no home tunnel): running protects nothing.
     pub fn direct_only(&self) -> bool {
-        self.default_route == DIRECT && self.apps.values().all(|v| v == DIRECT) && self.home.wg.is_none() && !self.home.tailscale
+        self.default_route == DIRECT
+            && self.apps.values().all(|v| v == DIRECT)
+            && self.home.wg.is_none()
+            && !self.home.tailscale
     }
 
     /// `provider`'s page setting `key`, or its default.
     pub fn opt(&self, provider: &str, key: &str) -> Option<String> {
-        self.opts.get(provider).and_then(|m| m.get(key)).cloned().or_else(|| crate::providers::default_opt(provider, key))
+        self.opts
+            .get(provider)
+            .and_then(|m| m.get(key))
+            .cloned()
+            .or_else(|| crate::providers::default_opt(provider, key))
     }
 
     /// Whether route `r` uses its provider's own blocking: its own choice, else the provider page's.
     pub fn protects(&self, r: &Route) -> bool {
-        !r.imported() && r.filter.unwrap_or_else(|| self.opt(&r.loc.provider, crate::providers::PROTECT).as_deref() == Some("on"))
+        !r.imported()
+            && r.filter.unwrap_or_else(|| self.opt(&r.loc.provider, crate::providers::PROTECT).as_deref() == Some("on"))
     }
 
     /// Older saves kept Threat Protection Lite in [`Prefs`] (it now lives on NordVPN's page) and a custom DNS server for
@@ -667,7 +826,21 @@ impl Setup {
             return self.clone();
         }
         // NordVPN routes had no blocking switch of their own: a flag one kept from another provider meant nothing then.
-        let mut s = Setup { version: VERSION, routes: self.routes.iter().map(|r| if !r.imported() && r.loc.provider == "nord" { Route { filter: None, ..r.clone() } } else { r.clone() }).collect(), ..self.clone() };
+        let mut s = Setup {
+            version: VERSION,
+            routes: self
+                .routes
+                .iter()
+                .map(|r| {
+                    if !r.imported() && r.loc.provider == "nord" {
+                        Route { filter: None, ..r.clone() }
+                    } else {
+                        r.clone()
+                    }
+                })
+                .collect(),
+            ..self.clone()
+        };
         if !self.prefs.threat_protection {
             let mut nord = self.opts.get("nord").cloned().unwrap_or_default();
             nord.insert(crate::providers::PROTECT.into(), "off".into());
@@ -675,7 +848,11 @@ impl Setup {
             s.prefs.threat_protection = true;
         }
         if let Some(first) = self.prefs.custom_dns.first() {
-            let filter = if s.prefs.filter.id.is_some() { s.prefs.filter.clone() } else { Filter { id: Some(OWN.into()), value: first.clone(), routes: true, ..Default::default() } };
+            let filter = if s.prefs.filter.id.is_some() {
+                s.prefs.filter.clone()
+            } else {
+                Filter { id: Some(OWN.into()), value: first.clone(), routes: true, ..Default::default() }
+            };
             s.prefs.custom_dns = vec![];
             s.prefs.filter = filter;
         }
@@ -731,7 +908,9 @@ pub enum Link {
 impl Link {
     pub fn server(&self) -> &Server {
         match self {
-            Link::Wg { server, .. } | Link::Ovpn { server, .. } | Link::Ss { server, .. } | Link::Ts { server } => server,
+            Link::Wg { server, .. } | Link::Ovpn { server, .. } | Link::Ss { server, .. } | Link::Ts { server } => {
+                server
+            }
         }
     }
 }
@@ -781,7 +960,11 @@ impl Filter {
                 if !NEXTDNS.is_match(p) {
                     return None;
                 }
-                filter_by_id("nextdns").map(|d| Dns { path: Some(format!("/{p}")), private_dns: Some(format!("{p}.dns.nextdns.io")), ..d })
+                filter_by_id("nextdns").map(|d| Dns {
+                    path: Some(format!("/{p}")),
+                    private_dns: Some(format!("{p}.dns.nextdns.io")),
+                    ..d
+                })
             }
             Some(id) => filter_by_id(id),
         }
@@ -805,7 +988,16 @@ pub struct Dns {
 impl Dns {
     /// As the Kotlin constructor's defaults made one: DNS over HTTPS at /dns-query, its port from the kind.
     fn public(id: &str, name: &str, blocks: &str, ip: &str, tls: &str) -> Dns {
-        Dns { id: id.into(), name: name.into(), blocks: blocks.into(), ip: ip.into(), tls: Some(tls.into()), path: Some("/dns-query".into()), port: 443, private_dns: Some(tls.into()) }
+        Dns {
+            id: id.into(),
+            name: name.into(),
+            blocks: blocks.into(),
+            ip: ip.into(),
+            tls: Some(tls.into()),
+            path: Some("/dns-query".into()),
+            port: 443,
+            private_dns: Some(tls.into()),
+        }
     }
 }
 
@@ -813,10 +1005,25 @@ impl Dns {
 pub fn filters() -> Vec<Dns> {
     vec![
         Dns::public("adguard", "AdGuard DNS", "Ads and trackers", "94.140.14.14", "dns.adguard-dns.com"),
-        Dns::public("adguard-family", "AdGuard DNS Family", "Ads, trackers and adult sites", "94.140.14.15", "family.adguard-dns.com"),
+        Dns::public(
+            "adguard-family",
+            "AdGuard DNS Family",
+            "Ads, trackers and adult sites",
+            "94.140.14.15",
+            "family.adguard-dns.com",
+        ),
         Dns::public("cloudflare-security", "Cloudflare 1.1.1.2", "Malware", "1.1.1.2", "security.cloudflare-dns.com"),
-        Dns::public("cloudflare-family", "Cloudflare 1.1.1.3", "Malware and adult sites", "1.1.1.3", "family.cloudflare-dns.com"),
-        Dns { private_dns: None, ..Dns::public("nextdns", "NextDNS", "What your NextDNS profile blocks", "45.90.28.0", "dns.nextdns.io") },
+        Dns::public(
+            "cloudflare-family",
+            "Cloudflare 1.1.1.3",
+            "Malware and adult sites",
+            "1.1.1.3",
+            "family.cloudflare-dns.com",
+        ),
+        Dns {
+            private_dns: None,
+            ..Dns::public("nextdns", "NextDNS", "What your NextDNS profile blocks", "45.90.28.0", "dns.nextdns.io")
+        },
         Dns::public("quad9", "Quad9", "Malware", "9.9.9.9", "dns.quad9.net"),
     ]
 }
@@ -825,10 +1032,17 @@ pub fn filter_by_id(id: &str) -> Option<Dns> {
     filters().into_iter().find(|d| d.id == id)
 }
 
-static IPV4: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$").unwrap());
+static IPV4: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$").unwrap()
+});
 // The Kotlin pattern's "(?=.{1,253}$)" look-ahead is the length check in host_name().
-static HOST: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$").unwrap());
-static OWN_URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(https|tls)://([A-Za-z0-9.-]+)(?::(\d{1,5}))?(/(?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%[0-9A-Fa-f]{2})*)?$").unwrap());
+static HOST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$").unwrap()
+});
+static OWN_URL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(https|tls)://([A-Za-z0-9.-]+)(?::(\d{1,5}))?(/(?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%[0-9A-Fa-f]{2})*)?$")
+        .unwrap()
+});
 static NEXTDNS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9]{1,32}$").unwrap());
 
 pub fn is_ipv4(s: &str) -> bool {
@@ -844,7 +1058,16 @@ fn host_name(s: &str) -> bool {
 pub fn own_dns(text: &str) -> Option<Dns> {
     let t = text.trim();
     if is_ipv4(t) {
-        return Some(Dns { id: OWN.into(), name: t.into(), blocks: String::new(), ip: t.into(), tls: None, path: None, port: 53, private_dns: None });
+        return Some(Dns {
+            id: OWN.into(),
+            name: t.into(),
+            blocks: String::new(),
+            ip: t.into(),
+            tls: None,
+            path: None,
+            port: 53,
+            private_dns: None,
+        });
     }
     let m = OWN_URL.captures(t)?;
     let group = |i: usize| m.get(i).map(|g| g.as_str()).unwrap_or("");
@@ -908,7 +1131,12 @@ mod tests {
         Profile { name: name.into(), default_route: default_route.into(), apps: apps(a), added: strs(added) }
     }
     fn base() -> Setup {
-        Setup { routes: vec![nl(), us(), it()], default_route: "nl".into(), apps: apps(&[("netflix", "us")]), ..Setup::default() }
+        Setup {
+            routes: vec![nl(), us(), it()],
+            default_route: "nl".into(),
+            apps: apps(&[("netflix", "us")]),
+            ..Setup::default()
+        }
     }
     fn names(s: &Setup) -> Vec<String> {
         s.profiles.iter().map(|p| p.name.clone()).collect()
@@ -963,7 +1191,13 @@ mod tests {
     /// A removed route: profiles' apps on it follow their default; a removed default becomes the first route.
     #[test]
     fn tidy_after_route_removed() {
-        let s = Setup { profiles: vec![profile("Home", "nl", &[("netflix", "us")], &[]), profile("Trip", "us", &[("rai", "it")], &[])], ..base().save_as("Home") };
+        let s = Setup {
+            profiles: vec![
+                profile("Home", "nl", &[("netflix", "us")], &[]),
+                profile("Trip", "us", &[("rai", "it")], &[]),
+            ],
+            ..base().save_as("Home")
+        };
         let t = Setup { routes: vec![nl(), it()], ..s.clone() }.tidy();
         assert_eq!(profile("Home", "nl", &[], &[]), t.profiles[0]);
         assert_eq!(profile("Trip", "nl", &[("rai", "it")], &[]), t.profiles[1]);
@@ -991,7 +1225,11 @@ mod tests {
         assert!(!Profile::new("Empty", "").ready());
         assert!(Profile::new("Direct", DIRECT).ready());
         assert!(Profile::new("Home", "nl").ready());
-        let s = Setup { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), ..base().save_as("Home").add("Empty", true).add("Trip", false) };
+        let s = Setup {
+            default_route: "it".into(),
+            apps: apps(&[("rai", DIRECT)]),
+            ..base().save_as("Home").add("Empty", true).add("Trip", false)
+        };
         assert_eq!(s, s.use_profile("Empty"));
         let trip = s.use_profile("Trip");
         assert_eq!(Some("Trip".into()), trip.profile);
@@ -1007,13 +1245,22 @@ mod tests {
         assert_eq!(Some("Home".into()), copied.profile);
         assert_eq!("it", copied.default_route);
         assert_eq!(live.apps, copied.apps);
-        assert_eq!(Profile { name: "Home".into(), default_route: "it".into(), apps: live.apps.clone(), added: strs(&["it"]) }, copied.profiles[0]);
-        assert_eq!(Profile { name: "Copy".into(), default_route: "it".into(), apps: live.apps.clone(), added: strs(&["it"]) }, copied.profiles[1]);
+        assert_eq!(
+            Profile { name: "Home".into(), default_route: "it".into(), apps: live.apps.clone(), added: strs(&["it"]) },
+            copied.profiles[0]
+        );
+        assert_eq!(
+            Profile { name: "Copy".into(), default_route: "it".into(), apps: live.apps.clone(), added: strs(&["it"]) },
+            copied.profiles[1]
+        );
         let empty = live.add("Empty", true);
         assert_eq!(Some("Home".into()), empty.profile);
         assert_eq!("it", empty.default_route);
         assert_eq!(live.apps, empty.apps);
-        assert_eq!(Profile { name: "Home".into(), default_route: "it".into(), apps: live.apps.clone(), added: strs(&["it"]) }, empty.profiles[0]);
+        assert_eq!(
+            Profile { name: "Home".into(), default_route: "it".into(), apps: live.apps.clone(), added: strs(&["it"]) },
+            empty.profiles[0]
+        );
         assert_eq!(Profile::new("Empty", ""), empty.profiles[1]);
     }
 
@@ -1022,9 +1269,16 @@ mod tests {
         let s = Setup {
             default_route: "us".into(),
             apps: apps(&[("bank", DIRECT)]),
-            ..base().save_as("Home").add("Trip", true).editing(Some("Trip"), |p| Profile { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), ..p })
+            ..base().save_as("Home").add("Trip", true).editing(Some("Trip"), |p| Profile {
+                default_route: "it".into(),
+                apps: apps(&[("rai", DIRECT)]),
+                ..p
+            })
         };
-        assert_eq!(Setup { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), added: vec![], ..s.clone() }, s.view_as(Some("Trip")));
+        assert_eq!(
+            Setup { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), added: vec![], ..s.clone() },
+            s.view_as(Some("Trip"))
+        );
         assert_eq!(s, s.view_as(None));
         assert_eq!(s, s.view_as(Some("Home")));
         assert_eq!(s, s.view_as(Some("Missing")));
@@ -1033,8 +1287,13 @@ mod tests {
 
     #[test]
     fn edit_draft_then_use_it() {
-        let s = Setup { default_route: "us".into(), apps: apps(&[("bank", DIRECT)]), ..base().save_as("Home").add("Trip", true) };
-        let draft = s.editing(Some("Trip"), |p| Profile { default_route: "it".into(), apps: apps(&[("rai", "nl")]), ..p });
+        let s = Setup {
+            default_route: "us".into(),
+            apps: apps(&[("bank", DIRECT)]),
+            ..base().save_as("Home").add("Trip", true)
+        };
+        let draft =
+            s.editing(Some("Trip"), |p| Profile { default_route: "it".into(), apps: apps(&[("rai", "nl")]), ..p });
         assert_eq!(s.default_route, draft.default_route);
         assert_eq!(s.apps, draft.apps);
         assert_eq!(s.profiles[0], draft.profiles[0]);
@@ -1043,19 +1302,31 @@ mod tests {
         assert_eq!(Some("Trip".into()), switched.profile);
         assert_eq!("it", switched.default_route);
         assert_eq!(apps(&[("rai", "nl")]), switched.apps);
-        assert_eq!(Profile { name: "Home".into(), default_route: "us".into(), apps: s.apps.clone(), added: strs(&["it"]) }, switched.profiles[0]);
+        assert_eq!(
+            Profile { name: "Home".into(), default_route: "us".into(), apps: s.apps.clone(), added: strs(&["it"]) },
+            switched.profiles[0]
+        );
     }
 
     #[test]
     fn edit_live_for_null_current_and_unknown_names() {
         let s = base().save_as("Home").add("Trip", true);
         for name in [None, Some("Home"), Some("Missing")] {
-            let edited = s.editing(name, |p| Profile { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), ..p });
+            let edited =
+                s.editing(name, |p| Profile { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), ..p });
             assert_eq!(Some("Home".into()), edited.profile);
             assert_eq!("it", edited.default_route);
             assert_eq!(apps(&[("rai", DIRECT)]), edited.apps);
             assert_eq!(s.profiles, edited.profiles);
-            assert_eq!(Profile { name: "Home".into(), default_route: "it".into(), apps: edited.apps.clone(), added: strs(&["it"]) }, edited.saved()[0]);
+            assert_eq!(
+                Profile {
+                    name: "Home".into(),
+                    default_route: "it".into(),
+                    apps: edited.apps.clone(),
+                    added: strs(&["it"])
+                },
+                edited.saved()[0]
+            );
         }
     }
 
@@ -1063,7 +1334,11 @@ mod tests {
     fn tidy_preserves_empty_and_mends_removed_routes() {
         let s = Setup {
             routes: vec![nl(), it()],
-            profiles: vec![Profile::new("Empty", ""), profile("Draft", "", &[("lost", "us"), ("kept", "it")], &[]), profile("Trip", "us", &[("lost", "us"), ("kept", "it")], &[])],
+            profiles: vec![
+                Profile::new("Empty", ""),
+                profile("Draft", "", &[("lost", "us"), ("kept", "it")], &[]),
+                profile("Trip", "us", &[("lost", "us"), ("kept", "it")], &[]),
+            ],
             ..base()
         };
         let tidy = s.tidy();
@@ -1076,7 +1351,11 @@ mod tests {
     #[test]
     fn back_restores_running_profile_with_empty_draft_present() {
         let ran = base().save_as("Home").add("Empty", true);
-        let refused = Setup { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), ..ran.add("Trip", false).use_profile("Trip") };
+        let refused = Setup {
+            default_route: "it".into(),
+            apps: apps(&[("rai", DIRECT)]),
+            ..ran.add("Trip", false).use_profile("Trip")
+        };
         let back = refused.back(&ran);
         assert_eq!(Some("Home".into()), back.profile);
         assert_eq!("nl", back.default_route);
@@ -1110,9 +1389,12 @@ mod tests {
     #[test]
     fn hidden_routes() {
         let spare = Route::new("spare", Location::country("nord", 81, "DE", "Germany"));
-        let s = Setup { added: strs(&["spare"]), ..Setup { routes: vec![nl(), us(), it(), spare], ..base() }.save_as("Home") }
-            .add("Trip", true)
-            .editing(Some("Trip"), |p| Profile { default_route: "it".into(), added: strs(&["us"]), ..p });
+        let s = Setup {
+            added: strs(&["spare"]),
+            ..Setup { routes: vec![nl(), us(), it(), spare], ..base() }.save_as("Home")
+        }
+        .add("Trip", true)
+        .editing(Some("Trip"), |p| Profile { default_route: "it".into(), added: strs(&["us"]), ..p });
         assert_eq!(set(&["it"]), s.hidden_routes(None));
         assert_eq!(set(&["it"]), s.hidden_routes(Some("Home")));
         assert_eq!(set(&["nl", "spare"]), s.hidden_routes(Some("Trip")));
@@ -1143,7 +1425,11 @@ mod tests {
     #[test]
     fn added_follows_switches_and_draft_edits() {
         let home = Setup { added: strs(&["it"]), ..base().save_as("Home") };
-        let s = home.add("Trip", true).editing(Some("Trip"), |p| Profile { default_route: "us".into(), added: strs(&["nl"]), ..p });
+        let s = home.add("Trip", true).editing(Some("Trip"), |p| Profile {
+            default_route: "us".into(),
+            added: strs(&["nl"]),
+            ..p
+        });
         assert_eq!(strs(&["nl"]), s.view_as(Some("Trip")).added);
         assert_eq!(strs(&["it"]), s.added);
         let trip = s.use_profile("Trip");
@@ -1163,7 +1449,9 @@ mod tests {
 
     #[test]
     fn tidy_removes_added_from_live_and_saved_profiles() {
-        let s = Setup { added: strs(&["us", "it"]), ..base().save_as("Home") }.add("Trip", true).editing(Some("Trip"), |p| Profile { added: strs(&["us", "nl"]), ..p });
+        let s = Setup { added: strs(&["us", "it"]), ..base().save_as("Home") }
+            .add("Trip", true)
+            .editing(Some("Trip"), |p| Profile { added: strs(&["us", "nl"]), ..p });
         let t = Setup { routes: vec![nl(), it()], ..s }.tidy();
         assert_eq!(strs(&["it"]), t.added);
         assert_eq!(strs(&["it"]), t.profiles[0].added);
@@ -1194,9 +1482,15 @@ mod tests {
     fn json_is_the_earlier_apps() {
         let s: Setup = serde_json::from_str("{}").unwrap();
         assert_eq!(Setup::default(), s);
-        let r: Route = serde_json::from_str(r#"{"id":"x","loc":{"countryId":153,"countryCode":"NL","country":"Netherlands"},"future":1}"#).unwrap();
+        let r: Route = serde_json::from_str(
+            r#"{"id":"x","loc":{"countryId":153,"countryCode":"NL","country":"Netherlands"},"future":1}"#,
+        )
+        .unwrap();
         assert_eq!(Route::new("x", Location::country("nord", 153, "NL", "Netherlands")), r);
-        assert_eq!(r#"{"id":"x","loc":{"countryId":153,"countryCode":"NL","country":"Netherlands"}}"#, serde_json::to_string(&r).unwrap());
+        assert_eq!(
+            r#"{"id":"x","loc":{"countryId":153,"countryCode":"NL","country":"Netherlands"}}"#,
+            serde_json::to_string(&r).unwrap()
+        );
         let link: Link = serde_json::from_str(r#"{"type":"app.unbraid.data.TsLink","server":{"name":"n","host":"h","ip":"1.2.3.4","publicKey":"","load":0}}"#).unwrap();
         assert_eq!("n", link.server().name);
         assert_eq!(1_239_587_473, stable_id("se-got")); // Java's "se-got".hashCode() is -907896175

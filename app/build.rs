@@ -1,6 +1,10 @@
 // The engine's gRPC services from the same .proto files the engine is built with, compiled without protoc; the UI.
 fn main() {
-    let files = ["proto/daemon/started_service.proto", "proto/daemon/managed_service.proto", "proto/boxdd/desktop_service.proto"];
+    let files = [
+        "proto/daemon/started_service.proto",
+        "proto/daemon/managed_service.proto",
+        "proto/boxdd/desktop_service.proto",
+    ];
     for f in files {
         println!("cargo:rerun-if-changed={f}");
     }

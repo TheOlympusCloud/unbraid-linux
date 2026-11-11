@@ -250,18 +250,31 @@ pub struct AppsView {
 /// The page: `apps` as `setup` routes them (the profile shown, `viewing`, or the one in use for none), each app's data
 /// `today` while statistics are recorded, and the page's own `table`. `program_of` names the program an app runs
 /// ([`crate::apps::program_of`]).
-pub fn view(apps: &[AppInfo], setup: &Setup, viewing: Option<&str>, disclosed: bool, today: &HashMap<String, i64>, table: &Table, program_of: impl Fn(&str) -> Option<String>) -> AppsView {
+pub fn view(
+    apps: &[AppInfo],
+    setup: &Setup,
+    viewing: Option<&str>,
+    disclosed: bool,
+    today: &HashMap<String, i64>,
+    table: &Table,
+    program_of: impl Fn(&str) -> Option<String>,
+) -> AppsView {
     let stats = setup.prefs.stats;
     let draft = viewing.is_some() && viewing != setup.profile.as_deref();
     let place = |a: &AppInfo| setup.route_of(a.follows(setup).unwrap_or(&a.pkg));
-    let name_of = |id: &str| setup.route(Some(id)).map_or_else(|| if id == DIRECT { "Direct".into() } else { String::new() }, Route::name);
+    let name_of = |id: &str| {
+        setup.route(Some(id)).map_or_else(|| if id == DIRECT { "Direct".into() } else { String::new() }, Route::name)
+    };
     let label_of = |key: &str| apps.iter().find(|a| a.pkg == key).map_or(key, |a| a.label.as_str()).to_string();
     let direct = apps.iter().filter(|a| setup.apps.get(&a.pkg).is_some_and(|r| r == DIRECT)).count();
     let routed = apps.iter().filter(|a| setup.apps.contains_key(&a.pkg)).count() - direct;
 
     let (editing, editing_hint, back_label, use_label) = match viewing.filter(|_| draft) {
         Some(v) => (
-            format!("Editing {v} · not in use. {}", setup.profile.as_ref().map_or_else(|| "No profile is in use.".into(), |p| format!("{p} is in use."))),
+            format!(
+                "Editing {v} · not in use. {}",
+                setup.profile.as_ref().map_or_else(|| "No profile is in use.".into(), |p| format!("{p} is in use."))
+            ),
             if setup.default_route.is_empty() { "Choose a default route on Routes".into() } else { String::new() },
             format!("Back to {}", setup.profile.as_deref().unwrap_or("current setup")),
             if setup.default_route.is_empty() { String::new() } else { format!("Use {v}") },
@@ -276,14 +289,30 @@ pub fn view(apps: &[AppInfo], setup: &Setup, viewing: Option<&str>, disclosed: b
         .map(|r| {
             let code = r.code();
             // Two routes with one country code (NordVPN NL, Mullvad NL) are told apart by provider.
-            let label = if setup.routes.iter().filter(|o| o.code() == code).count() > 1 { format!("{code} · {}", r.source()) } else { code };
+            let label = if setup.routes.iter().filter(|o| o.code() == code).count() > 1 {
+                format!("{code} · {}", r.source())
+            } else {
+                code
+            };
             ExitChip { id: r.id.clone(), label, hue: r.hue, direct: false, on: filter == Some(r.id.as_str()) }
         })
         .collect();
     if setup.default_route.is_empty() {
-        chips.push(ExitChip { id: String::new(), label: "Not set".into(), hue: -1, direct: false, on: filter == Some("") });
+        chips.push(ExitChip {
+            id: String::new(),
+            label: "Not set".into(),
+            hue: -1,
+            direct: false,
+            on: filter == Some(""),
+        });
     }
-    chips.push(ExitChip { id: DIRECT.into(), label: "Direct".into(), hue: -1, direct: true, on: filter == Some(DIRECT) });
+    chips.push(ExitChip {
+        id: DIRECT.into(),
+        label: "Direct".into(),
+        hue: -1,
+        direct: true,
+        on: filter == Some(DIRECT),
+    });
 
     let heads = Sort::ALL
         .into_iter()
@@ -295,7 +324,11 @@ pub fn view(apps: &[AppInfo], setup: &Setup, viewing: Option<&str>, disclosed: b
                 (true, false) => " ▲",
                 (true, true) => " ▼",
             };
-            ColumnHead { text: format!("{}{arrow}", s.label().to_uppercase()), label: format!("Sort by {}", s.label()), on }
+            ColumnHead {
+                text: format!("{}{arrow}", s.label().to_uppercase()),
+                label: format!("Sort by {}", s.label()),
+                on,
+            }
         })
         .collect();
 
@@ -305,7 +338,9 @@ pub fn view(apps: &[AppInfo], setup: &Setup, viewing: Option<&str>, disclosed: b
         .filter(|a| {
             (table.system || !a.system || setup.apps.contains_key(&a.pkg))
                 && filter.is_none_or(|f| place(a) == f)
-                && (query.is_empty() || a.label.to_lowercase().contains(&query) || a.pkg.to_lowercase().contains(&query))
+                && (query.is_empty()
+                    || a.label.to_lowercase().contains(&query)
+                    || a.pkg.to_lowercase().contains(&query))
         })
         .collect();
     let keys: Vec<_> = shown
@@ -350,7 +385,11 @@ pub fn view(apps: &[AppInfo], setup: &Setup, viewing: Option<&str>, disclosed: b
                 filled: setup.apps.contains_key(&a.pkg),
                 direct: current == DIRECT,
                 note,
-                today: if stats { today.get(&a.pkg).map_or_else(|| "—".into(), |b| bytes_text(*b)) } else { String::new() },
+                today: if stats {
+                    today.get(&a.pkg).map_or_else(|| "—".into(), |b| bytes_text(*b))
+                } else {
+                    String::new()
+                },
             }
         })
         .collect();
@@ -373,7 +412,10 @@ pub fn view(apps: &[AppInfo], setup: &Setup, viewing: Option<&str>, disclosed: b
             today: match today.get(&a.pkg) {
                 _ if !stats => String::new(),
                 Some(b) => {
-                    let to = setup.route(Some(&current)).map_or_else(|| if current == DIRECT { "your own connection".into() } else { "the default route".into() }, Route::name);
+                    let to = setup.route(Some(&current)).map_or_else(
+                        || if current == DIRECT { "your own connection".into() } else { "the default route".into() },
+                        Route::name,
+                    );
                     format!("{} through {to}", bytes_text(*b))
                 }
                 None => "No traffic yet today".into(),
@@ -396,7 +438,11 @@ pub fn view(apps: &[AppInfo], setup: &Setup, viewing: Option<&str>, disclosed: b
                     RouteChoice {
                         id: r.id.clone(),
                         name: r.name(),
-                        sub: if default { format!("Default · {}", r.source()) } else { r.loc.city.clone().unwrap_or_else(|| r.source()) },
+                        sub: if default {
+                            format!("Default · {}", r.source())
+                        } else {
+                            r.loc.city.clone().unwrap_or_else(|| r.source())
+                        },
                         menu: if default { format!("{} (default)", r.name()) } else { r.name() },
                         code: r.code(),
                         hue: r.hue,
@@ -405,11 +451,25 @@ pub fn view(apps: &[AppInfo], setup: &Setup, viewing: Option<&str>, disclosed: b
                     }
                 })
                 .collect();
-            d.choices.push(RouteChoice { id: DIRECT.into(), name: "Direct".into(), sub: "No VPN".into(), menu: "Direct".into(), code: String::new(), hue: -1, direct: true, on: current == DIRECT });
+            d.choices.push(RouteChoice {
+                id: DIRECT.into(),
+                name: "Direct".into(),
+                sub: "No VPN".into(),
+                menu: "Direct".into(),
+                code: String::new(),
+                hue: -1,
+                direct: true,
+                on: current == DIRECT,
+            });
             d.also = apps
                 .iter()
                 .filter(|f| f.follows(setup) == Some(a.pkg.as_str()))
-                .map(|f| AlsoRow { key: f.pkg.clone(), label: f.label.clone(), letter: letter(&f.label), note: format!("runs as {}", a.label) })
+                .map(|f| AlsoRow {
+                    key: f.pkg.clone(),
+                    label: f.label.clone(),
+                    letter: letter(&f.label),
+                    note: format!("runs as {}", a.label),
+                })
                 .collect();
             // A Direct app's lookups: outside unbraid (the computer's DNS) or through it, with unbraid's filter. A setting of
             // every profile, so not offered while editing a profile not in use.
@@ -417,7 +477,11 @@ pub fn view(apps: &[AppInfo], setup: &Setup, viewing: Option<&str>, disclosed: b
             if let Some(server) = f.server().filter(|_| explicit.is_some_and(|r| r == DIRECT) && !draft) {
                 d.lookups = true;
                 d.lookups_on = f.through(&a.pkg);
-                d.lookups_sub = if d.lookups_on { format!("Through {APP}, with {}. The app can see a VPN is on", server.name) } else { format!("Outside {APP}, with the computer's DNS") };
+                d.lookups_sub = if d.lookups_on {
+                    format!("Through {APP}, with {}. The app can see a VPN is on", server.name)
+                } else {
+                    format!("Outside {APP}, with the computer's DNS")
+                };
             }
             d.own = explicit.is_some();
         }
@@ -479,7 +543,14 @@ mod tests {
     /// The set-up app the approved screenshots show: provider routes, a WireGuard server, desktop apps on routes and
     /// Direct, after the list was read (Private Browsing's and Tool's routes went: one runs as Firefox, one is a script).
     fn setup() -> Setup {
-        let lab = WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
+        let lab = WgPeer::new(
+            "Home lab",
+            KEY,
+            vec!["10.8.0.2/32".into()],
+            KEY,
+            "203.0.113.7:51820",
+            vec!["0.0.0.0/0".into()],
+        );
         let route = |id: &str, loc: Location, hue: i32| Route { hue, ..Route::new(id, loc) };
         let mut s = Setup {
             routes: vec![
@@ -489,10 +560,20 @@ mod tests {
                 Route { wg: Some(lab), ..route("lab", Location::default(), 3) },
             ],
             default_route: "nl".into(),
-            profiles: vec![Profile::with_apps("Work", "nl", &[("firefox-private", "it")]), Profile::with_apps("Home", "nl", &[("firefox", "us")])],
+            profiles: vec![
+                Profile::with_apps("Work", "nl", &[("firefox-private", "it")]),
+                Profile::with_apps("Home", "nl", &[("firefox", "us")]),
+            ],
             ..Setup::default()
         };
-        for (k, v) in [("firefox", "us"), ("spotify", "it"), ("org.gnome.Terminal", DIRECT), ("thunderbird", "us"), ("discord", "it"), ("code", DIRECT)] {
+        for (k, v) in [
+            ("firefox", "us"),
+            ("spotify", "it"),
+            ("org.gnome.Terminal", DIRECT),
+            ("thunderbird", "us"),
+            ("discord", "it"),
+            ("code", DIRECT),
+        ] {
             s.apps.insert(k.into(), v.into());
         }
         s.prefs.stats = true;
@@ -522,10 +603,17 @@ mod tests {
     }
 
     fn today() -> HashMap<String, i64> {
-        [("chromium", 16_000_000), ("discord", 4_000_000), ("firefox", 25_000_000), ("signal-desktop", 2_000_000), ("spotify", 10_000_000), ("thunderbird", 6_000_000)]
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect()
+        [
+            ("chromium", 16_000_000),
+            ("discord", 4_000_000),
+            ("firefox", 25_000_000),
+            ("signal-desktop", 2_000_000),
+            ("spotify", 10_000_000),
+            ("thunderbird", 6_000_000),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect()
     }
 
     fn program(key: &str) -> Option<String> {
@@ -570,26 +658,75 @@ mod tests {
         let v = page(&Table::default());
         assert_eq!("15 installed · 4 routed · 2 direct", v.counts);
         assert_eq!(
-            vec!["alacarte-made-1", "chromium", "discord", "firefox", "org.gimp.GIMP", "libreoffice-startcenter", "libreoffice-writer", "firefox-private", "signal-desktop", "spotify", "steam", "org.gnome.Terminal", "thunderbird", "org.example.Tool", "code"],
+            vec![
+                "alacarte-made-1",
+                "chromium",
+                "discord",
+                "firefox",
+                "org.gimp.GIMP",
+                "libreoffice-startcenter",
+                "libreoffice-writer",
+                "firefox-private",
+                "signal-desktop",
+                "spotify",
+                "steam",
+                "org.gnome.Terminal",
+                "thunderbird",
+                "org.example.Tool",
+                "code"
+            ],
             keys(&v)
         );
         let firefox = row(&v, "firefox");
-        assert_eq!(("US", 1, true, false, "", "25 MB"), (firefox.code.as_str(), firefox.hue, firefox.filled, firefox.direct, firefox.note.as_str(), firefox.today.as_str()));
+        assert_eq!(
+            ("US", 1, true, false, "", "25 MB"),
+            (
+                firefox.code.as_str(),
+                firefox.hue,
+                firefox.filled,
+                firefox.direct,
+                firefox.note.as_str(),
+                firefox.today.as_str()
+            )
+        );
         let private = row(&v, "firefox-private");
-        assert_eq!(("US", false, "Runs as Firefox", "—"), (private.code.as_str(), private.filled, private.note.as_str(), private.today.as_str()));
+        assert_eq!(
+            ("US", false, "Runs as Firefox", "—"),
+            (private.code.as_str(), private.filled, private.note.as_str(), private.today.as_str())
+        );
         assert_eq!("Runs as Firefox", row(&v, "alacarte-made-1").note);
         let steam = row(&v, "steam");
-        assert_eq!(("NL", 0, false, "Default only"), (steam.code.as_str(), steam.hue, steam.filled, steam.note.as_str()));
+        assert_eq!(
+            ("NL", 0, false, "Default only"),
+            (steam.code.as_str(), steam.hue, steam.filled, steam.note.as_str())
+        );
         assert_eq!("Default only", row(&v, "org.example.Tool").note);
         let terminal = row(&v, "org.gnome.Terminal");
         assert_eq!(("··", -1, true, true), (terminal.code.as_str(), terminal.hue, terminal.filled, terminal.direct));
         let writer = row(&v, "libreoffice-writer");
-        assert_eq!(("NL", false, ""), (writer.code.as_str(), writer.filled, writer.note.as_str()), "a group with no route: the default, no note");
-        assert_eq!(("C", "App", ""), (row(&v, "chromium").letter.as_str(), row(&v, "chromium").kind.as_str(), row(&v, "chromium").unset.as_str()));
-        assert_eq!(vec!["NAME ▲", "KIND", "ROUTE", "TODAY"], v.heads.iter().map(|h| h.text.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            ("NL", false, ""),
+            (writer.code.as_str(), writer.filled, writer.note.as_str()),
+            "a group with no route: the default, no note"
+        );
+        assert_eq!(
+            ("C", "App", ""),
+            (
+                row(&v, "chromium").letter.as_str(),
+                row(&v, "chromium").kind.as_str(),
+                row(&v, "chromium").unset.as_str()
+            )
+        );
+        assert_eq!(
+            vec!["NAME ▲", "KIND", "ROUTE", "TODAY"],
+            v.heads.iter().map(|h| h.text.as_str()).collect::<Vec<_>>()
+        );
         assert_eq!(("Sort by Name", true), (v.heads[0].label.as_str(), v.heads[0].on));
         assert!(v.all && !v.system && v.disclosed && v.stats);
-        assert_eq!(vec!["NL", "US", "IT", "WG", "Direct"], v.chips.iter().map(|c| c.label.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["NL", "US", "IT", "WG", "Direct"],
+            v.chips.iter().map(|c| c.label.as_str()).collect::<Vec<_>>()
+        );
         assert_eq!((3, true), (v.chips[3].hue, v.chips[4].direct));
         assert_eq!(("", -1, ""), (v.selected.as_str(), v.selected_index, v.detail.key.as_str()));
         assert_eq!("", v.editing);
@@ -611,13 +748,25 @@ mod tests {
     fn an_app_that_runs_as_another_takes_its_route() {
         for key in ["firefox-private", "alacarte-made-1"] {
             let d = page(&selected(key)).detail;
-            assert_eq!("Takes Firefox's route: it runs as Firefox, and unbraid can't tell their traffic apart.", d.leader_note);
-            assert_eq!(("firefox", "Takes Firefox's route", "Show Firefox"), (d.leader.as_str(), d.leader_menu.as_str(), d.show_leader.as_str()));
+            assert_eq!(
+                "Takes Firefox's route: it runs as Firefox, and unbraid can't tell their traffic apart.",
+                d.leader_note
+            );
+            assert_eq!(
+                ("firefox", "Takes Firefox's route", "Show Firefox"),
+                (d.leader.as_str(), d.leader_menu.as_str(), d.show_leader.as_str())
+            );
             assert!(d.choices.is_empty() && !d.own && !d.default_only);
             assert_eq!("No traffic yet today", d.today);
         }
         let firefox = page(&selected("firefox")).detail;
-        assert_eq!(vec![("alacarte-made-1", "Browser", "runs as Firefox"), ("firefox-private", "Private Browsing", "runs as Firefox")], firefox.also.iter().map(|a| (a.key.as_str(), a.label.as_str(), a.note.as_str())).collect::<Vec<_>>());
+        assert_eq!(
+            vec![
+                ("alacarte-made-1", "Browser", "runs as Firefox"),
+                ("firefox-private", "Private Browsing", "runs as Firefox")
+            ],
+            firefox.also.iter().map(|a| (a.key.as_str(), a.label.as_str(), a.note.as_str())).collect::<Vec<_>>()
+        );
         assert_eq!("25 MB through United States", firefox.today);
     }
 
@@ -633,7 +782,8 @@ mod tests {
     #[test]
     fn the_panel_and_the_menu_offer_every_route() {
         let d = page(&selected("spotify")).detail;
-        let tiles: Vec<_> = d.choices.iter().map(|c| (c.id.as_str(), c.name.as_str(), c.sub.as_str(), c.menu.as_str(), c.on)).collect();
+        let tiles: Vec<_> =
+            d.choices.iter().map(|c| (c.id.as_str(), c.name.as_str(), c.sub.as_str(), c.menu.as_str(), c.on)).collect();
         assert_eq!(
             vec![
                 ("nl", "Netherlands", "Default · Nord", "Netherlands (default)", false),
@@ -644,8 +794,14 @@ mod tests {
             ],
             tiles
         );
-        assert_eq!(("WG", 3, -1, true), (d.choices[3].code.as_str(), d.choices[3].hue, d.choices[4].hue, d.choices[4].direct));
-        assert_eq!(("Spotify", "S", "/tmp/unbraid-ui-test/opt/spotify/spotify"), (d.label.as_str(), d.letter.as_str(), d.program.as_str()));
+        assert_eq!(
+            ("WG", 3, -1, true),
+            (d.choices[3].code.as_str(), d.choices[3].hue, d.choices[4].hue, d.choices[4].direct)
+        );
+        assert_eq!(
+            ("Spotify", "S", "/tmp/unbraid-ui-test/opt/spotify/spotify"),
+            (d.label.as_str(), d.letter.as_str(), d.program.as_str())
+        );
         assert_eq!("/tmp/unbraid-ui-test/opt/spotify/spotify", d.copy);
         assert!(d.own && d.also.is_empty() && !d.lookups);
         assert_eq!("10 MB through Italy", d.today);
@@ -657,7 +813,11 @@ mod tests {
         let terminal = page(&selected("org.gnome.Terminal")).detail;
         assert_eq!("No traffic yet today", terminal.today);
         let unknown = view(&apps(), &setup(), None, true, &today(), &selected("spotify"), |_| None).detail;
-        assert_eq!(("spotify", ""), (unknown.program.as_str(), unknown.copy.as_str()), "no program known: its key, and nothing to copy");
+        assert_eq!(
+            ("spotify", ""),
+            (unknown.program.as_str(), unknown.copy.as_str()),
+            "no program known: its key, and nothing to copy"
+        );
     }
 
     /// A Direct app's lookups go through unbraid's filter or around it, while one is set and the profile in use is shown.
@@ -667,14 +827,26 @@ mod tests {
         assert!(!view(&apps(), &s, None, true, &today(), &selected("code"), program).detail.lookups, "no filter set");
         s.prefs.filter = Filter { id: Some("quad9".into()), ..Filter::default() };
         let d = view(&apps(), &s, None, true, &today(), &selected("code"), program).detail;
-        assert_eq!((true, false, "Outside unbraid, with the computer's DNS"), (d.lookups, d.lookups_on, d.lookups_sub.as_str()));
+        assert_eq!(
+            (true, false, "Outside unbraid, with the computer's DNS"),
+            (d.lookups, d.lookups_on, d.lookups_sub.as_str())
+        );
         s.prefs = filter_lookups(&s.prefs, "code");
         let d = view(&apps(), &s, None, true, &today(), &selected("code"), program).detail;
-        assert_eq!((true, "Through unbraid, with Quad9. The app can see a VPN is on"), (d.lookups_on, d.lookups_sub.as_str()));
-        assert!(!view(&apps(), &s, None, true, &today(), &selected("spotify"), program).detail.lookups, "only for Direct apps");
+        assert_eq!(
+            (true, "Through unbraid, with Quad9. The app can see a VPN is on"),
+            (d.lookups_on, d.lookups_sub.as_str())
+        );
+        assert!(
+            !view(&apps(), &s, None, true, &today(), &selected("spotify"), program).detail.lookups,
+            "only for Direct apps"
+        );
         s.profiles.push(Profile::with_apps("Solo", "nl", &[("code", DIRECT)]));
         let shown = s.view_as(Some("Solo"));
-        assert!(!view(&apps(), &shown, Some("Solo"), true, &today(), &selected("code"), program).detail.lookups, "a setting of every profile");
+        assert!(
+            !view(&apps(), &shown, Some("Solo"), true, &today(), &selected("code"), program).detail.lookups,
+            "a setting of every profile"
+        );
     }
 
     /// The switch flips an app's own choice, and drops it once it equals every Direct app's.
@@ -697,19 +869,33 @@ mod tests {
         let mut t = Table::default();
         t.sort_by(Sort::Today);
         let v = page(&t);
-        assert_eq!(vec!["firefox", "chromium", "spotify", "thunderbird", "discord", "signal-desktop", "alacarte-made-1"], keys(&v)[..7].to_vec());
-        assert_eq!(vec!["NAME", "KIND", "ROUTE", "TODAY ▲"], v.heads.iter().map(|h| h.text.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["firefox", "chromium", "spotify", "thunderbird", "discord", "signal-desktop", "alacarte-made-1"],
+            keys(&v)[..7].to_vec()
+        );
+        assert_eq!(
+            vec!["NAME", "KIND", "ROUTE", "TODAY ▲"],
+            v.heads.iter().map(|h| h.text.as_str()).collect::<Vec<_>>()
+        );
         t.sort_by(Sort::Today);
         let v = page(&t);
         assert_eq!("TODAY ▼", v.heads[3].text);
-        assert_eq!(vec!["code", "org.example.Tool", "org.gnome.Terminal"], keys(&v)[..3].to_vec(), "least data first, then by name backwards");
+        assert_eq!(
+            vec!["code", "org.example.Tool", "org.gnome.Terminal"],
+            keys(&v)[..3].to_vec(),
+            "least data first, then by name backwards"
+        );
         assert_eq!("firefox", *keys(&v).last().unwrap());
         t.sort_by(Sort::Route);
         assert!(!t.down);
         let v = page(&t);
         assert_eq!(vec!["org.gnome.Terminal", "code"], keys(&v)[..2].to_vec(), "Direct sorts as \"Direct\"");
         assert_eq!(vec!["discord", "spotify"], keys(&v)[2..4].to_vec(), "then Italy");
-        assert_eq!(vec!["alacarte-made-1", "firefox", "firefox-private", "thunderbird"], keys(&v)[11..].to_vec(), "United States, with the apps that take its route");
+        assert_eq!(
+            vec!["alacarte-made-1", "firefox", "firefox-private", "thunderbird"],
+            keys(&v)[11..].to_vec(),
+            "United States, with the apps that take its route"
+        );
         let mut kinds = apps();
         kinds[1].kind = "Flatpak";
         t.sort_by(Sort::Kind);
@@ -754,19 +940,32 @@ mod tests {
         let mut s = setup();
         s.routes.push(Route { hue: 4, ..Route::new("mnl", Location::country("mullvad", 153, "NL", "Netherlands")) });
         let v = view(&apps(), &s, None, true, &today(), &Table::default(), program);
-        assert_eq!(vec!["NL · Nord", "US", "IT", "WG", "NL · Mullvad", "Direct"], v.chips.iter().map(|c| c.label.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["NL · Nord", "US", "IT", "WG", "NL · Mullvad", "Direct"],
+            v.chips.iter().map(|c| c.label.as_str()).collect::<Vec<_>>()
+        );
         s.profiles.push(Profile::new("Travel", ""));
         let travel = s.view_as(Some("Travel"));
         let t = Table { filter: Some(String::new()), ..Table::default() };
         let v = view(&apps(), &travel, Some("Travel"), true, &today(), &t, program);
-        assert_eq!(vec!["NL · Nord", "US", "IT", "WG", "NL · Mullvad", "Not set", "Direct"], v.chips.iter().map(|c| c.label.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["NL · Nord", "US", "IT", "WG", "NL · Mullvad", "Not set", "Direct"],
+            v.chips.iter().map(|c| c.label.as_str()).collect::<Vec<_>>()
+        );
         assert!(v.chips[5].on && v.chips[5].hue == -1);
         assert_eq!(15, v.rows.len(), "nothing has an exit yet");
         assert_eq!("Not set", v.rows[0].unset);
-        assert_eq!("0 installed · 0 routed · 0 direct", view(&[], &travel, Some("Travel"), true, &today(), &t, program).counts);
+        assert_eq!(
+            "0 installed · 0 routed · 0 direct",
+            view(&[], &travel, Some("Travel"), true, &today(), &t, program).counts
+        );
         s.apps.insert("chromium".into(), "gone".into());
         let v = view(&apps(), &s, None, true, &today(), &Table::default(), program);
-        assert_eq!(("··", -1, false), (row(&v, "chromium").code.as_str(), row(&v, "chromium").hue, row(&v, "chromium").direct), "a route that no longer exists");
+        assert_eq!(
+            ("··", -1, false),
+            (row(&v, "chromium").code.as_str(), row(&v, "chromium").hue, row(&v, "chromium").direct),
+            "a route that no longer exists"
+        );
     }
 
     /// Showing a profile not in use says so, and how to go back or use it.
@@ -775,10 +974,17 @@ mod tests {
         let mut s = setup();
         s.profiles.push(Profile::new("Travel", ""));
         let v = view(&apps(), &s.view_as(Some("Home")), Some("Home"), true, &today(), &Table::default(), program);
-        assert_eq!(("Editing Home · not in use. No profile is in use.", "", "Back to current setup", "Use Home"), (v.editing.as_str(), v.editing_hint.as_str(), v.back_label.as_str(), v.use_label.as_str()));
+        assert_eq!(
+            ("Editing Home · not in use. No profile is in use.", "", "Back to current setup", "Use Home"),
+            (v.editing.as_str(), v.editing_hint.as_str(), v.back_label.as_str(), v.use_label.as_str())
+        );
         let work = s.use_profile("Work");
-        let v = view(&apps(), &work.view_as(Some("Travel")), Some("Travel"), true, &today(), &Table::default(), program);
-        assert_eq!(("Editing Travel · not in use. Work is in use.", "Choose a default route on Routes", "Back to Work", ""), (v.editing.as_str(), v.editing_hint.as_str(), v.back_label.as_str(), v.use_label.as_str()));
+        let v =
+            view(&apps(), &work.view_as(Some("Travel")), Some("Travel"), true, &today(), &Table::default(), program);
+        assert_eq!(
+            ("Editing Travel · not in use. Work is in use.", "Choose a default route on Routes", "Back to Work", ""),
+            (v.editing.as_str(), v.editing_hint.as_str(), v.back_label.as_str(), v.use_label.as_str())
+        );
         let v = view(&apps(), &work, Some("Work"), true, &today(), &Table::default(), program);
         assert_eq!("", v.editing, "the profile in use isn't a draft");
     }
@@ -808,7 +1014,12 @@ mod tests {
     /// when another profile is shown.
     #[test]
     fn the_table_starts_over_when_asked() {
-        let mut t = Table { query: "fire".into(), filter: Some("us".into()), selected: Some("firefox".into()), ..Table::default() };
+        let mut t = Table {
+            query: "fire".into(),
+            filter: Some("us".into()),
+            selected: Some("firefox".into()),
+            ..Table::default()
+        };
         assert!(!t.reselected());
         assert_eq!((None, None), (t.filter.clone(), t.selected.clone()));
         assert!(t.reselected());

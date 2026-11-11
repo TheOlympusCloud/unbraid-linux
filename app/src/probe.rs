@@ -88,7 +88,9 @@ impl Read for Input {
                 match c.reader().read(buf) {
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock && !self.eof => {}
                     // A server that closes without TLS's goodbye ends the stream all the same, as the earlier app read it.
-                    Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::UnexpectedEof) => return Ok(0),
+                    Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::UnexpectedEof) => {
+                        return Ok(0);
+                    }
                     r => return r,
                 }
             }
@@ -138,19 +140,30 @@ pub fn open(tag: &str, host: &str, port: u16, timeout_ms: u64, raw: &Raw, tls: O
         let mut tcp = raw.connect(SocketAddr::from((Ipv4Addr::LOCALHOST, proxy_port)), timeout)?;
         tcp.set_read_timeout(Some(timeout))?;
         let auth = BASE64.encode(format!("{tag}:{password}"));
-        tcp.write_all(format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\nProxy-Authorization: Basic {auth}\r\n\r\n").as_bytes())?;
+        tcp.write_all(
+            format!(
+                "CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\nProxy-Authorization: Basic {auth}\r\n\r\n"
+            )
+            .as_bytes(),
+        )?;
         let status = head(&mut tcp)?.into_iter().next().unwrap_or_default();
         if status.split(' ').nth(1) != Some("200") {
             return Err(Error::State("The exit didn't connect".into()));
         }
-        let name = ServerName::try_from(host.to_string()).map_err(|_| Error::Io(format!("Invalid host name: {host}")))?;
-        let mut c = ClientConnection::new(Arc::new(crate::http::named(tls, None)?), name).map_err(|e| Error::Io(e.to_string()))?;
+        let name =
+            ServerName::try_from(host.to_string()).map_err(|_| Error::Io(format!("Invalid host name: {host}")))?;
+        let mut c = ClientConnection::new(Arc::new(crate::http::named(tls, None)?), name)
+            .map_err(|e| Error::Io(e.to_string()))?;
         while c.is_handshaking() {
             c.complete_io(&mut tcp)?;
         }
         let tls = Arc::new(Mutex::new(c));
         let input = Input { tls: tls.clone(), tcp: tcp.try_clone()?, pending: Vec::new(), eof: false };
-        Ok(Conn { input: BufReader::with_capacity(1 << 16, input), output: Output { tls, tcp, sealed: Vec::new() }, raw: raw.clone() })
+        Ok(Conn {
+            input: BufReader::with_capacity(1 << 16, input),
+            output: Output { tls, tcp, sealed: Vec::new() },
+            raw: raw.clone(),
+        })
     })();
     if conn.is_err() {
         raw.close();
@@ -176,10 +189,16 @@ pub async fn cancellable<T: Send + 'static>(f: impl FnOnce(&Raw) -> Result<T> + 
 pub fn get(tag: &str, host: &str, path: &str, max: usize, accept: &str, raw: &Raw) -> Result<String> {
     let mut c = open(tag, host, 443, 10_000, raw, None)?;
     let body = (|| {
-        c.output.write_all(format!("GET {path} HTTP/1.0\r\nHost: {host}\r\nUser-Agent: unbraid\r\nAccept: {accept}\r\n\r\n").as_bytes())?;
+        c.output.write_all(
+            format!("GET {path} HTTP/1.0\r\nHost: {host}\r\nUser-Agent: unbraid\r\nAccept: {accept}\r\n\r\n")
+                .as_bytes(),
+        )?;
         let status = head(&mut c.input)?.into_iter().next().unwrap_or_default();
         if status.split(' ').nth(1) != Some("200") {
-            return Err(Error::State(format!("HTTP {}", status.split_once(' ').map_or(status.as_str(), |(_, rest)| rest))));
+            return Err(Error::State(format!(
+                "HTTP {}",
+                status.split_once(' ').map_or(status.as_str(), |(_, rest)| rest)
+            )));
         }
         let mut body = Vec::new();
         (&mut c.input).take(max as u64 + 1).read_to_end(&mut body)?;
@@ -196,7 +215,8 @@ pub fn get(tag: &str, host: &str, path: &str, max: usize, accept: &str, raw: &Ra
 /// to the server is up, so the wait is one round trip through the tunnel (Ookla's "ping"). No data, no TLS.
 pub fn handshake_ms(tag: &str, host: &str, port: u16) -> Result<i64> {
     let (proxy_port, password) = live().probe().ok_or_else(|| Error::State("Connect first".into()))?;
-    let mut s = TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, proxy_port)), Duration::from_secs(5))?;
+    let mut s =
+        TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, proxy_port)), Duration::from_secs(5))?;
     s.set_nodelay(true)?;
     s.set_read_timeout(Some(Duration::from_secs(5)))?;
     let refused = || Error::State("Proxy refused".into());

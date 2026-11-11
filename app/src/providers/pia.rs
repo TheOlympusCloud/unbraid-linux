@@ -155,8 +155,18 @@ impl Provider for Pia {
         let keys = wg_keys::generate();
         let token = fetch_token(&user, &pass)?;
         let now = now();
-        TOKENS.lock().unwrap_or_else(PoisonError::into_inner).insert(user.clone(), Token { value: token.clone(), at: now });
-        encode(&Account { username: user, password: pass, token, token_time: now, private_key: keys.private, public_key: keys.public })
+        TOKENS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(user.clone(), Token { value: token.clone(), at: now });
+        encode(&Account {
+            username: user,
+            password: pass,
+            token,
+            token_time: now,
+            private_key: keys.private,
+            public_key: keys.public,
+        })
     }
 
     fn countries(&self, _account: &str) -> Result<Vec<Country>> {
@@ -170,7 +180,15 @@ impl Provider for Pia {
             None => {
                 let list = regions()?;
                 let r = pick(&list, loc)?;
-                let base = |w: &Wg| Server { name: r.name.clone(), host: w.cn.clone(), ip: w.ip.clone(), public_key: String::new(), load: 0, city: r.city(), country: String::new() };
+                let base = |w: &Wg| Server {
+                    name: r.name.clone(),
+                    host: w.cn.clone(),
+                    ip: w.ip.clone(),
+                    public_key: String::new(),
+                    load: 0,
+                    city: r.city(),
+                    country: String::new(),
+                };
                 r.servers.wg.iter().take(TRIES).map(|w| (w.clone(), base(w))).collect()
             }
         };
@@ -179,7 +197,12 @@ impl Provider for Pia {
             match register(&sv, &a) {
                 Ok(k) => {
                     let server = Server { public_key: k.server_key.clone(), ..base };
-                    return Ok(Link::Wg { peer: peer(&server, &k, &a.private_key), server, ports: vec![], entries: vec![] });
+                    return Ok(Link::Wg {
+                        peer: peer(&server, &k, &a.private_key),
+                        server,
+                        ports: vec![],
+                        entries: vec![],
+                    });
                 }
                 Err(e @ Error::Auth { .. }) => return Err(e),
                 Err(e) if is_io(&e) => failure = Some(e),
@@ -197,7 +220,17 @@ impl Provider for Pia {
             (None, None) => list.iter().collect(),
         };
         rs.sort_by_key(|r| r.geo);
-        let servers = rs.iter().flat_map(|r| r.servers.wg.iter().map(|w| Server { name: w.cn.clone(), host: w.cn.clone(), ip: w.ip.clone(), public_key: String::new(), load: 0, city: r.city(), country: String::new() }));
+        let servers = rs.iter().flat_map(|r| {
+            r.servers.wg.iter().map(|w| Server {
+                name: w.cn.clone(),
+                host: w.cn.clone(),
+                ip: w.ip.clone(),
+                public_key: String::new(),
+                load: 0,
+                city: r.city(),
+                country: String::new(),
+            })
+        });
         Ok(servers.take(limit).collect())
     }
 }
@@ -212,7 +245,17 @@ pub fn account(blob: &str) -> Result<Account> {
 
 fn peer(sv: &Server, k: &AddKey, private_key: &str) -> WgPeer {
     let endpoint = format!("{}:{}", sv.ip, k.server_port);
-    WgPeer { dns: k.dns.clone(), ..WgPeer::new(&sv.name, private_key, vec![format!("{}/32", k.peer_ip)], &k.server_key, &endpoint, vec!["0.0.0.0/0".into()]) }
+    WgPeer {
+        dns: k.dns.clone(),
+        ..WgPeer::new(
+            &sv.name,
+            private_key,
+            vec![format!("{}/32", k.peer_ip)],
+            &k.server_key,
+            &endpoint,
+            vec!["0.0.0.0/0".into()],
+        )
+    }
 }
 
 fn regions() -> Result<Vec<Region>> {
@@ -221,7 +264,10 @@ fn regions() -> Result<Vec<Region>> {
 
 fn pick<'a>(list: &'a [Region], loc: &Location) -> Result<&'a Region> {
     if let Some(id) = &loc.region {
-        return list.iter().find(|r| r.id == *id).ok_or_else(|| Error::Io(format!("PIA region {id} is no longer available")));
+        return list
+            .iter()
+            .find(|r| r.id == *id)
+            .ok_or_else(|| Error::Io(format!("PIA region {id} is no longer available")));
     }
     let mut pool: Vec<&Region> = match &loc.country_code {
         Some(c) => list.iter().filter(|r| eq_ignore_case(&r.country, c)).collect(),
@@ -248,9 +294,14 @@ pub(crate) fn countries(regions: &[Region]) -> Vec<Country> {
             rs.sort_by_key(|r| r.city());
             Country {
                 id: code.encode_utf16().fold(0i32, |n, c| n.wrapping_mul(256).wrapping_add(c as i32)),
-                name: crate::catalog::name(&code).filter(|n| !n.trim().is_empty()).map_or_else(|| code.clone(), String::from),
+                name: crate::catalog::name(&code)
+                    .filter(|n| !n.trim().is_empty())
+                    .map_or_else(|| code.clone(), String::from),
                 server_count: rs.iter().map(|r| r.servers.wg.len() as i32).sum(),
-                cities: rs.iter().map(|r| City { id: stable_id(&r.id), name: r.city(), key: Some(r.id.clone()) }).collect(),
+                cities: rs
+                    .iter()
+                    .map(|r| City { id: stable_id(&r.id), name: r.city(), key: Some(r.id.clone()) })
+                    .collect(),
                 code,
             }
         })
@@ -280,7 +331,10 @@ fn token(a: &Account, force: bool) -> Result<String> {
         return Ok(known.value);
     }
     let fresh = fetch_token(&a.username, &a.password)?;
-    TOKENS.lock().unwrap_or_else(PoisonError::into_inner).insert(a.username.clone(), Token { value: fresh.clone(), at: now() });
+    TOKENS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(a.username.clone(), Token { value: fresh.clone(), at: now() });
     Ok(fresh)
 }
 
@@ -384,11 +438,23 @@ mod tests {
         assert!(list.split_once('\n').unwrap().1.starts_with('\n'));
         let rs = parse_regions(&list).unwrap();
         assert_eq!(
-            vec!["us_denver", "nl_amsterdam", "nl_netherlands-so", "dz", "de_berlin", "de-frankfurt", "uk", "uk_manchester"],
+            vec![
+                "us_denver",
+                "nl_amsterdam",
+                "nl_netherlands-so",
+                "dz",
+                "de_berlin",
+                "de-frankfurt",
+                "uk",
+                "uk_manchester"
+            ],
             rs.iter().map(|r| r.id.as_str()).collect::<Vec<_>>()
         );
         let denver = rs.iter().find(|r| r.id == "us_denver").unwrap();
-        assert_eq!(vec!["denver425", "denver429", "denver431"], denver.servers.wg.iter().map(|w| w.cn.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["denver425", "denver429", "denver431"],
+            denver.servers.wg.iter().map(|w| w.cn.as_str()).collect::<Vec<_>>()
+        );
         assert_eq!("181.41.206.151", denver.servers.wg[0].ip);
         assert!(denver.country == "US" && !denver.geo && !denver.port_forward);
         assert!(rs.iter().find(|r| r.id == "dz").unwrap().geo);
@@ -413,15 +479,27 @@ mod tests {
     #[test]
     fn countries_and_cities() {
         let cs = countries(&parse_regions(&list()).unwrap());
-        assert_eq!(vec!["Algeria", "Germany", "Netherlands", "United Kingdom", "United States"], cs.iter().map(|c| c.name.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["Algeria", "Germany", "Netherlands", "United Kingdom", "United States"],
+            cs.iter().map(|c| c.name.as_str()).collect::<Vec<_>>()
+        );
         let de = cs.iter().find(|c| c.code == "DE").unwrap();
         assert_eq!(vec!["Berlin", "Frankfurt"], de.cities.iter().map(|c| c.name.as_str()).collect::<Vec<_>>());
-        assert_eq!(vec![Some("de_berlin"), Some("de-frankfurt")], de.cities.iter().map(|c| c.key.as_deref()).collect::<Vec<_>>());
+        assert_eq!(
+            vec![Some("de_berlin"), Some("de-frankfurt")],
+            de.cities.iter().map(|c| c.key.as_deref()).collect::<Vec<_>>()
+        );
         assert_eq!(4, de.server_count);
         let nl = cs.iter().find(|c| c.code == "NL").unwrap();
-        assert_eq!(vec!["Netherlands", "Netherlands Streaming Optimized"], nl.cities.iter().map(|c| c.name.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["Netherlands", "Netherlands Streaming Optimized"],
+            nl.cities.iter().map(|c| c.name.as_str()).collect::<Vec<_>>()
+        );
         // Ids come from the region id, so they survive PIA adding or dropping regions.
-        assert_eq!(nl.cities.iter().map(|c| stable_id(c.key.as_deref().unwrap())).collect::<Vec<_>>(), nl.cities.iter().map(|c| c.id).collect::<Vec<_>>());
+        assert_eq!(
+            nl.cities.iter().map(|c| stable_id(c.key.as_deref().unwrap())).collect::<Vec<_>>(),
+            nl.cities.iter().map(|c| c.id).collect::<Vec<_>>()
+        );
         assert_eq!(2, nl.cities.iter().map(|c| c.id).collect::<HashSet<_>>().len());
         assert_eq!(cs.len(), cs.iter().map(|c| c.id).collect::<HashSet<_>>().len());
     }
@@ -437,7 +515,10 @@ mod tests {
 
     #[test]
     fn add_key_errors_are_io_errors() {
-        assert!(parse_add_key(r#"{"status":"ERROR","message":"Login failed!"}"#).is_err_and(|e| is_io(&e) && !e.to_string().contains("Login failed!")));
+        assert!(
+            parse_add_key(r#"{"status":"ERROR","message":"Login failed!"}"#)
+                .is_err_and(|e| is_io(&e) && !e.to_string().contains("Login failed!"))
+        );
         assert!(parse_add_key(r#"{"status":"OK"}"#).is_err_and(|e| is_io(&e)));
         assert!(parse_add_key("not json").is_err_and(|e| is_io(&e)));
     }
@@ -453,7 +534,14 @@ mod tests {
 
     #[test]
     fn account_blob_round_trips() {
-        let a = Account { username: "p1234567".into(), password: "pw".into(), token: "tok".into(), token_time: 1, private_key: "k1".into(), public_key: "k2".into() };
+        let a = Account {
+            username: "p1234567".into(),
+            password: "pw".into(),
+            token: "tok".into(),
+            token_time: 1,
+            private_key: "k1".into(),
+            public_key: "k2".into(),
+        };
         assert_eq!(a, account(&serde_json::to_string(&a).unwrap()).unwrap());
     }
 

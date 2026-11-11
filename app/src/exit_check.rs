@@ -26,7 +26,9 @@ pub struct ExitReport {
 /// Cloudflare's own sites, tried in turn: a network or a site rule that stops one rarely stops both.
 pub const HOSTS: [&str; 2] = ["www.cloudflare.com", "one.one.one.one"];
 
-static IPV4: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])){3}$").unwrap());
+static IPV4: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])){3}$").unwrap()
+});
 
 /// The trace's address (`ip=`), or none without a well-formed one.
 pub fn parse(trace: &str) -> Option<String> {
@@ -43,7 +45,8 @@ pub fn ipv6(a: &str) -> bool {
     if parts.len() > 2 {
         return false;
     }
-    let groups: Vec<Vec<&str>> = parts.iter().map(|p| if p.is_empty() { vec![] } else { p.split(':').collect() }).collect();
+    let groups: Vec<Vec<&str>> =
+        parts.iter().map(|p| if p.is_empty() { vec![] } else { p.split(':').collect() }).collect();
     if groups.iter().flatten().any(|g| !(1..=4).contains(&g.len()) || !g.chars().all(|c| c.is_ascii_hexdigit())) {
         return false;
     }
@@ -83,7 +86,12 @@ pub async fn ask(tags: impl IntoIterator<Item = String>) -> IndexMap<String, Opt
         });
     }
     let mut seen: IndexMap<String, Option<String>> = asking.join_all().await.into_iter().collect();
-    tags.into_iter().map(|t| { let ip = seen.shift_remove(&t).flatten(); (t, ip) }).collect()
+    tags.into_iter()
+        .map(|t| {
+            let ip = seen.shift_remove(&t).flatten();
+            (t, ip)
+        })
+        .collect()
 }
 
 #[cfg(test)]

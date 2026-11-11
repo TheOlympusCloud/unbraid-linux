@@ -26,15 +26,27 @@ pub const PROBE: &str = "probe";
 pub const CLASH: &str = "Another of your WireGuard connections uses this key on the same server with other settings. Use one config for both.";
 /// Apps set to Direct that pass through unbraid for its filter, as one group of app rules.
 const FILTERED: &str = "direct+filter";
-const LAN: [&str; 6] = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "224.0.0.0/4", "255.255.255.255/32"];
+const LAN: [&str; 6] =
+    ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "224.0.0.0/4", "255.255.255.255/32"];
 const TAILNET: &str = "100.64.0.0/10";
 /// Private ranges only: a home tunnel must never capture public traffic meant for an exit.
 const PRIVATE: [&str; 4] = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"];
-const OPENVPN_ROUTING: [&str; 7] = ["route ", "route-ipv6 ", "route-metric", "redirect-gateway", "redirect-private", "block-ipv6", "block-outside-dns"];
+const OPENVPN_ROUTING: [&str; 7] = [
+    "route ",
+    "route-ipv6 ",
+    "route-metric",
+    "redirect-gateway",
+    "redirect-private",
+    "block-ipv6",
+    "block-outside-dns",
+];
 
-static IPV4: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:/(\d{1,2}))?$").unwrap());
+static IPV4: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:/(\d{1,2}))?$").unwrap());
 /// Two or more DNS labels: letters, digits and inner hyphens, 63 characters each at most (and 253 in all, see `ts_suffix`).
-static DOMAIN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$").unwrap());
+static DOMAIN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$").unwrap()
+});
 static SCHEME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9+.-]*$").unwrap());
 
 /// What a config is compiled from.
@@ -60,7 +72,14 @@ pub struct Input {
 
 impl Input {
     /// An input without a tailnet suffix, probe, blocked routes or pending sign-in, on the first fake-IP block.
-    pub fn new(setup: Setup, links: IndexMap<String, Link>, self_package: &str, lockdown: bool, ts_dir: &str, cache_file: &str) -> Input {
+    pub fn new(
+        setup: Setup,
+        links: IndexMap<String, Link>,
+        self_package: &str,
+        lockdown: bool,
+        ts_dir: &str,
+        cache_file: &str,
+    ) -> Input {
         Input {
             setup,
             links,
@@ -109,7 +128,11 @@ pub fn block_after_half(half: Option<i32>) -> i32 {
 }
 
 /// Route id → the tunnel tag it runs on: routes that resolve to one server with one login share a tunnel.
-pub fn shared(s: &Setup, links: &IndexMap<String, Link>, blocked: &IndexSet<String>) -> Result<IndexMap<String, String>> {
+pub fn shared(
+    s: &Setup,
+    links: &IndexMap<String, Link>,
+    blocked: &IndexSet<String>,
+) -> Result<IndexMap<String, String>> {
     let mut owners: IndexMap<String, String> = IndexMap::new();
     require!(clashes(s, links).is_empty(), "{CLASH}"); // the link picker blocks them first
     let mut out = IndexMap::new();
@@ -127,7 +150,10 @@ pub fn compile(i: &Input) -> Result<String> {
     let active: Vec<&Route> = s.active_routes().into_iter().filter(|r| !i.blocked.contains(&r.id)).collect();
     let default_blocked = i.blocked.contains(&s.default_route);
     let exits: HashSet<&String> = active.iter().filter_map(|r| r.ts_exit.as_ref()).collect();
-    require!(exits.len() <= 1, "Tailscale allows one exit node at a time. Use the same node for every Tailscale route.");
+    require!(
+        exits.len() <= 1,
+        "Tailscale allows one exit node at a time. Use the same node for every Tailscale route."
+    );
     // Tailscale-exit routes have no tunnel of their own: they ride the Tailscale endpoint, whose exit node is set below.
     // Routes that resolve to the same server with the same credentials share one tunnel: two with one key would fight over it.
     let shared = shared(s, &i.links, &i.blocked)?;
@@ -141,7 +167,13 @@ pub fn compile(i: &Input) -> Result<String> {
             shared.get(id).cloned().unwrap_or_else(|| format!("r-{id}"))
         }
     };
-    let ts_domains: Vec<String> = ["ts.net".to_string()].into_iter().filter(|_| official_ts(&s.home)).chain(trusted_suffix(i.ts_suffix.as_deref(), &s.home)).collect::<IndexSet<_>>().into_iter().collect();
+    let ts_domains: Vec<String> = ["ts.net".to_string()]
+        .into_iter()
+        .filter(|_| official_ts(&s.home))
+        .chain(trusted_suffix(i.ts_suffix.as_deref(), &s.home))
+        .collect::<IndexSet<_>>()
+        .into_iter()
+        .collect();
     // OpenVPN routes use the DNS their server pushes, except NordVPN's own routes: those keep Nord's (Threat Protection)
     // resolvers through the tunnel.
     // unbraid's filter, when set: on VPN routes (through each route's tunnel) it replaces their own DNS and blocking.
@@ -160,7 +192,12 @@ pub fn compile(i: &Input) -> Result<String> {
     // A route on its OpenVPN server's pushed DNS asks that tunnel's one DNS server (the engine allows one per tunnel).
     let ovpn_dns = |id: &str| is_ovpn(id) && s.route(Some(id)).is_some_and(pushed_dns);
     // A filter reached by name, on an imported OpenVPN route, is looked up with that tunnel's pushed DNS (it may only be known there).
-    let ovpn_boot = |id: &str| filter_routes && filter.as_ref().is_some_and(by_name) && is_ovpn(id) && s.route(Some(id)).is_some_and(Route::imported);
+    let ovpn_boot = |id: &str| {
+        filter_routes
+            && filter.as_ref().is_some_and(by_name)
+            && is_ovpn(id)
+            && s.route(Some(id)).is_some_and(Route::imported)
+    };
     let dns_for = |id: &str| -> String {
         if id == FILTERED {
             "dns-filter".into()
@@ -191,7 +228,10 @@ pub fn compile(i: &Input) -> Result<String> {
     // Apps with their own route, grouped. Direct only appears here under lockdown (otherwise left out by the system).
     let mut per_app: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (pkg, route) in &s.apps {
-        per_app.entry(if through.contains(pkg) { FILTERED.into() } else { route.clone() }).or_default().push(pkg.clone());
+        per_app
+            .entry(if through.contains(pkg) { FILTERED.into() } else { route.clone() })
+            .or_default()
+            .push(pkg.clone());
     }
     per_app.retain(|id, _| {
         *id != s.default_route
@@ -218,7 +258,8 @@ pub fn compile(i: &Input) -> Result<String> {
     let fake = fake_ranges();
     let block = &fake[i.fake_block as usize];
 
-    let mut servers = vec![json!({"type": "fakeip", "tag": "fake", "inet4_range": block}), json!({"type": "local", "tag": "local"})];
+    let mut servers =
+        vec![json!({"type": "fakeip", "tag": "fake", "inet4_range": block}), json!({"type": "local", "tag": "local"})];
     let mut boots = HashSet::new(); // one lookup server per tunnel: the engine allows one OpenVPN DNS server per endpoint
     for r in active.iter().filter(|r| !ovpn_dns(&r.id)) {
         let (t, own_tag) = (tag(&r.id), format!("dns-r-{}", r.id));
@@ -252,7 +293,9 @@ pub fn compile(i: &Input) -> Result<String> {
         servers.push(json!({"type": "openvpn", "tag": format!("dns-ovpn-{t}"), "endpoint": t, "accept_default_resolvers": true, "fallback_server": "9.9.9.9"}));
     }
     if home_ts {
-        servers.push(json!({"type": "tailscale", "tag": "dns-tailnet", "endpoint": TS_TAG, "accept_default_resolvers": false}));
+        servers.push(
+            json!({"type": "tailscale", "tag": "dns-tailnet", "endpoint": TS_TAG, "accept_default_resolvers": false}),
+        );
     }
 
     let mut dns_rules = vec![];
@@ -265,7 +308,11 @@ pub fn compile(i: &Input) -> Result<String> {
     dns_rules.push(json!({"query_type": ["A", "AAAA"], "server": "fake", "rewrite_ttl": 1}));
     // Other query types (HTTPS, SVCB, TXT…) go to the asking app's own exit, never the ISP.
     for (id, pkgs) in &per_app {
-        dns_rules.push(if i.blocked.contains(id) { json!({"package_name": pkgs, "action": "reject"}) } else { json!({"package_name": pkgs, "server": dns_for(id)}) });
+        dns_rules.push(if i.blocked.contains(id) {
+            json!({"package_name": pkgs, "action": "reject"})
+        } else {
+            json!({"package_name": pkgs, "server": dns_for(id)})
+        });
     }
     // A blocked default never falls back to another resolver: the computer's network would see the names.
     if default_blocked {
@@ -286,13 +333,15 @@ pub fn compile(i: &Input) -> Result<String> {
     if s.prefs.lan && !i.lockdown {
         // LAN never enters the tunnel: the system sends it straight to the network. Home subnets reached through a
         // tunnel stay routed, because the more specific route wins.
-        let home = [if home_ts { home_subnets(s) } else { vec![] }, home_wg.map(home_cidrs).unwrap_or_default()].concat();
+        let home =
+            [if home_ts { home_subnets(s) } else { vec![] }, home_wg.map(home_cidrs).unwrap_or_default()].concat();
         let routed = [vec!["0.0.0.0/0".to_string()], home.clone()].concat();
         tun["route_address"] = json!(routed);
         // Exclusions apply after inclusions, so an exclusion equal to a home prefix would win.
         tun["route_exclude_address"] = json!(LAN.iter().filter(|l| !home.iter().any(|h| h == *l)).collect::<Vec<_>>());
     }
-    let mut excluded: Vec<&str> = if i.lockdown { vec![] } else { direct.iter().filter(|k| !through.contains(*k)).map(|k| k.as_str()).collect() };
+    let mut excluded: Vec<&str> =
+        if i.lockdown { vec![] } else { direct.iter().filter(|k| !through.contains(*k)).map(|k| k.as_str()).collect() };
     excluded.push(&i.self_package);
     tun["exclude_package"] = json!(excluded);
     let mut inbounds = vec![tun];
@@ -301,10 +350,12 @@ pub fn compile(i: &Input) -> Result<String> {
         && !probe_tags.is_empty()
     {
         let users: Vec<Value> = probe_tags.keys().map(|t| json!({"username": t, "password": password})).collect();
-        inbounds.push(json!({"type": "mixed", "tag": PROBE, "listen": "127.0.0.1", "listen_port": port, "users": users}));
+        inbounds
+            .push(json!({"type": "mixed", "tag": PROBE, "listen": "127.0.0.1", "listen_port": port, "users": users}));
     }
 
-    let owners: Vec<&Route> = active.iter().copied().filter(|r| shared.get(&r.id) == Some(&format!("r-{}", r.id))).collect();
+    let owners: Vec<&Route> =
+        active.iter().copied().filter(|r| shared.get(&r.id) == Some(&format!("r-{}", r.id))).collect();
     let mut endpoints = vec![];
     for r in &owners {
         let t = tag(&r.id);
@@ -354,7 +405,11 @@ pub fn compile(i: &Input) -> Result<String> {
     let mut rules = vec![];
     // The tunnels carry the computer's own connections and their replies, never new ones a server or peer opens: those
     // would reach the computer, its network and the home network through another route.
-    let mut tunnels: Vec<String> = owners.iter().filter(|r| matches!(i.links.get(&r.id), Some(Link::Wg { .. } | Link::Ovpn { .. }))).map(|r| tag(&r.id)).collect();
+    let mut tunnels: Vec<String> = owners
+        .iter()
+        .filter(|r| matches!(i.links.get(&r.id), Some(Link::Wg { .. } | Link::Ovpn { .. })))
+        .map(|r| tag(&r.id))
+        .collect();
     tunnels.extend(home_wg.map(|_| "home-wg".to_string()));
     tunnels.extend(ts.then(|| TS_TAG.to_string()));
     if !tunnels.is_empty() {
@@ -384,12 +439,17 @@ pub fn compile(i: &Input) -> Result<String> {
             ts_login.push(("domain_suffix", json!(["tailscale.com", "tailscale.io"])));
         }
         if let Some(u) = &s.home.ts_control_url {
-            let host = uri_host(u).map_err(|_| Error::Invalid("Headscale needs an https:// address. Change it in Settings.".into()))?;
+            let host = uri_host(u)
+                .map_err(|_| Error::Invalid("Headscale needs an https:// address. Change it in Settings.".into()))?;
             // An address only when it truly is one (no lookup): "1hs.example.com" is a name.
-            ts_login.extend(host.and_then(|h| match h.strip_prefix('[') {
-                _ if ipv4(h).is_some() => Some(("ip_cidr", json!([format!("{h}/32")]))),
-                Some(v6) => Some(v6.trim_end_matches(']')).filter(|a| !a.contains('%')).map(|a| ("ip_cidr", json!([format!("{a}/128")]))), // a zone can't be routed on
-                None => Some(("domain", json!([h]))),
+            ts_login.extend(host.and_then(|h| {
+                match h.strip_prefix('[') {
+                    _ if ipv4(h).is_some() => Some(("ip_cidr", json!([format!("{h}/32")]))),
+                    Some(v6) => Some(v6.trim_end_matches(']'))
+                        .filter(|a| !a.contains('%'))
+                        .map(|a| ("ip_cidr", json!([format!("{a}/128")]))), // a zone can't be routed on
+                    None => Some(("domain", json!([h]))),
+                }
             }));
         }
     }
@@ -466,7 +526,14 @@ pub fn canonical(cidr: &str) -> Option<String> {
 
 /// Home subnets behind Tailscale, private only, as the system will route them.
 fn home_subnets(s: &Setup) -> Vec<String> {
-    s.home.subnets.iter().filter_map(|c| canonical(c)).filter(|c| is_private(c)).collect::<IndexSet<_>>().into_iter().collect()
+    s.home
+        .subnets
+        .iter()
+        .filter_map(|c| canonical(c))
+        .filter(|c| is_private(c))
+        .collect::<IndexSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 /// True when the whole of `cidr` lies inside a private IPv4 range.
@@ -480,7 +547,9 @@ pub fn is_private(cidr: &str) -> bool {
 
 /// Networks to send through the home tunnel: its private AllowedIPs; else the interface's own subnet.
 pub fn home_cidrs(p: &WgPeer) -> Vec<String> {
-    let private = |l: &[String]| -> Vec<String> { l.iter().filter_map(|c| canonical(c)).filter(|c| is_private(c)).collect::<IndexSet<_>>().into_iter().collect() };
+    let private = |l: &[String]| -> Vec<String> {
+        l.iter().filter_map(|c| canonical(c)).filter(|c| is_private(c)).collect::<IndexSet<_>>().into_iter().collect()
+    };
     let allowed = private(&p.allowed_ips);
     if allowed.is_empty() { private(&p.address) } else { allowed }
 }
@@ -529,7 +598,9 @@ fn dns_server(s: &Setup, r: &Route, link: Option<&Link>) -> String {
 /// The engine's error for a bad key quotes it, so every key is checked here and never named.
 fn wg(tag: &str, p: &WgPeer, name: &str) -> Result<Value> {
     require!(
-        valid_wg_key(&p.private_key) && valid_wg_key(&p.public_key) && p.preshared_key.as_deref().is_none_or(valid_wg_key),
+        valid_wg_key(&p.private_key)
+            && valid_wg_key(&p.public_key)
+            && p.preshared_key.as_deref().is_none_or(valid_wg_key),
         "Invalid WireGuard key for {name}"
     );
     let (host, port) = p.endpoint.rsplit_once(':').unwrap_or((p.endpoint.as_str(), p.endpoint.as_str()));
@@ -547,7 +618,9 @@ fn wg(tag: &str, p: &WgPeer, name: &str) -> Result<Value> {
     }
     // 1280 fits every path (cellular, 464XLAT); 1420 makes 1480-byte packets that stall big uploads there.
     // [`crate::link_picker::ported`] sets it: a provider page's MTU, imports at most 1280.
-    Ok(json!({"type": "wireguard", "tag": tag, "mtu": p.mtu.min(MTU_MAX), "address": p.address, "private_key": p.private_key, "peers": [peer]}))
+    Ok(
+        json!({"type": "wireguard", "tag": tag, "mtu": p.mtu.min(MTU_MAX), "address": p.address, "private_key": p.private_key, "peers": [peer]}),
+    )
 }
 
 /// The OpenVPN endpoint is built with `route_no_pull`, which also drops the pushed DNS. Here the server's routes stay
@@ -573,23 +646,32 @@ pub fn ts_suffix(raw: Option<&str>) -> Option<String> {
 /// Tailscale's own control server (none set, or one on tailscale.com) rather than a Headscale.
 pub fn official_ts(h: &Home) -> bool {
     let Some(u) = &h.ts_control_url else { return true };
-    uri_host(u).ok().flatten().map(str::to_lowercase).is_some_and(|h| h == "tailscale.com" || h.ends_with(".tailscale.com"))
+    uri_host(u)
+        .ok()
+        .flatten()
+        .map(str::to_lowercase)
+        .is_some_and(|h| h == "tailscale.com" || h.ends_with(".tailscale.com"))
 }
 
 /// The suffix the tailnet's DNS may answer for every app: a tailnet's own under ts.net on Tailscale's server; on Headscale
 /// (which can name any domain, even a whole top-level one) only the one the user allowed.
 pub fn trusted_suffix(raw: Option<&str>, h: &Home) -> Option<String> {
-    ts_suffix(raw).filter(|t| if official_ts(h) { t.ends_with(".ts.net") } else { Some(t) == h.ts_suffix_allowed.as_ref() })
+    ts_suffix(raw)
+        .filter(|t| if official_ts(h) { t.ends_with(".ts.net") } else { Some(t) == h.ts_suffix_allowed.as_ref() })
 }
 
 /// The host in `url` as java.net.URI reads it, which the earlier app went by: an error for a text it refuses, none for an
 /// authority that isn't a server's name or address. A literal IPv6 address keeps its brackets.
 fn uri_host(url: &str) -> std::result::Result<Option<&str>, ()> {
     let refused = |c: char| c.is_whitespace() || c.is_control() || "\"<>\\^`{|}".contains(c);
-    if url.chars().any(refused) || url.split('%').skip(1).any(|e| !e.get(..2).is_some_and(|h| h.chars().all(|c| c.is_ascii_hexdigit()))) {
+    if url.chars().any(refused)
+        || url.split('%').skip(1).any(|e| !e.get(..2).is_some_and(|h| h.chars().all(|c| c.is_ascii_hexdigit())))
+    {
         return Err(());
     }
-    let Some((scheme, rest)) = url.split_once("://").filter(|(s, _)| !s.contains(['/', '?', '#'])) else { return Ok(None) };
+    let Some((scheme, rest)) = url.split_once("://").filter(|(s, _)| !s.contains(['/', '?', '#'])) else {
+        return Ok(None);
+    };
     if !SCHEME.is_match(scheme) {
         return Err(());
     }
@@ -602,17 +684,31 @@ fn uri_host(url: &str) -> std::result::Result<Option<&str>, ()> {
     if let Some(v6) = host_port.strip_prefix('[') {
         let Some((addr, after)) = v6.split_once(']') else { return Err(()) };
         let (ip, zone) = addr.split_once('%').unwrap_or((addr, ""));
-        let valid = ip.contains(':') && ip.chars().all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.') && !addr.ends_with('%');
-        if !valid || !zone.chars().all(|c| c.is_ascii_alphanumeric() || "-._~".contains(c)) || !(after.is_empty() || after.strip_prefix(':').is_some_and(port_ok)) {
+        let valid = ip.contains(':')
+            && ip.chars().all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.')
+            && !addr.ends_with('%');
+        if !valid
+            || !zone.chars().all(|c| c.is_ascii_alphanumeric() || "-._~".contains(c))
+            || !(after.is_empty() || after.strip_prefix(':').is_some_and(port_ok))
+        {
             return Err(());
         }
         return Ok(Some(&host_port[..addr.len() + 2]));
     }
     let (host, port) = host_port.split_once(':').unwrap_or((host_port, ""));
-    let address = host.split('.').count() == 4 && host.split('.').all(|o| !o.is_empty() && o.chars().all(|c| c.is_ascii_digit()) && o.parse::<u32>().is_ok_and(|n| n <= 255));
+    let address = host.split('.').count() == 4
+        && host.split('.').all(|o| {
+            !o.is_empty() && o.chars().all(|c| c.is_ascii_digit()) && o.parse::<u32>().is_ok_and(|n| n <= 255)
+        });
     let labels: Vec<&str> = host.strip_suffix('.').unwrap_or(host).split('.').collect();
-    let label = |l: &&str| !l.is_empty() && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') && !l.starts_with('-') && !l.ends_with('-');
-    let name = labels.iter().all(label) && (labels.len() == 1 || labels.last().is_some_and(|l| l.starts_with(|c: char| c.is_ascii_alphabetic())));
+    let label = |l: &&str| {
+        !l.is_empty()
+            && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            && !l.starts_with('-')
+            && !l.ends_with('-')
+    };
+    let name = labels.iter().all(label)
+        && (labels.len() == 1 || labels.last().is_some_and(|l| l.starts_with(|c: char| c.is_ascii_alphabetic())));
     Ok(((address || name) && port_ok(port)).then_some(host))
 }
 
@@ -637,11 +733,20 @@ pub(crate) fn link_key(l: &Link) -> String {
         // Everything the engine's WireGuard device is built from, whichever provider or import it came through.
         Link::Wg { peer, .. } => wg_key(peer),
         // Same remotes but another protocol, CA or login is another tunnel: compare the whole profile.
-        Link::Ovpn { profile: p, .. } => ["ovpn".into(), sha(&p.config), p.username.clone(), sha(&p.password)].join("|"),
-        // The plugin and its options (TLS, certificate, host) are part of the tunnel too.
-        Link::Ss { profile: p, .. } => {
-            ["ss".into(), p.server.clone(), p.port.to_string(), p.method.clone(), sha(&p.password), p.plugin.clone().unwrap_or_default(), sha(p.plugin_opts.as_deref().unwrap_or(""))].join("|")
+        Link::Ovpn { profile: p, .. } => {
+            ["ovpn".into(), sha(&p.config), p.username.clone(), sha(&p.password)].join("|")
         }
+        // The plugin and its options (TLS, certificate, host) are part of the tunnel too.
+        Link::Ss { profile: p, .. } => [
+            "ss".into(),
+            p.server.clone(),
+            p.port.to_string(),
+            p.method.clone(),
+            sha(&p.password),
+            p.plugin.clone().unwrap_or_default(),
+            sha(p.plugin_opts.as_deref().unwrap_or("")),
+        ]
+        .join("|"),
         Link::Ts { .. } => "ts".into(),
     }
 }
@@ -652,7 +757,15 @@ fn wg_identity(p: &WgPeer) -> String {
 
 // Address order too: the engine sends from the last IPv4 address.
 fn wg_key(p: &WgPeer) -> String {
-    ["wg".into(), wg_identity(p), sha(p.preshared_key.as_deref().unwrap_or("")), p.address.join(","), p.mtu.min(MTU_MIN).to_string(), keepalive(p).to_string()].join("|")
+    [
+        "wg".into(),
+        wg_identity(p),
+        sha(p.preshared_key.as_deref().unwrap_or("")),
+        p.address.join(","),
+        p.mtu.min(MTU_MIN).to_string(),
+        keepalive(p).to_string(),
+    ]
+    .join("|")
 }
 
 fn keepalive(p: &WgPeer) -> i32 {
@@ -714,7 +827,14 @@ PersistentKeepalive = 25
     /// A NordVPN server whose address follows its name's hash (Java's String.hashCode; the names here are lower case).
     pub(crate) fn sv(n: &str) -> Server {
         let h = stable_id(n);
-        Server { name: format!("{n} #1"), host: format!("{n}.nordvpn.com"), ip: format!("10.9.{}.{}", h & 0xff, h >> 8 & 0xff), public_key: PUB.into(), load: 10, ..Server::default() }
+        Server {
+            name: format!("{n} #1"),
+            host: format!("{n}.nordvpn.com"),
+            ip: format!("10.9.{}.{}", h & 0xff, h >> 8 & 0xff),
+            public_key: PUB.into(),
+            load: 10,
+            ..Server::default()
+        }
     }
 
     pub(crate) fn wg_link(server: Server, peer: WgPeer) -> Link {
@@ -748,7 +868,11 @@ PersistentKeepalive = 25
     /// Example setup: NL default, US for A, IT for B, X+Y direct, home over Tailscale.
     fn example() -> Setup {
         Setup {
-            routes: vec![nl(), route("us", Location::country("nord", 228, "US", "United States"), 1), route("it", Location::country("nord", 106, "IT", "Italy"), 2)],
+            routes: vec![
+                nl(),
+                route("us", Location::country("nord", 228, "US", "United States"), 1),
+                route("it", Location::country("nord", 106, "IT", "Italy"), 2),
+            ],
             default_route: "nl".into(),
             apps: pairs(&[("com.a", "us"), ("com.b", "it"), ("com.x", DIRECT), ("com.y", DIRECT)]),
             home: Home { tailscale: true, subnets: strs(&["192.168.178.0/24"]), ..Home::default() },
@@ -764,7 +888,10 @@ PersistentKeepalive = 25
     }
 
     fn with_route(s: &Setup, id: &str, f: impl Fn(Route) -> Route) -> Setup {
-        Setup { routes: s.routes.iter().map(|r| if r.id == id { f(r.clone()) } else { r.clone() }).collect(), ..s.clone() }
+        Setup {
+            routes: s.routes.iter().map(|r| if r.id == id { f(r.clone()) } else { r.clone() }).collect(),
+            ..s.clone()
+        }
     }
 
     fn links(s: &Setup) -> IndexMap<String, Link> {
@@ -852,7 +979,11 @@ PersistentKeepalive = 25
             let refuse = rules.iter().position(|r| r["ip_cidr"] == json!(others)).unwrap();
             assert_eq!("reject", rules[refuse]["action"]);
             assert_eq!(true, rules[refuse]["no_drop"]); // refused every time, never silently dropped
-            assert!(rules[..refuse].iter().all(|r| r["action"] == "hijack-dns" || r.get("inbound").is_some() && r["action"] == "reject"));
+            assert!(
+                rules[..refuse]
+                    .iter()
+                    .all(|r| r["action"] == "hijack-dns" || r.get("inbound").is_some() && r["action"] == "reject")
+            );
         }
     }
 
@@ -898,7 +1029,8 @@ PersistentKeepalive = 25
     /// A new probe pair always changes the config (so every engine start gets one), the same pair never.
     #[test]
     fn the_probe_pair_is_part_of_the_config() {
-        let with = |p: Option<(u16, &str)>| raw(&Input { probe: p.map(|(n, w)| (n, w.to_string())), ..input(&example()) });
+        let with =
+            |p: Option<(u16, &str)>| raw(&Input { probe: p.map(|(n, w)| (n, w.to_string())), ..input(&example()) });
         let a = with(Some((41001, "pw-one")));
         assert_eq!(a, with(Some((41001, "pw-one"))));
         assert_ne!(a, with(Some((41001, "pw-two"))));
@@ -916,9 +1048,15 @@ PersistentKeepalive = 25
         let c = compiled(&example());
         assert_eq!(strs(&["r-nl", "r-us", "r-it", "home-ts"]), endpoint_tags(&c));
         assert_eq!("r-nl", c["route"]["final"]);
-        let routed: IndexMap<String, Value> =
-            rules(&c).iter().filter(|r| r.get("outbound").is_some() && r.get("package_name").is_some()).map(|r| (r["outbound"].as_str().unwrap().to_string(), r["package_name"].clone())).collect();
-        assert_eq!(IndexMap::from([("r-it".to_string(), json!(["com.b"])), ("r-us".to_string(), json!(["com.a"]))]), routed);
+        let routed: IndexMap<String, Value> = rules(&c)
+            .iter()
+            .filter(|r| r.get("outbound").is_some() && r.get("package_name").is_some())
+            .map(|r| (r["outbound"].as_str().unwrap().to_string(), r["package_name"].clone()))
+            .collect();
+        assert_eq!(
+            IndexMap::from([("r-it".to_string(), json!(["com.b"])), ("r-us".to_string(), json!(["com.a"]))]),
+            routed
+        );
         assert_eq!(json!(["com.x", "com.y", "app.unbraid"]), excluded(&c));
     }
 
@@ -954,41 +1092,89 @@ PersistentKeepalive = 25
         assert!(us.get("domain_resolver").is_none());
         // Apps set to Direct pass through unbraid, out directly, their lookups to the filter (one app kept outside).
         for lockdown in [false, true] {
-            let s = with(Filter { direct_apps: true, apps: IndexMap::from([("com.y".to_string(), false)]), ..quad9.clone() });
+            let s = with(Filter {
+                direct_apps: true,
+                apps: IndexMap::from([("com.y".to_string(), false)]),
+                ..quad9.clone()
+            });
             let c = json(&Input { lockdown, ..input(&s) });
             let ctx = format!("lockdown={lockdown}");
-            assert_eq!(if lockdown { json!(["app.unbraid"]) } else { json!(["com.y", "app.unbraid"]) }, excluded(&c), "{ctx}");
+            assert_eq!(
+                if lockdown { json!(["app.unbraid"]) } else { json!(["com.y", "app.unbraid"]) },
+                excluded(&c),
+                "{ctx}"
+            );
             assert!(dns_server(&c, "dns-filter").get("detour").is_none(), "{ctx}");
             let dns_rule = dns_rules(&c).iter().find(|r| r["package_name"] == json!(["com.x"])).unwrap();
             assert_eq!("dns-filter", dns_rule["server"], "{ctx}");
-            let out = rules(&c).iter().find(|r| r.get("outbound").is_some() && r["package_name"] == json!(["com.x"])).unwrap();
+            let out = rules(&c)
+                .iter()
+                .find(|r| r.get("outbound").is_some() && r["package_name"] == json!(["com.x"]))
+                .unwrap();
             assert_eq!("direct", out["outbound"], "{ctx}");
             // Kept outside: only under lockdown does it pass through, with the computer's DNS.
-            assert_eq!(lockdown, rules(&c).iter().any(|r| r["package_name"] == json!(["com.y"]) && r["server"] == "local"), "{ctx}");
+            assert_eq!(
+                lockdown,
+                rules(&c).iter().any(|r| r["package_name"] == json!(["com.y"]) && r["server"] == "local"),
+                "{ctx}"
+            );
         }
         // Direct default: apps following it ask the filter, straight out.
-        let d = Setup { default_route: DIRECT.into(), apps: pairs(&[("com.a", "us")]), prefs: Prefs { filter: Filter { direct: true, ..quad9.clone() }, ..Prefs::default() }, ..example() };
+        let d = Setup {
+            default_route: DIRECT.into(),
+            apps: pairs(&[("com.a", "us")]),
+            prefs: Prefs { filter: Filter { direct: true, ..quad9.clone() }, ..Prefs::default() },
+            ..example()
+        };
         assert_eq!("dns-filter", compiled(&d)["dns"]["final"]);
-        assert_eq!("local", compiled(&Setup { prefs: Prefs { filter: quad9, ..Prefs::default() }, ..d })["dns"]["final"]);
+        assert_eq!(
+            "local",
+            compiled(&Setup { prefs: Prefs { filter: quad9, ..Prefs::default() }, ..d })["dns"]["final"]
+        );
         // NextDNS needs a profile; an own server by name is looked up first, through the same tunnel.
         assert_eq!(None, Filter { id: Some("nextdns".into()), ..Filter::default() }.server());
-        assert_eq!(Some("/abc123".to_string()), Filter { id: Some("nextdns".into()), value: "abc123".into(), ..Filter::default() }.server().and_then(|d| d.path));
-        let own = compiled(&with(Filter { id: Some(OWN.into()), value: "tls://dns.example.org".into(), routes: true, ..Filter::default() }));
+        assert_eq!(
+            Some("/abc123".to_string()),
+            Filter { id: Some("nextdns".into()), value: "abc123".into(), ..Filter::default() }
+                .server()
+                .and_then(|d| d.path)
+        );
+        let own = compiled(&with(Filter {
+            id: Some(OWN.into()),
+            value: "tls://dns.example.org".into(),
+            routes: true,
+            ..Filter::default()
+        }));
         assert_eq!("tls", dns_server(&own, "dns-r-nl")["type"]);
         assert_eq!("boot-r-nl", dns_server(&own, "dns-r-nl")["domain_resolver"]);
         let boots = servers(&own).iter().filter(|s| s["tag"].as_str().unwrap().starts_with("boot-")).count();
-        assert_eq!(boots, servers(&own).iter().filter_map(|s| s["domain_resolver"].as_str()).collect::<HashSet<_>>().len());
+        assert_eq!(
+            boots,
+            servers(&own).iter().filter_map(|s| s["domain_resolver"].as_str()).collect::<HashSet<_>>().len()
+        );
         assert_eq!(853, dns_server(&own, "dns-r-nl")["server_port"]);
         assert_eq!(NORD_TP, dns_server(&own, "boot-r-nl")["server"]);
         assert_eq!("r-nl", dns_server(&own, "boot-r-nl")["detour"]);
-        for bad in ["http://x.org", "https://x.org:99999/q", "tls://x.org/path", "dns.example.org", "1.2.3", "https://a b", "https://x.org/q%", "https://x.org/q%GG"] {
+        for bad in [
+            "http://x.org",
+            "https://x.org:99999/q",
+            "tls://x.org/path",
+            "dns.example.org",
+            "1.2.3",
+            "https://a b",
+            "https://x.org/q%",
+            "https://x.org/q%GG",
+        ] {
             assert_eq!(None, own_dns(bad), "{bad}");
         }
         assert_eq!(Some("/a%2Fb".to_string()), own_dns("https://x.org/a%2Fb").and_then(|d| d.path));
         // An older custom DNS server becomes this filter on VPN routes, the same resolver as before.
         assert_eq!(
             Filter { id: Some(OWN.into()), value: "1.1.1.1".into(), routes: true, ..Filter::default() },
-            Setup { prefs: Prefs { custom_dns: strs(&["1.1.1.1"]), ..Prefs::default() }, ..example() }.migrated().prefs.filter
+            Setup { prefs: Prefs { custom_dns: strs(&["1.1.1.1"]), ..Prefs::default() }, ..example() }
+                .migrated()
+                .prefs
+                .filter
         );
     }
 
@@ -1008,30 +1194,71 @@ PersistentKeepalive = 25
         for bad in ["10.0.0.1/33", "1.2.3", "1.2.3.4.5", "256.1.1.1/8", "a.b.c.d", "10.0.0.0/8/8", " ", "１.2.3.4"] {
             assert_eq!(None, canonical(bad), "{bad}");
         }
-        let s = Setup { home: Home { tailscale: true, subnets: strs(&["192.168.1.0/16", "192.168.0.0/16", "10.0.0.1/33", "8.8.8.0/24"]), ..Home::default() }, ..example() };
+        let s = Setup {
+            home: Home {
+                tailscale: true,
+                subnets: strs(&["192.168.1.0/16", "192.168.0.0/16", "10.0.0.1/33", "8.8.8.0/24"]),
+                ..Home::default()
+            },
+            ..example()
+        };
         let c = compiled(&s);
         let tun = &c["inbounds"][0];
         assert_eq!(json!(["0.0.0.0/0", "192.168.0.0/16"]), tun["route_address"]);
         assert!(!has(&tun["route_exclude_address"], "192.168.0.0/16"));
-        assert_eq!(json!(["100.64.0.0/10", "192.168.0.0/16"]), rules(&c).iter().find(|r| r["outbound"] == "home-ts").unwrap()["ip_cidr"]);
+        assert_eq!(
+            json!(["100.64.0.0/10", "192.168.0.0/16"]),
+            rules(&c).iter().find(|r| r["outbound"] == "home-ts").unwrap()["ip_cidr"]
+        );
         // A home WireGuard tunnel's ranges too, and its interface's own subnet when it lists no private ranges.
         let fritz = wg_conf::parse(FRITZ, "Home").unwrap();
-        let wg = compiled(&Setup { home: Home { wg: Some(WgPeer { allowed_ips: strs(&["192.168.1.0/16", "10.0.0.1/33"]), ..fritz.clone() }), ..Home::default() }, ..example() });
-        assert_eq!(json!(["192.168.0.0/16"]), rules(&wg).iter().find(|r| r["outbound"] == "home-wg").unwrap()["ip_cidr"]);
+        let wg = compiled(&Setup {
+            home: Home {
+                wg: Some(WgPeer { allowed_ips: strs(&["192.168.1.0/16", "10.0.0.1/33"]), ..fritz.clone() }),
+                ..Home::default()
+            },
+            ..example()
+        });
+        assert_eq!(
+            json!(["192.168.0.0/16"]),
+            rules(&wg).iter().find(|r| r["outbound"] == "home-wg").unwrap()["ip_cidr"]
+        );
         let wg_tun = &wg["inbounds"][0];
         assert!(has(&wg_tun["route_address"], "192.168.0.0/16"));
         assert!(!has(&wg_tun["route_exclude_address"], "192.168.0.0/16"));
-        assert_eq!(strs(&["10.7.0.0/24"]), home_cidrs(&WgPeer { allowed_ips: strs(&["0.0.0.0/0"]), address: strs(&["10.7.0.5/24", "bad", "1.2.3.4/33"]), ..fritz.clone() }));
-        assert_eq!(strs(&["192.168.1.0/24"]), home_cidrs(&WgPeer { allowed_ips: strs(&["010.0.0.0/8", "192.168.1.9/24"]), ..fritz }));
+        assert_eq!(
+            strs(&["10.7.0.0/24"]),
+            home_cidrs(&WgPeer {
+                allowed_ips: strs(&["0.0.0.0/0"]),
+                address: strs(&["10.7.0.5/24", "bad", "1.2.3.4/33"]),
+                ..fritz.clone()
+            })
+        );
+        assert_eq!(
+            strs(&["192.168.1.0/24"]),
+            home_cidrs(&WgPeer { allowed_ips: strs(&["010.0.0.0/8", "192.168.1.9/24"]), ..fritz })
+        );
     }
 
     /// A Headscale host is an address only when it truly is one: a name that starts with a digit stays a name.
     #[test]
     fn control_host_address_or_name() {
         let login = |url: &str| -> Value {
-            let s = plus(Setup { home: Home { ts_control_url: Some(url.into()), ..Home::default() }, ..example() }, vec![ts_route("ts", "100.101.102.103", 4)], &[("com.n", "ts")]);
+            let s = plus(
+                Setup { home: Home { ts_control_url: Some(url.into()), ..Home::default() }, ..example() },
+                vec![ts_route("ts", "100.101.102.103", 4)],
+                &[("com.n", "ts")],
+            );
             let c = json(&Input { ts_login_pending: true, ..input(&s) });
-            rules(&c).iter().find(|r| r["package_name"] == json!(["com.n"]) && r["outbound"] == "direct" && (r.get("domain").is_some() || r.get("ip_cidr").is_some())).unwrap().clone()
+            rules(&c)
+                .iter()
+                .find(|r| {
+                    r["package_name"] == json!(["com.n"])
+                        && r["outbound"] == "direct"
+                        && (r.get("domain").is_some() || r.get("ip_cidr").is_some())
+                })
+                .unwrap()
+                .clone()
         };
         assert_eq!(json!(["1hs.example.com"]), login("https://1hs.example.com")["domain"]);
         assert_eq!(json!(["10.1.2.3/32"]), login("https://10.1.2.3:8443")["ip_cidr"]);
@@ -1042,23 +1269,53 @@ PersistentKeepalive = 25
     /// Connections a VPN server or tailnet peer opens are refused first; only the computer's apps get DNS answered.
     #[test]
     fn tunnels_never_open_connections_into_the_phone() {
-        let home = Setup { home: Home { wg: Some(wg_conf::parse(FRITZ, "Home").unwrap()), ..example().home }, ..example() };
+        let home =
+            Setup { home: Home { wg: Some(wg_conf::parse(FRITZ, "Home").unwrap()), ..example().home }, ..example() };
         let c = compiled(&home);
         let first = &rules(&c)[0];
         assert_eq!("reject", first["action"]);
-        assert_eq!(endpoint_tags(&c).into_iter().collect::<HashSet<_>>(), strings(&first["inbound"]).into_iter().collect::<HashSet<_>>());
-        assert_eq!(HashSet::from(["inbound", "action"]), first.as_object().unwrap().keys().map(String::as_str).collect::<HashSet<_>>()); // every protocol, TCP and UDP alike
+        assert_eq!(
+            endpoint_tags(&c).into_iter().collect::<HashSet<_>>(),
+            strings(&first["inbound"]).into_iter().collect::<HashSet<_>>()
+        );
+        assert_eq!(
+            HashSet::from(["inbound", "action"]),
+            first.as_object().unwrap().keys().map(String::as_str).collect::<HashSet<_>>()
+        ); // every protocol, TCP and UDP alike
         let hijacks: Vec<&Value> = rules(&c).iter().filter(|r| r["action"] == "hijack-dns").collect();
         assert_eq!(2, hijacks.len());
         hijacks.iter().for_each(|r| assert_eq!(json!(["tun"]), r["inbound"]));
         let empty = Setup { routes: vec![], default_route: DIRECT.into(), ..Setup::default() };
-        assert!(rules(&json(&Input { links: IndexMap::new(), ..input(&empty) })).iter().all(|r| !(r["action"] == "reject" && r.get("inbound").is_some())));
+        assert!(
+            rules(&json(&Input { links: IndexMap::new(), ..input(&empty) }))
+                .iter()
+                .all(|r| !(r["action"] == "reject" && r.get("inbound").is_some()))
+        );
         // WireGuard, two OpenVPN routes sharing one endpoint and Shadowsocks, with the probe: every endpoint once, no outbound or probe.
-        let ss = SsProfile { name: "s".into(), server: "h.example".into(), port: 8388, method: "aes-256-gcm".into(), password: "pw".into(), plugin: None, plugin_opts: None };
-        let mixed = plus(example(), vec![ovpn_route("o1", "u"), ovpn_route("o2", "u"), Route { ss: Some(ss.clone()), ..Route::new("s", Location::default()) }], &[("com.o1", "o1"), ("com.o2", "o2"), ("com.s", "s")]);
+        let ss = SsProfile {
+            name: "s".into(),
+            server: "h.example".into(),
+            port: 8388,
+            method: "aes-256-gcm".into(),
+            password: "pw".into(),
+            plugin: None,
+            plugin_opts: None,
+        };
+        let mixed = plus(
+            example(),
+            vec![
+                ovpn_route("o1", "u"),
+                ovpn_route("o2", "u"),
+                Route { ss: Some(ss.clone()), ..Route::new("s", Location::default()) },
+            ],
+            &[("com.o1", "o1"), ("com.o2", "o2"), ("com.s", "s")],
+        );
         let mut l = links(&mixed);
         for id in ["o1", "o2"] {
-            l.insert(id.into(), Link::Ovpn { server: sv(id), profile: mixed.route(Some(id)).unwrap().ovpn.clone().unwrap() });
+            l.insert(
+                id.into(),
+                Link::Ovpn { server: sv(id), profile: mixed.route(Some(id)).unwrap().ovpn.clone().unwrap() },
+            );
         }
         l.insert("s".into(), Link::Ss { server: sv("s"), profile: ss });
         let c = json(&Input { links: l, probe: Some((40000, "pw".into())), ..input(&mixed) });
@@ -1127,13 +1384,23 @@ PersistentKeepalive = 25
         assert_eq!(NORD_DNS, dns_of(&old));
         assert_eq!(old, old.migrated());
         // A NordVPN route that kept another provider's blocking flag follows the NordVPN page, as it did; new setups aren't migrated.
-        let kept = with_route(&Setup { prefs: Prefs { threat_protection: false, ..Prefs::default() }, ..example() }, "nl", |r| Route { filter: Some(true), ..r }).migrated();
+        let kept = with_route(
+            &Setup { prefs: Prefs { threat_protection: false, ..Prefs::default() }, ..example() },
+            "nl",
+            |r| Route { filter: Some(true), ..r },
+        )
+        .migrated();
         assert_eq!(NORD_DNS, dns_of(&kept));
         let fresh = with_route(&Setup { version: VERSION, ..example() }, "nl", |r| Route { filter: Some(false), ..r });
         assert_eq!(fresh, fresh.migrated());
         // One route can turn it off for itself.
         assert_eq!(NORD_DNS, dns_of(&with_route(&example(), "nl", |r| Route { filter: Some(false), ..r })));
-        assert_eq!("9.9.9.9", dns_of(&Setup { prefs: Prefs { custom_dns: strs(&["9.9.9.9"]), ..Prefs::default() }, ..example() }.migrated()));
+        assert_eq!(
+            "9.9.9.9",
+            dns_of(
+                &Setup { prefs: Prefs { custom_dns: strs(&["9.9.9.9"]), ..Prefs::default() }, ..example() }.migrated()
+            )
+        );
     }
 
     #[test]
@@ -1142,25 +1409,42 @@ PersistentKeepalive = 25
         let tun = &c["inbounds"][0];
         assert!(has(&tun["route_exclude_address"], "192.168.0.0/16"));
         assert!(has(&tun["route_address"], "192.168.178.0/24"));
-        assert!(compiled(&Setup { prefs: Prefs { lan: false, ..Prefs::default() }, ..example() })["inbounds"][0].get("route_exclude_address").is_none());
+        assert!(
+            compiled(&Setup { prefs: Prefs { lan: false, ..Prefs::default() }, ..example() })["inbounds"][0]
+                .get("route_exclude_address")
+                .is_none()
+        );
     }
 
     #[test]
     fn lockdown_keeps_lan_inside_the_tunnel() {
-        assert!(json(&Input { lockdown: true, ..input(&example()) })["inbounds"][0].get("route_exclude_address").is_none());
+        assert!(
+            json(&Input { lockdown: true, ..input(&example()) })["inbounds"][0].get("route_exclude_address").is_none()
+        );
     }
 
     /// With a Tailscale exit carrying traffic, its login must not ride that exit; otherwise those sites follow each app.
     #[test]
     fn tailscale_login_goes_direct_only_with_an_exit_node() {
         let login_rule = |r: &Value| r.get("domain_suffix").is_some_and(|d| d.to_string().contains("tailscale.com"));
-        let direct = |s: &Setup, login: bool| rules(&json(&Input { ts_login_pending: login, ..input(s) })).iter().find(|r| login_rule(r)).cloned();
+        let direct = |s: &Setup, login: bool| {
+            rules(&json(&Input { ts_login_pending: login, ..input(s) })).iter().find(|r| login_rule(r)).cloned()
+        };
         assert_eq!(None, direct(&example(), true));
         let with_exit = plus(example(), vec![ts_route("ts", "100.101.102.103", 4)], &[("com.n", "ts")]);
         // Only while a sign-in waits: once signed in, tailscale.com follows the app's exit like any site.
         assert_eq!(None, direct(&with_exit, false));
         // A Headscale tailnet signs in on its own server: Tailscale's sites never skip the exit.
-        assert_eq!(None, direct(&Setup { home: Home { ts_control_url: Some("https://hs.example.org".into()), ..with_exit.home.clone() }, ..with_exit.clone() }, true));
+        assert_eq!(
+            None,
+            direct(
+                &Setup {
+                    home: Home { ts_control_url: Some("https://hs.example.org".into()), ..with_exit.home.clone() },
+                    ..with_exit.clone()
+                },
+                true
+            )
+        );
         let d = direct(&with_exit, true).unwrap();
         assert_eq!("direct", d["outbound"]);
         // Only for the apps on that exit: a browser on another VPN keeps its own exit for tailscale.com.
@@ -1169,27 +1453,38 @@ PersistentKeepalive = 25
         let rs = rules(&c);
         assert_eq!(1, rs.iter().filter(|r| login_rule(r)).count());
         // Ahead of that app's resolve through the exit, which can't answer before the exit node is signed in.
-        assert!(rs.iter().position(|r| *r == d).unwrap() < rs.iter().position(|r| r["package_name"] == json!(["com.n"]) && r["action"] == "resolve").unwrap());
+        assert!(
+            rs.iter().position(|r| *r == d).unwrap()
+                < rs.iter().position(|r| r["package_name"] == json!(["com.n"]) && r["action"] == "resolve").unwrap()
+        );
     }
 
     /// Ping has no owner to route by: with Direct as the default it would leave a VPN app from the computer's address.
     #[test]
     fn ping_is_refused_when_it_would_bypass_an_apps_vpn() {
-        let icmp = |s: &Setup| -> Vec<Value> { rules(&compiled(s)).iter().filter(|r| r["network"] == "icmp").cloned().collect() };
+        let icmp = |s: &Setup| -> Vec<Value> {
+            rules(&compiled(s)).iter().filter(|r| r["network"] == "icmp").cloned().collect()
+        };
         assert!(icmp(&example()).is_empty());
         let direct_default = Setup { default_route: DIRECT.into(), ..example() };
         assert_eq!("reject", single(&icmp(&direct_default), |_| true)["action"]);
         // LAN and home rules come first, so pinging the router or a home box still works.
         let c = compiled(&direct_default);
         let rs = rules(&c);
-        assert!(rs.iter().position(|r| r["network"] == "icmp").unwrap() > rs.iter().position(|r| r.get("ip_cidr").is_some()).unwrap());
+        assert!(
+            rs.iter().position(|r| r["network"] == "icmp").unwrap()
+                > rs.iter().position(|r| r.get("ip_cidr").is_some()).unwrap()
+        );
         assert!(icmp(&Setup { apps: pairs(&[("com.x", DIRECT)]), ..direct_default }).is_empty());
     }
 
     /// Over plain HTTP the Headscale key exchange could be faked, so such a control URL is refused, not used.
     #[test]
     fn headscale_needs_https() {
-        let with = |url: &str| Setup { home: Home { tailscale: true, ts_control_url: Some(url.into()), ..example().home }, ..example() };
+        let with = |url: &str| Setup {
+            home: Home { tailscale: true, ts_control_url: Some(url.into()), ..example().home },
+            ..example()
+        };
         assert!(compiled(&with("https://hs.example.com")).to_string().contains("https://hs.example.com"));
         assert!(matches!(compile(&input(&with("http://hs.example.com"))), Err(Error::Invalid(_))));
     }
@@ -1207,31 +1502,50 @@ PersistentKeepalive = 25
     /// A route asking for its provider's blocking resolver uses it; a custom DNS still wins.
     #[test]
     fn provider_blocking_dns_per_route() {
-        let dns = |s: &Setup, id: &str| dns_server(&compiled(s), &format!("dns-r-{id}"))["server"].as_str().unwrap().to_string();
+        let dns = |s: &Setup, id: &str| {
+            dns_server(&compiled(s), &format!("dns-r-{id}"))["server"].as_str().unwrap().to_string()
+        };
         let ex = example();
         let r = ex.routes.iter().find(|r| r.id != ex.default_route).unwrap().id.clone();
         // Each provider's blocking resolver while on for the route or its provider page; a custom DNS server replaces it (the choice is kept for later).
         for (provider, blocking) in [("mullvad", "100.64.0.7"), ("pia", "10.0.0.244"), ("ivpn", "10.0.254.2")] {
-            let moved = with_route(&ex, &r, |x| Route { loc: Location { provider: provider.into(), ..x.loc.clone() }, ..x });
+            let moved =
+                with_route(&ex, &r, |x| Route { loc: Location { provider: provider.into(), ..x.loc.clone() }, ..x });
             let on = with_route(&moved, &r, |x| Route { filter: Some(true), ..x });
             assert_eq!(blocking, dns(&on, &r), "{provider}");
-            assert_eq!(blocking, dns(&Setup { opts: opts(provider, PROTECT, "on"), ..moved.clone() }, &r), "{provider}");
+            assert_eq!(
+                blocking,
+                dns(&Setup { opts: opts(provider, PROTECT, "on"), ..moved.clone() }, &r),
+                "{provider}"
+            );
             assert_ne!(blocking, dns(&moved, &r), "{provider}");
             let own = Filter { id: Some(OWN.into()), value: "1.1.1.1".into(), routes: true, ..Filter::default() };
-            assert_eq!("1.1.1.1", dns(&Setup { prefs: Prefs { filter: own, ..on.prefs.clone() }, ..on.clone() }, &r), "{provider}");
+            assert_eq!(
+                "1.1.1.1",
+                dns(&Setup { prefs: Prefs { filter: own, ..on.prefs.clone() }, ..on.clone() }, &r),
+                "{provider}"
+            );
             assert_eq!(Some(true), on.route(Some(&r)).unwrap().filter, "{provider}");
         }
     }
 
     #[test]
     fn lan_off_removes_direct_lan_rule() {
-        assert!(!rules(&compiled(&Setup { prefs: Prefs { lan: false, ..Prefs::default() }, ..example() })).iter().any(|r| r["outbound"] == "direct" && r.get("ip_cidr").is_some()));
+        assert!(
+            !rules(&compiled(&Setup { prefs: Prefs { lan: false, ..Prefs::default() }, ..example() }))
+                .iter()
+                .any(|r| r["outbound"] == "direct" && r.get("ip_cidr").is_some())
+        );
     }
 
     #[test]
     fn custom_wire_guard_route() {
         let peer = wg_conf::parse(FRITZ, "Home box").unwrap();
-        let s = plus(example(), vec![Route { wg: Some(peer), hue: 3, ..Route::new("w1", Location::default()) }], &[("com.c", "w1")]);
+        let s = plus(
+            example(),
+            vec![Route { wg: Some(peer), hue: 3, ..Route::new("w1", Location::default()) }],
+            &[("com.c", "w1")],
+        );
         let c = compiled(&s);
         let ep = c["endpoints"].as_array().unwrap().iter().find(|e| e["tag"] == "r-w1").unwrap();
         assert_eq!("abc.myfritz.net", ep["peers"][0]["address"]);
@@ -1255,27 +1569,44 @@ PersistentKeepalive = 25
             for default in [DIRECT, "nl", "ts"] {
                 for lan in [false, true] {
                     for lockdown in [false, true] {
-                        let base = Setup { home: Home { tailscale: home_access, subnets: subnets.clone(), ..Home::default() }, default_route: default.into(), prefs: Prefs { lan, ..example().prefs }, ..example() };
+                        let base = Setup {
+                            home: Home { tailscale: home_access, subnets: subnets.clone(), ..Home::default() },
+                            default_route: default.into(),
+                            prefs: Prefs { lan, ..example().prefs },
+                            ..example()
+                        };
                         let s = plus(base, vec![ts_route("ts", "100.101.102.103", 4)], &[("com.n", "ts")]);
                         let c = json(&Input { lockdown, ts_suffix: Some("tail1234.ts.net".into()), ..input(&s) });
                         let ctx = format!("home={home_access} default={default} lan={lan} lockdown={lockdown}");
-                        let home_rules: Vec<&Value> = rules(&c).iter().filter(|r| r["outbound"] == "home-ts" && r.get("ip_cidr").is_some()).collect();
+                        let home_rules: Vec<&Value> = rules(&c)
+                            .iter()
+                            .filter(|r| r["outbound"] == "home-ts" && r.get("ip_cidr").is_some())
+                            .collect();
                         assert_eq!(home_access, !home_rules.is_empty(), "{ctx}");
                         let all = [strs(&["100.64.0.0/10"]), subnets.clone()].concat();
                         home_rules.iter().for_each(|r| assert_eq!(json!(all), r["ip_cidr"], "{ctx}"));
-                        let tailnet_dns: Vec<&Value> = dns_rules(&c).iter().filter(|r| r["server"] == "dns-tailnet").collect();
+                        let tailnet_dns: Vec<&Value> =
+                            dns_rules(&c).iter().filter(|r| r["server"] == "dns-tailnet").collect();
                         assert_eq!(home_access, !tailnet_dns.is_empty(), "{ctx}");
                         if home_access {
-                            assert_eq!(json!(["ts.net", "tail1234.ts.net"]), single(&tailnet_dns.into_iter().cloned().collect::<Vec<_>>(), |_| true)["domain_suffix"]);
+                            assert_eq!(
+                                json!(["ts.net", "tail1234.ts.net"]),
+                                single(&tailnet_dns.into_iter().cloned().collect::<Vec<_>>(), |_| true)["domain_suffix"]
+                            );
                         }
                         assert_eq!(home_access, servers(&c).iter().any(|s| s["tag"] == "dns-tailnet"), "{ctx}");
                         let tun = &c["inbounds"][0];
                         if lan && !lockdown {
-                            let routed = [strs(&["0.0.0.0/0"]), if home_access { subnets.clone() } else { vec![] }].concat();
+                            let routed =
+                                [strs(&["0.0.0.0/0"]), if home_access { subnets.clone() } else { vec![] }].concat();
                             assert_eq!(json!(routed), tun["route_address"], "{ctx}");
                             assert_eq!(!home_access, has(&tun["route_exclude_address"], "192.168.0.0/16"), "{ctx}");
                         }
-                        assert_eq!("100.101.102.103", single(c["endpoints"].as_array().unwrap(), |e| e["type"] == "tailscale")["exit_node"], "{ctx}");
+                        assert_eq!(
+                            "100.101.102.103",
+                            single(c["endpoints"].as_array().unwrap(), |e| e["type"] == "tailscale")["exit_node"],
+                            "{ctx}"
+                        );
                         assert_eq!("home-ts", dns_server(&c, "dns-r-ts")["detour"], "{ctx}");
                         let want = match default {
                             DIRECT => "direct",
@@ -1284,9 +1615,17 @@ PersistentKeepalive = 25
                         };
                         assert_eq!(want, c["route"]["final"], "{ctx}");
                         if default != "ts" {
-                            assert!(rules(&c).iter().any(|r| r["outbound"] == "home-ts" && has(&r["package_name"], "com.n")), "{ctx}");
+                            assert!(
+                                rules(&c)
+                                    .iter()
+                                    .any(|r| r["outbound"] == "home-ts" && has(&r["package_name"], "com.n")),
+                                "{ctx}"
+                            );
                         }
-                        assert!(rules(&c).iter().any(|r| r["outbound"] == "r-us" && has(&r["package_name"], "com.a")), "{ctx}");
+                        assert!(
+                            rules(&c).iter().any(|r| r["outbound"] == "r-us" && has(&r["package_name"], "com.a")),
+                            "{ctx}"
+                        );
                     }
                 }
             }
@@ -1295,7 +1634,14 @@ PersistentKeepalive = 25
 
     #[test]
     fn disabling_tailnet_access_preserves_the_separate_home_wire_guard_tunnel() {
-        let base = Setup { home: Home { subnets: strs(&["10.42.0.0/16"]), wg: Some(wg_conf::parse(FRITZ, "Home").unwrap()), ..Home::default() }, ..example() };
+        let base = Setup {
+            home: Home {
+                subnets: strs(&["10.42.0.0/16"]),
+                wg: Some(wg_conf::parse(FRITZ, "Home").unwrap()),
+                ..Home::default()
+            },
+            ..example()
+        };
         let c = compiled(&plus(base, vec![ts_route("ts", "100.101.102.103", 4)], &[("com.n", "ts")]));
         assert!(rules(&c).iter().any(|r| r["outbound"] == "home-wg" && has(&r["ip_cidr"], "192.168.178.0/24")));
         assert_eq!(json!(["0.0.0.0/0", "192.168.178.0/24"]), c["inbounds"][0]["route_address"]);
@@ -1304,11 +1650,24 @@ PersistentKeepalive = 25
     #[test]
     fn nord_open_vpn_keeps_nord_dns_while_other_open_vpn_uses_pushed_dns() {
         let p = parse_ovpn(&fixture("nord-double.udp.ovpn"), "dv", "u", "p").unwrap();
-        let japan = Location { provider: "expressvpn".into(), country_code: Some("JP".into()), country: Some("Japan".into()), ..Location::default() };
-        let s = Setup { home: Home::default(), routes: vec![nl(), Route::new("ex", japan)], apps: pairs(&[("com.e", "ex")]), ..example() };
+        let japan = Location {
+            provider: "expressvpn".into(),
+            country_code: Some("JP".into()),
+            country: Some("Japan".into()),
+            ..Location::default()
+        };
+        let s = Setup {
+            home: Home::default(),
+            routes: vec![nl(), Route::new("ex", japan)],
+            apps: pairs(&[("com.e", "ex")]),
+            ..example()
+        };
         let l = IndexMap::from([
             ("nl".to_string(), Link::Ovpn { server: sv("nl"), profile: p.clone() }),
-            ("ex".to_string(), Link::Ovpn { server: sv("exx"), profile: OvpnProfile { username: "other".into(), ..p } }),
+            (
+                "ex".to_string(),
+                Link::Ovpn { server: sv("exx"), profile: OvpnProfile { username: "other".into(), ..p } },
+            ),
         ]);
         let c = json(&Input { links: l, ..input(&s) });
         assert_eq!("udp", dns_server(&c, "dns-r-nl")["type"]);
@@ -1322,9 +1681,23 @@ PersistentKeepalive = 25
         let imp = Route { ovpn: Some(p.clone()), hue: 1, ..Route::new("im", Location::default()) };
         for order in [vec![nl(), imp.clone()], vec![imp.clone(), nl()]] {
             for custom in [None, Some("1.1.1.1")] {
-                let filter = custom.map_or_else(Filter::default, |c| Filter { id: Some(OWN.into()), value: c.into(), routes: true, ..Filter::default() });
-                let s = Setup { default_route: order[0].id.clone(), apps: pairs(&[("com.x", &order[1].id)]), prefs: Prefs { filter, ..Prefs::default() }, routes: order.clone(), ..Setup::default() };
-                let l = IndexMap::from([("nl".to_string(), Link::Ovpn { server: sv("nl"), profile: p.clone() }), ("im".to_string(), Link::Ovpn { server: sv("im"), profile: p.clone() })]);
+                let filter = custom.map_or_else(Filter::default, |c| Filter {
+                    id: Some(OWN.into()),
+                    value: c.into(),
+                    routes: true,
+                    ..Filter::default()
+                });
+                let s = Setup {
+                    default_route: order[0].id.clone(),
+                    apps: pairs(&[("com.x", &order[1].id)]),
+                    prefs: Prefs { filter, ..Prefs::default() },
+                    routes: order.clone(),
+                    ..Setup::default()
+                };
+                let l = IndexMap::from([
+                    ("nl".to_string(), Link::Ovpn { server: sv("nl"), profile: p.clone() }),
+                    ("im".to_string(), Link::Ovpn { server: sv("im"), profile: p.clone() }),
+                ]);
                 let c = json(&Input { links: l, probe: Some((40000, "pw".into())), ..input(&s) });
                 let ctx = format!("order={:?} custom={custom:?}", order.iter().map(|r| &r.id).collect::<Vec<_>>());
                 let ep = single(c["endpoints"].as_array().unwrap(), |_| true);
@@ -1338,9 +1711,20 @@ PersistentKeepalive = 25
                     assert_eq!(true, ep["route_no_pull"], "{ctx}");
                 }
                 // Nord's route keeps Nord's resolver through the tunnel either way.
-                assert_eq!(if custom.is_none() { NORD_TP } else { "1.1.1.1" }, dns_server(&c, "dns-r-nl")["server"], "{ctx}");
+                assert_eq!(
+                    if custom.is_none() { NORD_TP } else { "1.1.1.1" },
+                    dns_server(&c, "dns-r-nl")["server"],
+                    "{ctx}"
+                );
                 let tags: HashSet<&str> = servers(&c).iter().map(|s| s["tag"].as_str().unwrap()).collect();
-                assert!(dns_rules(&c).iter().chain(rules(&c)).filter_map(|r| r["server"].as_str()).all(|u| tags.contains(u)), "{ctx}");
+                assert!(
+                    dns_rules(&c)
+                        .iter()
+                        .chain(rules(&c))
+                        .filter_map(|r| r["server"].as_str())
+                        .all(|u| tags.contains(u)),
+                    "{ctx}"
+                );
             }
         }
     }
@@ -1357,7 +1741,11 @@ PersistentKeepalive = 25
 
     #[test]
     fn home_tunnel_ignores_public_ranges() {
-        let evil = wg_conf::parse(&FRITZ.replace("192.168.178.0/24, 0.0.0.0/0, ::/0", "0.0.0.0/1, 128.0.0.0/1, 10.9.0.0/16"), "Home").unwrap();
+        let evil = wg_conf::parse(
+            &FRITZ.replace("192.168.178.0/24, 0.0.0.0/0, ::/0", "0.0.0.0/1, 128.0.0.0/1, 10.9.0.0/16"),
+            "Home",
+        )
+        .unwrap();
         assert_eq!(strs(&["10.9.0.0/16"]), home_cidrs(&evil));
         assert!(is_private("192.168.178.0/24") && is_private("100.100.1.0/24"));
         assert!(!(is_private("0.0.0.0/1") || is_private("8.8.8.0/24") || is_private("10.0.0.0/7")));
@@ -1376,12 +1764,18 @@ PersistentKeepalive = 25
 
     #[test]
     fn wg_conf_with_bad_key_is_rejected() {
-        assert!(matches!(wg_conf::parse(&FRITZ.replace(&format!("PrivateKey = {KEY}"), "PrivateKey = nope"), "x"), Err(Error::Invalid(_))));
+        assert!(matches!(
+            wg_conf::parse(&FRITZ.replace(&format!("PrivateKey = {KEY}"), "PrivateKey = nope"), "x"),
+            Err(Error::Invalid(_))
+        ));
     }
 
     #[test]
     fn wg_conf_without_ipv4_allowed_ips_is_rejected() {
-        assert!(matches!(wg_conf::parse(&FRITZ.replace("AllowedIPs = 192.168.178.0/24, 0.0.0.0/0, ::/0", "AllowedIPs = ::/0"), "x"), Err(Error::Invalid(_))));
+        assert!(matches!(
+            wg_conf::parse(&FRITZ.replace("AllowedIPs = 192.168.178.0/24, 0.0.0.0/0, ::/0", "AllowedIPs = ::/0"), "x"),
+            Err(Error::Invalid(_))
+        ));
     }
 
     #[test]
@@ -1425,8 +1819,19 @@ PersistentKeepalive = 25
 
     /// Two NordVPN routes, the second for com.b, on the given tunnels.
     fn two(second: Link) -> Value {
-        let s = Setup { routes: vec![route("a", nl1(), 0), route("b", Location::country("nord", 2, "DE", "Germany"), 1)], default_route: "a".into(), apps: pairs(&[("com.b", "b")]), ..Setup::default() };
-        json(&Input { links: IndexMap::from([("a".to_string(), wg_link(sv("a"), nord::peer(&sv("a"), KEY))), ("b".to_string(), second)]), ..input(&s) })
+        let s = Setup {
+            routes: vec![route("a", nl1(), 0), route("b", Location::country("nord", 2, "DE", "Germany"), 1)],
+            default_route: "a".into(),
+            apps: pairs(&[("com.b", "b")]),
+            ..Setup::default()
+        };
+        json(&Input {
+            links: IndexMap::from([
+                ("a".to_string(), wg_link(sv("a"), nord::peer(&sv("a"), KEY))),
+                ("b".to_string(), second),
+            ]),
+            ..input(&s)
+        })
     }
 
     #[test]
@@ -1448,10 +1853,22 @@ PersistentKeepalive = 25
     #[test]
     fn wire_guard_sharing_follows_the_real_settings() {
         let peer = nord::peer(&sv("a"), KEY);
-        let imported = Route { wg: Some(WgPeer { name: "mine".into(), ..peer.clone() }), ..Route::new("b", Location::default()) };
+        let imported =
+            Route { wg: Some(WgPeer { name: "mine".into(), ..peer.clone() }), ..Route::new("b", Location::default()) };
         let tags = |second: &WgPeer| -> Result<Vec<String>> {
-            let s = Setup { routes: vec![route("a", nl1(), 0), imported.clone()], default_route: "a".into(), apps: pairs(&[("com.b", "b")]), ..Setup::default() };
-            let i = Input { links: IndexMap::from([("a".to_string(), wg_link(sv("a"), peer.clone())), ("b".to_string(), wg_link(sv("a"), second.clone()))]), ..input(&s) };
+            let s = Setup {
+                routes: vec![route("a", nl1(), 0), imported.clone()],
+                default_route: "a".into(),
+                apps: pairs(&[("com.b", "b")]),
+                ..Setup::default()
+            };
+            let i = Input {
+                links: IndexMap::from([
+                    ("a".to_string(), wg_link(sv("a"), peer.clone())),
+                    ("b".to_string(), wg_link(sv("a"), second.clone())),
+                ]),
+                ..input(&s)
+            };
             compile(&i).map(|out| {
                 keep("compiled", &out);
                 endpoint_tags(&serde_json::from_str(&out).unwrap())
@@ -1465,7 +1882,11 @@ PersistentKeepalive = 25
         // The same key on the same server with another preshared key, addresses (also their order) or MTU clashes;
         // the compiler refuses it outright, and the link picker blocks such a route before it gets there.
         let two = WgPeer { address: strs(&["10.5.0.2/32", "10.6.0.2/32"]), ..peer.clone() };
-        for other in [WgPeer { preshared_key: Some(KEY.into()), ..peer.clone() }, WgPeer { address: strs(&["10.5.0.9/32"]), ..peer.clone() }, WgPeer { mtu: 1200, ..peer.clone() }] {
+        for other in [
+            WgPeer { preshared_key: Some(KEY.into()), ..peer.clone() },
+            WgPeer { address: strs(&["10.5.0.9/32"]), ..peer.clone() },
+            WgPeer { mtu: 1200, ..peer.clone() },
+        ] {
             match tags(&other) {
                 Err(Error::Invalid(m)) => assert!(!m.contains(KEY)),
                 r => panic!("ran two tunnels for one identity: {other:?} gave {r:?}"),
@@ -1473,43 +1894,91 @@ PersistentKeepalive = 25
         }
         let reversed = WgPeer { address: two.address.iter().rev().cloned().collect(), ..two.clone() };
         let s2 = Setup {
-            routes: vec![Route { wg: Some(two.clone()), ..Route::new("a", Location::default()) }, Route { wg: Some(reversed.clone()), hue: 1, ..Route::new("b", Location::default()) }],
+            routes: vec![
+                Route { wg: Some(two.clone()), ..Route::new("a", Location::default()) },
+                Route { wg: Some(reversed.clone()), hue: 1, ..Route::new("b", Location::default()) },
+            ],
             default_route: "a".into(),
             apps: pairs(&[("com.b", "b")]),
             ..Setup::default()
         };
-        assert_eq!(IndexSet::from(["b".to_string()]), clashes(&s2, &IndexMap::from([("a".to_string(), wg_link(sv("a"), two)), ("b".to_string(), wg_link(sv("a"), reversed))])));
+        assert_eq!(
+            IndexSet::from(["b".to_string()]),
+            clashes(
+                &s2,
+                &IndexMap::from([
+                    ("a".to_string(), wg_link(sv("a"), two)),
+                    ("b".to_string(), wg_link(sv("a"), reversed))
+                ])
+            )
+        );
         // Nor as both a route and the home tunnel.
-        let s = Setup { routes: vec![route("a", nl1(), 0)], default_route: "a".into(), home: Home { wg: Some(peer.clone()), ..Home::default() }, ..Setup::default() };
-        assert_eq!(IndexSet::from(["a".to_string()]), clashes(&s, &IndexMap::from([("a".to_string(), wg_link(sv("a"), peer))])));
+        let s = Setup {
+            routes: vec![route("a", nl1(), 0)],
+            default_route: "a".into(),
+            home: Home { wg: Some(peer.clone()), ..Home::default() },
+            ..Setup::default()
+        };
+        assert_eq!(
+            IndexSet::from(["a".to_string()]),
+            clashes(&s, &IndexMap::from([("a".to_string(), wg_link(sv("a"), peer))]))
+        );
     }
 
     #[test]
     fn tunnel_mtu_comes_from_the_ported_peer_at_most_1420() {
         let peer = nord::peer(&sv("a"), KEY);
         let one = Setup { routes: vec![route("a", nl1(), 0)], default_route: "a".into(), ..Setup::default() };
-        let mtu = |m: i32| json(&Input { links: IndexMap::from([("a".to_string(), wg_link(sv("a"), WgPeer { mtu: m, ..peer.clone() }))]), ..input(&one) })["endpoints"][0]["mtu"].clone();
+        let mtu = |m: i32| {
+            json(&Input {
+                links: IndexMap::from([("a".to_string(), wg_link(sv("a"), WgPeer { mtu: m, ..peer.clone() }))]),
+                ..input(&one)
+            })["endpoints"][0]["mtu"]
+                .clone()
+        };
         assert_eq!(1400, mtu(1400));
         assert_eq!(1420, mtu(1500));
-        let home = Setup { home: Home { wg: Some(WgPeer { endpoint: "10.1.1.1:51820".into(), mtu: 1420, ..peer.clone() }), ..Home::default() }, ..one.clone() };
+        let home = Setup {
+            home: Home {
+                wg: Some(WgPeer { endpoint: "10.1.1.1:51820".into(), mtu: 1420, ..peer.clone() }),
+                ..Home::default()
+            },
+            ..one.clone()
+        };
         let c = json(&Input { links: IndexMap::from([("a".to_string(), wg_link(sv("a"), peer))]), ..input(&home) });
         assert_eq!(1280, c["endpoints"].as_array().unwrap().iter().find(|e| e["tag"] == "home-wg").unwrap()["mtu"]);
     }
 
     fn ovpn_route(id: &str, user: &str) -> Route {
-        Route { ovpn: Some(parse_ovpn(&fixture("expressvpn.ovpn"), id, user, "pw").unwrap()), ..Route::new(id, Location::default()) }
+        Route {
+            ovpn: Some(parse_ovpn(&fixture("expressvpn.ovpn"), id, user, "pw").unwrap()),
+            ..Route::new(id, Location::default())
+        }
     }
 
     #[test]
     fn same_open_vpn_remote_and_user_share_one_endpoint() {
-        let s = Setup { routes: vec![ovpn_route("a", "u"), ovpn_route("b", "u"), ovpn_route("c", "other")], default_route: "a".into(), apps: pairs(&[("com.b", "b"), ("com.c", "c")]), ..Setup::default() };
-        let l = s.routes.iter().map(|r| (r.id.clone(), Link::Ovpn { server: sv(&r.id), profile: r.ovpn.clone().unwrap() })).collect();
+        let s = Setup {
+            routes: vec![ovpn_route("a", "u"), ovpn_route("b", "u"), ovpn_route("c", "other")],
+            default_route: "a".into(),
+            apps: pairs(&[("com.b", "b"), ("com.c", "c")]),
+            ..Setup::default()
+        };
+        let l = s
+            .routes
+            .iter()
+            .map(|r| (r.id.clone(), Link::Ovpn { server: sv(&r.id), profile: r.ovpn.clone().unwrap() }))
+            .collect();
         let out = json(&Input { links: l, ..input(&s) });
         assert_eq!(strs(&["r-a", "r-c"]), endpoint_tags(&out));
         // One DNS server per tunnel, which the engine requires; every reference names one that exists.
-        assert_eq!(vec![&json!("r-a"), &json!("r-c")], servers(&out).iter().filter(|x| x["type"] == "openvpn").map(|x| &x["endpoint"]).collect::<Vec<_>>());
+        assert_eq!(
+            vec![&json!("r-a"), &json!("r-c")],
+            servers(&out).iter().filter(|x| x["type"] == "openvpn").map(|x| &x["endpoint"]).collect::<Vec<_>>()
+        );
         let tags: HashSet<&str> = servers(&out).iter().map(|s| s["tag"].as_str().unwrap()).collect();
-        let mut used: Vec<&str> = dns_rules(&out).iter().chain(rules(&out)).filter_map(|r| r["server"].as_str()).collect();
+        let mut used: Vec<&str> =
+            dns_rules(&out).iter().chain(rules(&out)).filter_map(|r| r["server"].as_str()).collect();
         used.push(out["dns"]["final"].as_str().unwrap());
         assert!(used.iter().all(|u| tags.contains(u)), "{used:?}");
         assert!(used.contains(&"dns-ovpn-r-a"));
@@ -1538,7 +2007,10 @@ PersistentKeepalive = 25
     fn malformed_wire_guard_keys_are_rejected_without_quoting_them() {
         let key_error = |f: &dyn Fn(WgPeer) -> WgPeer| -> String {
             let s = Setup { routes: vec![route("a", nl1(), 0)], default_route: "a".into(), ..Setup::default() };
-            match compile(&Input { links: IndexMap::from([("a".to_string(), wg_link(sv("a"), f(nord::peer(&sv("a"), KEY))))]), ..input(&s) }) {
+            match compile(&Input {
+                links: IndexMap::from([("a".to_string(), wg_link(sv("a"), f(nord::peer(&sv("a"), KEY))))]),
+                ..input(&s)
+            }) {
                 Err(Error::Invalid(m)) => m,
                 r => panic!("expected a rejection, got {r:?}"),
             }
@@ -1559,7 +2031,9 @@ PersistentKeepalive = 25
     }
 
     fn ovpn_links(s: &Setup, ids: &[&str]) -> IndexMap<String, Link> {
-        ids.iter().map(|id| (id.to_string(), Link::Ovpn { server: sv("x"), profile: s.routes[0].ovpn.clone().unwrap() })).collect()
+        ids.iter()
+            .map(|id| (id.to_string(), Link::Ovpn { server: sv("x"), profile: s.routes[0].ovpn.clone().unwrap() }))
+            .collect()
     }
 
     #[test]
@@ -1574,21 +2048,37 @@ PersistentKeepalive = 25
         let ep = &c["endpoints"][0];
         assert!(ep.get("route_no_pull").is_none());
         let filters = ep["pull_filters"].as_array().unwrap();
-        let ignored: Vec<&str> = filters.iter().filter(|f| f["action"] == "ignore").map(|f| f["text"].as_str().unwrap()).collect();
+        let ignored: Vec<&str> =
+            filters.iter().filter(|f| f["action"] == "ignore").map(|f| f["text"].as_str().unwrap()).collect();
         assert!(["route ", "route-ipv6 ", "redirect-gateway"].iter().all(|t| ignored.contains(t)));
         // First match wins in the engine, so the app's ignores must come before any filter from the profile.
-        assert_eq!(("ignore", "route "), (filters[0]["action"].as_str().unwrap(), filters[0]["text"].as_str().unwrap()));
+        assert_eq!(
+            ("ignore", "route "),
+            (filters[0]["action"].as_str().unwrap(), filters[0]["text"].as_str().unwrap())
+        );
         assert!(!ignored.iter().any(|t| t.starts_with("dhcp-option") || t.starts_with("dns")));
     }
 
     /// An own filter server by name, on an imported OpenVPN route, is looked up with the DNS that tunnel pushes.
     #[test]
     fn own_filter_by_name_on_open_vpn_uses_pushed_dns() {
-        let s = ovpn_setup(Prefs { filter: Filter { id: Some(OWN.into()), value: "tls://dns.internal.example".into(), routes: true, ..Filter::default() }, ..Prefs::default() });
+        let s = ovpn_setup(Prefs {
+            filter: Filter {
+                id: Some(OWN.into()),
+                value: "tls://dns.internal.example".into(),
+                routes: true,
+                ..Filter::default()
+            },
+            ..Prefs::default()
+        });
         let c = json(&Input { links: ovpn_links(&s, &["x"]), ..input(&s) });
         assert_eq!("openvpn", dns_server(&c, "boot-r-x")["type"]);
         // Two routes on that one tunnel share one lookup server: the engine allows one OpenVPN DNS server per endpoint.
-        let two = Setup { routes: vec![s.routes[0].clone(), Route { id: "y".into(), ..s.routes[0].clone() }], apps: pairs(&[("com.y", "y")]), ..s.clone() };
+        let two = Setup {
+            routes: vec![s.routes[0].clone(), Route { id: "y".into(), ..s.routes[0].clone() }],
+            apps: pairs(&[("com.y", "y")]),
+            ..s.clone()
+        };
         let c2 = json(&Input { links: ovpn_links(&s, &["x", "y"]), ..input(&two) });
         assert_eq!(1, servers(&c2).iter().filter(|x| x["type"] == "openvpn").count());
         assert_eq!("tls", dns_server(&c, "dns-r-x")["type"]);
@@ -1597,7 +2087,10 @@ PersistentKeepalive = 25
 
     #[test]
     fn custom_dns_keeps_open_vpn_on_its_own_resolver_and_no_pull() {
-        let s = ovpn_setup(Prefs { filter: Filter { id: Some(OWN.into()), value: "1.1.1.1".into(), routes: true, ..Filter::default() }, ..Prefs::default() });
+        let s = ovpn_setup(Prefs {
+            filter: Filter { id: Some(OWN.into()), value: "1.1.1.1".into(), routes: true, ..Filter::default() },
+            ..Prefs::default()
+        });
         let c = json(&Input { links: ovpn_links(&s, &["x"]), ..input(&s) });
         assert_eq!("udp", dns_server(&c, "dns-r-x")["type"]);
         assert_eq!(true, c["endpoints"][0]["route_no_pull"]);
@@ -1608,8 +2101,15 @@ PersistentKeepalive = 25
     #[test]
     fn tailnet_suffix_is_routed_to_tailscale_dns() {
         let suffixes = |suffix: Option<&str>, home: &Home| -> Vec<String> {
-            let c = json(&Input { ts_suffix: suffix.map(String::from), ..input(&Setup { home: home.clone(), ..example() }) });
-            dns_rules(&c).iter().find(|r| r["server"] == "dns-tailnet").map(|r| strings(&r["domain_suffix"])).unwrap_or_default()
+            let c = json(&Input {
+                ts_suffix: suffix.map(String::from),
+                ..input(&Setup { home: home.clone(), ..example() })
+            });
+            dns_rules(&c)
+                .iter()
+                .find(|r| r["server"] == "dns-tailnet")
+                .map(|r| strings(&r["domain_suffix"]))
+                .unwrap_or_default()
         };
         let h = example().home;
         // Tailscale's own server: its ts.net names, never another domain it reports.
@@ -1625,7 +2125,13 @@ PersistentKeepalive = 25
         assert_eq!(Vec::<String>::new(), suffixes(Some("corp.example"), &hs));
         assert_eq!(strs(&["corp.example"]), suffixes(Some("corp.example"), &allowed));
         assert_eq!(Vec::<String>::new(), suffixes(Some("com"), &allowed));
-        assert_eq!(strs(&["ts.net", "tail9.ts.net"]), suffixes(Some("tail9.ts.net"), &Home { ts_control_url: Some("https://controlplane.tailscale.com".into()), ..h }));
+        assert_eq!(
+            strs(&["ts.net", "tail9.ts.net"]),
+            suffixes(
+                Some("tail9.ts.net"),
+                &Home { ts_control_url: Some("https://controlplane.tailscale.com".into()), ..h }
+            )
+        );
     }
 
     #[test]
@@ -1633,7 +2139,10 @@ PersistentKeepalive = 25
         let nas = Route { ts_name: Some("nas".into()), ..ts_route("ts", "100.101.102.103", 4) };
         let s = plus(Setup { home: Home::default(), ..example() }, vec![nas], &[("com.n", "ts")]);
         let c = compiled(&s);
-        assert_eq!("100.101.102.103", single(c["endpoints"].as_array().unwrap(), |e| e["type"] == "tailscale")["exit_node"]);
+        assert_eq!(
+            "100.101.102.103",
+            single(c["endpoints"].as_array().unwrap(), |e| e["type"] == "tailscale")["exit_node"]
+        );
         assert_eq!("nas", s.route(Some("ts")).unwrap().name());
     }
 
@@ -1641,7 +2150,10 @@ PersistentKeepalive = 25
     #[test]
     fn keepalive_follows_the_config() {
         let keepalive = |text: &str| {
-            let c = compiled(&Setup { home: Home { wg: Some(wg_conf::parse(text, "Home").unwrap()), ..Home::default() }, ..example() });
+            let c = compiled(&Setup {
+                home: Home { wg: Some(wg_conf::parse(text, "Home").unwrap()), ..Home::default() },
+                ..example()
+            });
             c["endpoints"].as_array().unwrap().iter().find(|e| e["tag"] == "home-wg").unwrap()["peers"][0]["persistent_keepalive_interval"].clone()
         };
         assert_eq!(25, keepalive(FRITZ));
@@ -1649,7 +2161,10 @@ PersistentKeepalive = 25
         assert_eq!(0, keepalive(&FRITZ.replace("PersistentKeepalive = 25", "PersistentKeepalive = off")));
         assert_eq!(25, keepalive(&FRITZ.replace("PersistentKeepalive = 25", "")));
         assert_eq!(None, wg_conf::parse(&FRITZ.replace("PersistentKeepalive = 25", ""), "x").unwrap().keepalive);
-        assert!(matches!(wg_conf::parse(&FRITZ.replace("PersistentKeepalive = 25", "PersistentKeepalive = soon"), "x"), Err(Error::Invalid(_))));
+        assert!(matches!(
+            wg_conf::parse(&FRITZ.replace("PersistentKeepalive = 25", "PersistentKeepalive = soon"), "x"),
+            Err(Error::Invalid(_))
+        ));
         let c = compiled(&example());
         let provider = c["endpoints"].as_array().unwrap().iter().find(|e| e["type"] == "wireguard").unwrap();
         assert_eq!(25, provider["peers"][0]["persistent_keepalive_interval"]);
@@ -1658,16 +2173,31 @@ PersistentKeepalive = 25
     // ---- golden files: the earlier app's output for the same setups (tests/fixtures/compiler/golden-*.json) ----
 
     fn g_server(name: &str, ip: &str) -> Server {
-        Server { name: name.into(), host: format!("{}.example.net", name.to_lowercase()), ip: ip.into(), public_key: PUB.into(), load: 10, ..Server::default() }
+        Server {
+            name: name.into(),
+            host: format!("{}.example.net", name.to_lowercase()),
+            ip: ip.into(),
+            public_key: PUB.into(),
+            load: 10,
+            ..Server::default()
+        }
     }
 
     fn g_wg(name: &str, ip: &str, ports: Vec<i32>, entries: &[&str], dns: &[&str]) -> Link {
-        let peer = WgPeer { dns: strs(dns), ..WgPeer::new(name, KEY, strs(&["10.5.0.2/32"]), PUB, &format!("{ip}:51820"), strs(&["0.0.0.0/0"])) };
+        let peer = WgPeer {
+            dns: strs(dns),
+            ..WgPeer::new(name, KEY, strs(&["10.5.0.2/32"]), PUB, &format!("{ip}:51820"), strs(&["0.0.0.0/0"]))
+        };
         Link::Wg { server: g_server(name, ip), peer, ports, entries: strs(entries) }
     }
 
     fn g_loc(provider: &str, code: &str, country: &str) -> Location {
-        Location { provider: provider.into(), country_code: Some(code.into()), country: Some(country.into()), ..Location::default() }
+        Location {
+            provider: provider.into(),
+            country_code: Some(code.into()),
+            country: Some(country.into()),
+            ..Location::default()
+        }
     }
 
     fn g_nl() -> Route {
@@ -1680,10 +2210,18 @@ PersistentKeepalive = 25
         route("ch", g_loc("airvpn", "CH", "Switzerland"), 2)
     }
     fn g_nlo() -> Route {
-        route("nlo", Location { protocol: Some("openvpn_udp".into()), ..Location::country("nord", 153, "NL", "Netherlands") }, 3)
+        route(
+            "nlo",
+            Location { protocol: Some("openvpn_udp".into()), ..Location::country("nord", 153, "NL", "Netherlands") },
+            3,
+        )
     }
     fn g_im() -> Route {
-        Route { ovpn: Some(parse_ovpn(&fixture("expressvpn.ovpn"), "Express", "user", "pass").unwrap()), hue: 5, ..Route::new("im", Location::default()) }
+        Route {
+            ovpn: Some(parse_ovpn(&fixture("expressvpn.ovpn"), "Express", "user", "pass").unwrap()),
+            hue: 5,
+            ..Route::new("im", Location::default())
+        }
     }
     fn g_ts() -> Route {
         Route { ts_name: Some("nas".into()), ..ts_route("ts", "100.101.102.103", 4) }
@@ -1704,7 +2242,11 @@ PersistentKeepalive = 25
         if k.starts_with('/') {
             crate::apps::Matchers { paths: strs(&[k]), ..Default::default() }
         } else {
-            crate::apps::Matchers { dirs: vec![format!("/opt/{k}/")], names: strs(&[k.rsplit('.').next().unwrap()]), ..Default::default() }
+            crate::apps::Matchers {
+                dirs: vec![format!("/opt/{k}/")],
+                names: strs(&[k.rsplit('.').next().unwrap()]),
+                ..Default::default()
+            }
         }
     }
 
@@ -1730,10 +2272,31 @@ PersistentKeepalive = 25
             ("se".to_string(), g_wg("SE-GOT-1", "185.2.2.2", vec![51820, 53, 443], &[], &["10.64.0.1"])),
             ("ch".to_string(), g_wg("Alchiba", "185.3.3.3", vec![1637, 47107], &["185.3.3.3", "185.3.3.4"], &[])),
         ]);
-        kept.insert("nlo".into(), Link::Ovpn { server: g_server("NL-OVPN", "185.4.4.4"), profile: parse_ovpn(&fixture("nord-double.udp.ovpn"), "NL-OVPN", "svc", "svcpw").unwrap() });
+        kept.insert(
+            "nlo".into(),
+            Link::Ovpn {
+                server: g_server("NL-OVPN", "185.4.4.4"),
+                profile: parse_ovpn(&fixture("nord-double.udp.ovpn"), "NL-OVPN", "svc", "svcpw").unwrap(),
+            },
+        );
         let accounts = pairs(&[("nord", "acc"), ("mullvad", "acc"), ("airvpn", "acc")]);
-        let refused = g.refused.iter().map(|(id, m)| (id.to_string(), Error::Auth { message: m.to_string(), url: None })).collect();
-        let picked = crate::link_picker::pick(&g.setup, &kept, Some(&g.setup), &accounts, &accounts, &IndexMap::new(), &IndexSet::new(), &refused, false, &|_| None);
+        let refused = g
+            .refused
+            .iter()
+            .map(|(id, m)| (id.to_string(), Error::Auth { message: m.to_string(), url: None }))
+            .collect();
+        let picked = crate::link_picker::pick(
+            &g.setup,
+            &kept,
+            Some(&g.setup),
+            &accounts,
+            &accounts,
+            &IndexMap::new(),
+            &IndexSet::new(),
+            &refused,
+            false,
+            &|_| None,
+        );
         let step = g.step.iter().map(|(k, v)| (k.to_string(), *v)).collect();
         let links = crate::link_picker::ported(&g.setup, &picked.links, &step);
         let i = Input {
@@ -1752,14 +2315,22 @@ PersistentKeepalive = 25
         let want: Value = serde_json::from_str(&fixture(&format!("golden-{name}.json"))).unwrap();
         if want != serde_json::from_str::<Value>(&config).unwrap() {
             let mine = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("target/golden-{name}.json"));
-            std::fs::write(&mine, serde_json::to_string_pretty(&serde_json::from_str::<Value>(&config).unwrap()).unwrap()).unwrap();
+            std::fs::write(
+                &mine,
+                serde_json::to_string_pretty(&serde_json::from_str::<Value>(&config).unwrap()).unwrap(),
+            )
+            .unwrap();
             panic!("golden-{name}.json differs; this compiler's output is in {}", mine.display());
         }
     }
 
     #[test]
     fn golden_wireguard_providers() {
-        let s = g_setup(vec![g_nl(), g_se(), g_ch()], "nl", &[("firefox", "se"), ("org.mozilla.Thunderbird", "ch"), ("/usr/bin/curl", "se")]);
+        let s = g_setup(
+            vec![g_nl(), g_se(), g_ch()],
+            "nl",
+            &[("firefox", "se"), ("org.mozilla.Thunderbird", "ch"), ("/usr/bin/curl", "se")],
+        );
         golden("wireguard-providers", Golden { step: &[("mullvad", 1)], fake_block: 2, ..g(s) });
     }
 
@@ -1785,12 +2356,19 @@ PersistentKeepalive = 25
 
     #[test]
     fn golden_tailscale_exit() {
-        golden("tailscale-exit", Golden { login: true, ..g(g_setup(vec![g_nl(), g_ts()], "nl", &[("firefox", "ts")])) });
+        golden(
+            "tailscale-exit",
+            Golden { login: true, ..g(g_setup(vec![g_nl(), g_ts()], "nl", &[("firefox", "ts")])) },
+        );
     }
 
     #[test]
     fn golden_home_tailnet() {
-        let home = Home { tailscale: true, subnets: strs(&["192.168.178.0/24", "10.42.0.0/16", "8.8.8.0/24"]), ..Home::default() };
+        let home = Home {
+            tailscale: true,
+            subnets: strs(&["192.168.178.0/24", "10.42.0.0/16", "8.8.8.0/24"]),
+            ..Home::default()
+        };
         let s = Setup { home, ..g_setup(vec![g_nl()], "nl", &[("firefox", DIRECT)]) };
         golden("home-tailnet", Golden { ts_suffix: Some("tail1234.ts.net"), fake_block: 5, ..g(s) });
     }
@@ -1815,21 +2393,41 @@ PersistentKeepalive = 25
             preshared_key: Some(PUB.into()),
             dns: strs(&["192.168.178.1"]),
             keepalive: Some(15),
-            ..WgPeer::new("Home", KEY, strs(&["192.168.178.201/24"]), PUB, "abc.myfritz.net:51820", strs(&["192.168.178.0/24", "0.0.0.0/0"]))
+            ..WgPeer::new(
+                "Home",
+                KEY,
+                strs(&["192.168.178.201/24"]),
+                PUB,
+                "abc.myfritz.net:51820",
+                strs(&["192.168.178.0/24", "0.0.0.0/0"]),
+            )
         };
-        golden("home-wireguard", g(Setup { home: Home { wg: Some(wg), ..Home::default() }, ..g_setup(vec![g_nl()], "nl", &[]) }));
+        golden(
+            "home-wireguard",
+            g(Setup { home: Home { wg: Some(wg), ..Home::default() }, ..g_setup(vec![g_nl()], "nl", &[]) }),
+        );
     }
 
     #[test]
     fn golden_direct_default() {
-        golden("direct-default", g(g_setup(vec![g_nl(), g_se()], DIRECT, &[("firefox", "nl"), ("/usr/bin/curl", "se"), ("spotify", DIRECT)])));
+        golden(
+            "direct-default",
+            g(g_setup(
+                vec![g_nl(), g_se()],
+                DIRECT,
+                &[("firefox", "nl"), ("/usr/bin/curl", "se"), ("spotify", DIRECT)],
+            )),
+        );
     }
 
     #[test]
     fn golden_blocking_dns() {
         use crate::providers::{AUTO, MTU_OPT, PORT_OPT};
         let s = Setup {
-            opts: IndexMap::from([("mullvad".to_string(), pairs(&[(PORT_OPT, AUTO), (MTU_OPT, AUTO), ("adult", "on")]))]),
+            opts: IndexMap::from([(
+                "mullvad".to_string(),
+                pairs(&[(PORT_OPT, AUTO), (MTU_OPT, AUTO), ("adult", "on")]),
+            )]),
             ..g_setup(vec![g_nl(), Route { filter: Some(true), ..g_se() }], "nl", &[("firefox", "se")])
         };
         golden("blocking-dns", g(s));
@@ -1847,20 +2445,29 @@ PersistentKeepalive = 25
         };
         let s = Setup {
             prefs: Prefs { filter, ..Prefs::default() },
-            ..g_setup(vec![g_nl(), g_im()], DIRECT, &[("firefox", "nl"), ("thunderbird", "im"), ("spotify", DIRECT), ("steam", DIRECT)])
+            ..g_setup(
+                vec![g_nl(), g_im()],
+                DIRECT,
+                &[("firefox", "nl"), ("thunderbird", "im"), ("spotify", DIRECT), ("steam", DIRECT)],
+            )
         };
         golden("custom-dns", g(s));
     }
 
     #[test]
     fn golden_lan_off_quad9() {
-        let prefs = Prefs { lan: false, filter: Filter { id: Some("quad9".into()), routes: true, ..Filter::default() }, ..Prefs::default() };
+        let prefs = Prefs {
+            lan: false,
+            filter: Filter { id: Some("quad9".into()), routes: true, ..Filter::default() },
+            ..Prefs::default()
+        };
         golden("lan-off-quad9", g(Setup { prefs, ..g_setup(vec![g_nl(), g_se()], "nl", &[("firefox", "se")]) }));
     }
 
     #[test]
     fn golden_testing_route() {
-        let s = Setup { testing: IndexSet::from(["ch".to_string()]), ..g_setup(vec![g_nl(), g_se(), g_ch()], "nl", &[]) };
+        let s =
+            Setup { testing: IndexSet::from(["ch".to_string()]), ..g_setup(vec![g_nl(), g_se(), g_ch()], "nl", &[]) };
         golden("testing-route", Golden { step: &[("airvpn", 1)], ..g(s) });
     }
 
@@ -1881,7 +2488,15 @@ PersistentKeepalive = 25
     #[test]
     fn golden_cache_keys() {
         let want: IndexMap<String, String> = serde_json::from_str(&fixture("golden-cache-keys.json")).unwrap();
-        let pin = Route::new("pin", Location { provider: "mullvad".into(), country_code: Some("SE".into()), pinned: Some(g_server("SE-GOT-1", "185.2.2.2")), ..Location::default() });
+        let pin = Route::new(
+            "pin",
+            Location {
+                provider: "mullvad".into(),
+                country_code: Some("SE".into()),
+                pinned: Some(g_server("SE-GOT-1", "185.2.2.2")),
+                ..Location::default()
+            },
+        );
         for r in [g_nl(), g_se(), g_ch(), g_nlo(), pin] {
             assert_eq!(want[&r.id], crate::link_picker::cache_key(&r), "{}", r.id);
         }

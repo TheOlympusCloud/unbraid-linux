@@ -102,7 +102,8 @@ const DEVICE: &str = "device";
 const PORTS: [i32; 2] = [1637, 47107];
 static API_KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new("^[0-9a-fA-F]{64}$").unwrap());
 /// AmneziaWG obfuscation keys: the engine would drop them silently, so such a config is refused.
-static AMNEZIA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?imR)^[[:space:]]*(jc|jmin|jmax|s[1-4]|h[1-4]|i[1-5])[[:space:]]*=").unwrap());
+static AMNEZIA: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?imR)^[[:space:]]*(jc|jmin|jmax|s[1-4]|h[1-4]|i[1-5])[[:space:]]*=").unwrap());
 
 fn device_field() -> Field {
     Field { secret: false, hint: "As listed in the Client Area".into(), ..Field::new(DEVICE, "Device name") }
@@ -113,12 +114,19 @@ pub(crate) type Api = Arc<dyn Fn(&str, &str, &[(&str, &str)]) -> Result<String> 
 /// A wait of so many milliseconds.
 pub(crate) type Pause = Arc<dyn Fn(u64) + Send + Sync>;
 
-pub(crate) static CATALOGUE: LazyLock<RwLock<Source<Vec<Entry>>>> = LazyLock::new(|| RwLock::new(Arc::new(|| catalog::fetch("airvpn", "wireguard"))));
-pub(crate) static STATUS: LazyLock<RwLock<Source<String>>> = LazyLock::new(|| RwLock::new(Arc::new(|| http::get(&format!("{API}status/"), &[], None, None))));
-pub(crate) static PAUSE: LazyLock<RwLock<Pause>> = LazyLock::new(|| RwLock::new(Arc::new(|ms| std::thread::sleep(std::time::Duration::from_millis(ms)))));
+pub(crate) static CATALOGUE: LazyLock<RwLock<Source<Vec<Entry>>>> =
+    LazyLock::new(|| RwLock::new(Arc::new(|| catalog::fetch("airvpn", "wireguard"))));
+pub(crate) static STATUS: LazyLock<RwLock<Source<String>>> =
+    LazyLock::new(|| RwLock::new(Arc::new(|| http::get(&format!("{API}status/"), &[], None, None))));
+pub(crate) static PAUSE: LazyLock<RwLock<Pause>> =
+    LazyLock::new(|| RwLock::new(Arc::new(|ms| std::thread::sleep(std::time::Duration::from_millis(ms)))));
 pub(crate) static API_CALL: LazyLock<RwLock<Api>> = LazyLock::new(|| {
     RwLock::new(Arc::new(|service, key, query| {
-        let query = if query.is_empty() { String::new() } else { format!("?{}", query.iter().map(|(k, v)| http::enc(k) + "=" + &http::enc(v)).collect::<Vec<_>>().join("&")) };
+        let query = if query.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", query.iter().map(|(k, v)| http::enc(k) + "=" + &http::enc(v)).collect::<Vec<_>>().join("&"))
+        };
         http::get(&format!("{API}{service}/{query}"), &[("API-KEY", key)], None, None)
     }))
 });
@@ -150,7 +158,11 @@ impl Provider for AirVpn {
     }
 
     fn fields(&self) -> Vec<Field> {
-        vec![Field { hint: "The API key, or the whole generated file".into(), file: true, ..Field::new("key", "API key or WireGuard .conf") }]
+        vec![Field {
+            hint: "The API key, or the whole generated file".into(),
+            file: true,
+            ..Field::new("key", "API key or WireGuard .conf")
+        }]
     }
 
     fn help(&self) -> String {
@@ -169,13 +181,23 @@ impl Provider for AirVpn {
     }
 
     fn options(&self, _account: &str) -> Vec<Opt> {
-        let ports = std::iter::once((AUTO.to_string(), "Automatic".to_string())).chain(PORTS.map(|p| (p.to_string(), format!("UDP {p}")))).collect();
+        let ports = std::iter::once((AUTO.to_string(), "Automatic".to_string()))
+            .chain(PORTS.map(|p| (p.to_string(), format!("UDP {p}"))))
+            .collect();
         vec![
-            Opt { choices: ports, advanced: true, ..Opt::new(PORT_OPT, "Port", "Automatic tries one, then the other when a network blocks it") },
+            Opt {
+                choices: ports,
+                advanced: true,
+                ..Opt::new(PORT_OPT, "Port", "Automatic tries one, then the other when a network blocks it")
+            },
             Opt {
                 choices: vec![("1".into(), "Standard".into()), ("2".into(), "Alternative".into())],
                 advanced: true,
-                ..Opt::new(ENTRY_OPT, "Entry address", "Alternative reaches each server on another address, for networks that block the standard one")
+                ..Opt::new(
+                    ENTRY_OPT,
+                    "Entry address",
+                    "Alternative reaches each server on another address, for networks that block the standard one",
+                )
             },
         ]
     }
@@ -195,15 +217,26 @@ impl Provider for AirVpn {
     }
 
     fn config_help(&self) -> Option<(String, String)> {
-        Some(("Forwarded ports and dynamic DNS are set in the AirVPN Client Area and apply on their own".into(), "https://airvpn.org/ports/".into()))
+        Some((
+            "Forwarded ports and dynamic DNS are set in the AirVPN Client Area and apply on their own".into(),
+            "https://airvpn.org/ports/".into(),
+        ))
     }
 
     /// The device an API sign-in uses; a pasted .conf doesn't say which one it is.
     fn device(&self, blob: &str) -> Option<Device> {
         let a = key_provider::account(blob).ok()?;
         let name = a.device?;
-        let line = if a.own_device { format!("Its own device, {name}, removed when you sign out") } else { format!("Uses your device {name}") };
-        Some(Device { line: format!("{line}. See all your devices in the AirVPN Client Area"), url: Some(DEVICES.into()), used: None })
+        let line = if a.own_device {
+            format!("Its own device, {name}, removed when you sign out")
+        } else {
+            format!("Uses your device {name}")
+        };
+        Some(Device {
+            line: format!("{line}. See all your devices in the AirVPN Client Area"),
+            url: Some(DEVICES.into()),
+            used: None,
+        })
     }
 
     fn plan(&self, blob: &str) -> Option<String> {
@@ -218,7 +251,10 @@ impl Provider for AirVpn {
         let check = || -> Result<bool> {
             let a = key_provider::account(blob)?;
             let Some(key) = &a.api_key else { return Ok(false) };
-            let mine = |d: &DeviceInfo| a.device_id.as_ref().map_or(Some(&d.name) == a.device.as_ref(), |id| d.id == *id) && d.key == a.device_key;
+            let mine = |d: &DeviceInfo| {
+                a.device_id.as_ref().map_or(Some(&d.name) == a.device.as_ref(), |id| d.id == *id)
+                    && d.key == a.device_key
+            };
             Ok(!devices(key)?.iter().any(mine))
         };
         check().unwrap_or(false)
@@ -296,15 +332,22 @@ impl KeyProvider for AirVpn {
     }
 
     fn entries(&self, a: &Account) -> Result<Vec<Entry>> {
-        let listed = status().and_then(|body| parse(&body, a.public_key.as_deref().unwrap_or_default())).and_then(|l| {
-            if l.is_empty() { Err(Error::Io("Empty AirVPN server list".into())) } else { Ok(l) }
-        });
+        let listed = status()
+            .and_then(|body| parse(&body, a.public_key.as_deref().unwrap_or_default()))
+            .and_then(|l| if l.is_empty() { Err(Error::Io("Empty AirVPN server list".into())) } else { Ok(l) });
         match (listed, &a.public_key) {
             (Ok(l), _) => Ok(l),
             // Addresses only, and just the first: the catalogue doesn't say which of a server's addresses is which entry.
             (Err(e), Some(key)) if is_io(&e) => {
                 let catalogue = CATALOGUE.read().unwrap_or_else(PoisonError::into_inner).clone();
-                Ok(catalogue()?.into_iter().map(|e| Entry { wgpubkey: Some(key.clone()), ips: e.ipv4().map(String::from).into_iter().collect(), ..e }).collect())
+                Ok(catalogue()?
+                    .into_iter()
+                    .map(|e| Entry {
+                        wgpubkey: Some(key.clone()),
+                        ips: e.ipv4().map(String::from).into_iter().collect(),
+                        ..e
+                    })
+                    .collect())
             }
             (Err(e), _) => Err(e),
         }
@@ -326,15 +369,19 @@ fn from_api(key: &str, wanted: Option<&str>) -> Result<String> {
         return Ok(made);
     }
     let names = all.iter().map(|d| d.name.chars().take(40).collect::<String>()).collect::<Vec<_>>().join(", ");
-    let ask = |message: String| Error::Challenge(Box::new(Challenge { message, field: device_field(), image: None, keep: IndexMap::new() }));
+    let ask = |message: String| {
+        Error::Challenge(Box::new(Challenge { message, field: device_field(), image: None, keep: IndexMap::new() }))
+    };
     let d = match wanted {
-        Some(w) if !w.is_empty() => {
-            all.iter().find(|d| eq_ignore_case(&d.name, w)).ok_or_else(|| ask(format!("You have no AirVPN device named {}. Yours: {names}.", w.chars().take(40).collect::<String>())))?
-        }
+        Some(w) if !w.is_empty() => all.iter().find(|d| eq_ignore_case(&d.name, w)).ok_or_else(|| {
+            ask(format!("You have no AirVPN device named {}. Yours: {names}.", w.chars().take(40).collect::<String>()))
+        })?,
         _ if all.len() == 1 => &all[0],
         _ if all.is_empty() => {
             return Err(Error::Auth {
-                message: format!("AirVPN didn't add a device for {APP} and your account has none. Add one in the Client Area, then try again"),
+                message: format!(
+                    "AirVPN didn't add a device for {APP} and your account has none. Add one in the Client Area, then try again"
+                ),
                 url: Some(DEVICES.into()),
             });
         }
@@ -368,12 +415,29 @@ fn own(key: &str, before: &[DeviceInfo]) -> Result<Option<String>> {
     };
     let mut name = "New device".to_string();
     let mut finish = || -> Result<String> {
-        let free = (1..).map(|i| if i == 1 { APP.to_string() } else { format!("{APP} {i}") }).find(|n| !before.iter().any(|d| eq_ignore_case(&d.name, n))).unwrap_or_default();
-        failed(&api("devices", key, &[("action", "modify"), ("id", &id), ("name", &free), ("description", &format!("Removed when you sign out of {APP}"))])?)?;
+        let free = (1..)
+            .map(|i| if i == 1 { APP.to_string() } else { format!("{APP} {i}") })
+            .find(|n| !before.iter().any(|d| eq_ignore_case(&d.name, n)))
+            .unwrap_or_default();
+        failed(&api(
+            "devices",
+            key,
+            &[
+                ("action", "modify"),
+                ("id", &id),
+                ("name", &free),
+                ("description", &format!("Removed when you sign out of {APP}")),
+            ],
+        )?)?;
         name = free;
         for _ in 1..=30 {
             pause(2_000);
-            if let Some(d) = devices(key)?.into_iter().find(|d| d.id == id && d.name == name && d.status == "ready" && d.key.as_deref().is_some_and(|k| !k.trim().is_empty())) {
+            if let Some(d) = devices(key)?.into_iter().find(|d| {
+                d.id == id
+                    && d.name == name
+                    && d.status == "ready"
+                    && d.key.as_deref().is_some_and(|k| !k.trim().is_empty())
+            }) {
                 return signed(key, &d, true);
             }
         }
@@ -408,7 +472,11 @@ fn remove(key: &str, id: &str) -> Result<bool> {
 /// Device `d`'s config from the generator, as an account.
 fn signed(key: &str, d: &DeviceInfo, own: bool) -> Result<String> {
     let listed = parse(&status()?, "")?;
-    let server = listed.iter().min_by_key(|e| e.load).and_then(|e| e.server_name.clone()).ok_or_else(|| Error::Io("Empty AirVPN server list".into()))?;
+    let server = listed
+        .iter()
+        .min_by_key(|e| e.load)
+        .and_then(|e| e.server_name.clone())
+        .ok_or_else(|| Error::Io("Empty AirVPN server list".into()))?;
     let protocols = format!("wireguard_1_udp_{}", AirVpn.default_port());
     let query: [(&str, &str); 7] = [
         ("protocols", &protocols),
@@ -432,7 +500,14 @@ fn signed(key: &str, d: &DeviceInfo, own: bool) -> Result<String> {
         return Err(Error::Fail("AirVPN sent another device's config. Try again".into()));
     }
     let device_id = Some(d.id.clone()).filter(|id| !id.is_empty());
-    encode(&Account { api_key: Some(key.into()), device: Some(d.name.clone()), device_key: d.key.clone(), device_id, own_device: own, ..a })
+    encode(&Account {
+        api_key: Some(key.into()),
+        device: Some(d.name.clone()),
+        device_key: d.key.clone(),
+        device_id,
+        own_device: own,
+        ..a
+    })
 }
 
 pub(crate) fn devices(key: &str) -> Result<Vec<DeviceInfo>> {
@@ -454,7 +529,10 @@ fn reply(body: &str) -> Result<Devices> {
 fn failed(body: &str) -> Result<()> {
     let Some(error) = serde_json::from_str::<Devices>(body).ok().and_then(|d| d.error) else { return Ok(()) };
     if error.to_lowercase().contains("authoriz") {
-        return Err(Error::Auth { message: "AirVPN didn't accept that API key. Check it in the Client Area under API".into(), url: Some(KEYS.into()) });
+        return Err(Error::Auth {
+            message: "AirVPN didn't accept that API key. Check it in the Client Area under API".into(),
+            url: Some(KEYS.into()),
+        });
     }
     Err(Error::Fail("AirVPN couldn't answer right now. Try again later".into()))
 }

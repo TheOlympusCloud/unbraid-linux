@@ -115,7 +115,9 @@ impl Schema for Tables {
             "CREATE TABLE peak(d INTEGER, exit TEXT, bps INTEGER, at INTEGER, up INTEGER NOT NULL DEFAULT 0, up_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(d, exit)) WITHOUT ROWID",
             "CREATE TABLE span(start INTEGER PRIMARY KEY, end INTEGER, paused INTEGER)",
             "CREATE TABLE exit(id TEXT PRIMARY KEY, code TEXT, name TEXT, hue INTEGER, via TEXT)",
-            &format!("CREATE TABLE test(at INTEGER PRIMARY KEY, exit TEXT, via TEXT, server TEXT, ip TEXT, down INTEGER, up INTEGER, idle INTEGER, busy_down INTEGER, busy_up INTEGER, {RUN_COLUMNS})"),
+            &format!(
+                "CREATE TABLE test(at INTEGER PRIMARY KEY, exit TEXT, via TEXT, server TEXT, ip TEXT, down INTEGER, up INTEGER, idle INTEGER, busy_down INTEGER, busy_up INTEGER, {RUN_COLUMNS})"
+            ),
         ] {
             d.exec_sql(sql, [])?;
         }
@@ -309,23 +311,33 @@ impl Worker {
 
     pub fn exits(&mut self) -> IndexMap<String, Exit> {
         let all = self.rows("SELECT id, code, name, hue, via FROM exit", &[], |c| {
-            Ok(Exit { id: c.get_string(0)?, code: c.get_string(1)?, name: c.get_string(2)?, hue: c.get_int(3)?, via: c.get_string(4)? })
+            Ok(Exit {
+                id: c.get_string(0)?,
+                code: c.get_string(1)?,
+                name: c.get_string(2)?,
+                hue: c.get_int(3)?,
+                via: c.get_string(4)?,
+            })
         });
         all.into_iter().map(|e| (e.id.clone(), e)).collect()
     }
 
     /// Bytes per exit per day, for days [from, to].
     pub fn per_day(&mut self, from: i64, to: i64) -> IndexMap<i64, IndexMap<String, Bytes>> {
-        by_key(self.rows("SELECT d, exit, SUM(up), SUM(down) FROM daily WHERE d BETWEEN ? AND ? GROUP BY d, exit", &[&from.to_string(), &to.to_string()], |c| {
-            Ok((c.get_long(0)?, c.get_string(1)?, Bytes { up: c.get_long(2)?, down: c.get_long(3)? }))
-        }))
+        by_key(self.rows(
+            "SELECT d, exit, SUM(up), SUM(down) FROM daily WHERE d BETWEEN ? AND ? GROUP BY d, exit",
+            &[&from.to_string(), &to.to_string()],
+            |c| Ok((c.get_long(0)?, c.get_string(1)?, Bytes { up: c.get_long(2)?, down: c.get_long(3)? })),
+        ))
     }
 
     /// Bytes per exit per hour of one day (the Day view).
     pub fn per_hour(&mut self, day: i64) -> IndexMap<i64, IndexMap<String, Bytes>> {
-        by_key(self.rows("SELECT h, exit, up, down FROM hourly WHERE h BETWEEN ? AND ?", &[&(day * 24).to_string(), &(day * 24 + 23).to_string()], |c| {
-            Ok((c.get_long(0)? - day * 24, c.get_string(1)?, Bytes { up: c.get_long(2)?, down: c.get_long(3)? }))
-        }))
+        by_key(self.rows(
+            "SELECT h, exit, up, down FROM hourly WHERE h BETWEEN ? AND ?",
+            &[&(day * 24).to_string(), &(day * 24 + 23).to_string()],
+            |c| Ok((c.get_long(0)? - day * 24, c.get_string(1)?, Bytes { up: c.get_long(2)?, down: c.get_long(3)? })),
+        ))
     }
 
     /// Bytes per app and exit over days [from, to], largest first.
@@ -336,37 +348,51 @@ impl Worker {
     }
 
     pub fn servers(&mut self, exit: &str, from: i64, to: i64) -> Vec<(String, i64)> {
-        self.rows("SELECT name, SUM(bytes) b FROM server WHERE exit = ? AND d BETWEEN ? AND ? GROUP BY name ORDER BY b DESC", &[exit, &from.to_string(), &to.to_string()], |c| {
-            Ok((c.get_string(0)?, c.get_long(1)?))
-        })
+        self.rows(
+            "SELECT name, SUM(bytes) b FROM server WHERE exit = ? AND d BETWEEN ? AND ? GROUP BY name ORDER BY b DESC",
+            &[exit, &from.to_string(), &to.to_string()],
+            |c| Ok((c.get_string(0)?, c.get_long(1)?)),
+        )
     }
 
     /// Spans overlapping [from, to) ms: start, end, paused. The open span counts up to now.
     pub fn spans(&mut self, from: i64, to: i64) -> Vec<(i64, i64, bool)> {
-        let stored = self.rows("SELECT start, end, paused FROM span WHERE end > ? AND start < ? ORDER BY start", &[&from.to_string(), &to.to_string()], |c| {
-            Ok((c.get_long(0)?, c.get_long(1)?, c.get_int(2)? == 1))
-        });
+        let stored = self.rows(
+            "SELECT start, end, paused FROM span WHERE end > ? AND start < ? ORDER BY start",
+            &[&from.to_string(), &to.to_string()],
+            |c| Ok((c.get_long(0)?, c.get_long(1)?, c.get_int(2)? == 1)),
+        );
         let live = self.open.map(|(s, p)| (s, now_ms(), p));
-        stored.into_iter().filter(|s| Some(s.0) != live.map(|l| l.0)).chain(live).map(|(s, e, p)| (s.max(from), e.min(to), p)).filter(|s| s.1 > s.0).collect()
+        stored
+            .into_iter()
+            .filter(|s| Some(s.0) != live.map(|l| l.0))
+            .chain(live)
+            .map(|(s, e, p)| (s.max(from), e.min(to), p))
+            .filter(|s| s.1 > s.0)
+            .collect()
     }
 
     pub fn tests(&mut self) -> Vec<Test> {
-        self.rows("SELECT at, exit, via, server, ip, down, up, idle, busy_down, busy_up, grp, n FROM test ORDER BY at DESC", &[], |c| {
-            Ok(Test {
-                at: c.get_long(0)?,
-                exit: c.get_string(1)?,
-                via: c.get_string(2)?,
-                server: c.get_string(3)?,
-                ip: c.get_string(4)?,
-                down: c.get_long(5)?,
-                up: c.get_long(6)?,
-                idle: c.get_int(7)?,
-                busy_down: c.get_int(8)?,
-                busy_up: c.get_int(9)?,
-                grp: c.get_long(10)?,
-                n: c.get_int(11)?,
-            })
-        })
+        self.rows(
+            "SELECT at, exit, via, server, ip, down, up, idle, busy_down, busy_up, grp, n FROM test ORDER BY at DESC",
+            &[],
+            |c| {
+                Ok(Test {
+                    at: c.get_long(0)?,
+                    exit: c.get_string(1)?,
+                    via: c.get_string(2)?,
+                    server: c.get_string(3)?,
+                    ip: c.get_string(4)?,
+                    down: c.get_long(5)?,
+                    up: c.get_long(6)?,
+                    idle: c.get_int(7)?,
+                    busy_down: c.get_int(8)?,
+                    busy_up: c.get_int(9)?,
+                    grp: c.get_long(10)?,
+                    n: c.get_int(11)?,
+                })
+            },
+        )
     }
 }
 
@@ -388,10 +414,25 @@ pub fn note(route_id: &str, setup: &Setup) -> String {
     let label = if let Some(r) = r {
         Some(Exit { id: id.clone(), code: r.code(), name: r.name(), hue: r.hue, via: r.source() })
     } else if id == HOME {
-        let via = [setup.tailscale().then_some("Tailscale"), setup.home.wg.is_some().then_some("WireGuard")].into_iter().flatten().collect::<Vec<_>>().join(" & ");
-        Some(Exit { id: id.clone(), code: "HM".into(), name: "Home network".into(), hue: 3, via: if via.is_empty() { "Tailscale".into() } else { via } })
+        let via = [setup.tailscale().then_some("Tailscale"), setup.home.wg.is_some().then_some("WireGuard")]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" & ");
+        Some(Exit {
+            id: id.clone(),
+            code: "HM".into(),
+            name: "Home network".into(),
+            hue: 3,
+            via: if via.is_empty() { "Tailscale".into() } else { via },
+        })
     } else if let Some(ip) = id.strip_prefix(speed_test::NODE) {
-        let name = vpn::live().state().ts_exit_nodes.iter().find(|n| n.ip == ip).map_or_else(|| ip.to_string(), |n| n.name.clone());
+        let name = vpn::live()
+            .state()
+            .ts_exit_nodes
+            .iter()
+            .find(|n| n.ip == ip)
+            .map_or_else(|| ip.to_string(), |n| n.name.clone());
         Some(Exit { id: id.clone(), code: "TS".into(), name, hue: -1, via: "Tailscale".into() })
     } else {
         None
@@ -687,7 +728,11 @@ impl Worker {
         let now = now_ms();
         // A resubscription counts what began since the last one stopped hearing (kept across failed attempts until a
         // replay lands); a fresh start baselines what's open.
-        self.c.count_from = if retime && self.c.client.is_some() { self.c.count_from.min((if self.c.heard > 0 { self.c.heard } else { now }) - 2_000) } else { i64::MAX };
+        self.c.count_from = if retime && self.c.client.is_some() {
+            self.c.count_from.min((if self.c.heard > 0 { self.c.heard } else { now }) - 2_000)
+        } else {
+            i64::MAX
+        };
         self.stop_client();
         let v = vpn::live();
         self.c.engine = (v.running().unwrap_or_else(|| store().current()), v.tags(), v.state().servers);
@@ -781,7 +826,11 @@ impl Worker {
         let mut ids = HashMap::<String, String>::new(); // the recorded id of each exit, worked out once per batch (a replay lists hundreds)
         let open = |e: &Ev, ids: &mut HashMap<String, String>| {
             let app = if e.own { SELF.to_string() } else { app_of(e, setup) };
-            let exit = e.own.then(|| speed_test::exit_on(e.tag.as_deref())).flatten().unwrap_or_else(|| exit_of(e.tag.as_deref(), &app, setup, tags));
+            let exit = e
+                .own
+                .then(|| speed_test::exit_on(e.tag.as_deref()))
+                .flatten()
+                .unwrap_or_else(|| exit_of(e.tag.as_deref(), &app, setup, tags));
             let id = ids.entry(exit.clone()).or_insert_with(|| note(&exit, setup)).clone();
             Conn { app, exit: id, server: servers.get(&exit).map(|s| s.name.clone()), up: 0, down: 0 }
         };
@@ -1003,9 +1052,22 @@ mod tests {
         let id = id_of(&nl);
         assert!(id.starts_with("r1@"));
         assert_ne!(id, id_of(&with_loc(&nl, Location { provider: "mullvad".into(), ..nl.loc.clone() })));
-        assert_ne!(id, id_of(&with_loc(&nl, Location { country_code: Some("de".into()), country_id: Some(81), ..nl.loc.clone() })));
-        assert_ne!(id, id_of(&with_loc(&nl, Location { city_id: Some(1), city: Some("Amsterdam".into()), ..nl.loc.clone() })));
-        let pinned = Server { name: "nl1".into(), host: "nl1.example".into(), ip: "1.2.3.4".into(), public_key: "k".into(), load: 0, ..Server::default() };
+        assert_ne!(
+            id,
+            id_of(&with_loc(&nl, Location { country_code: Some("de".into()), country_id: Some(81), ..nl.loc.clone() }))
+        );
+        assert_ne!(
+            id,
+            id_of(&with_loc(&nl, Location { city_id: Some(1), city: Some("Amsterdam".into()), ..nl.loc.clone() }))
+        );
+        let pinned = Server {
+            name: "nl1".into(),
+            host: "nl1.example".into(),
+            ip: "1.2.3.4".into(),
+            public_key: "k".into(),
+            load: 0,
+            ..Server::default()
+        };
         assert_ne!(id, id_of(&with_loc(&nl, Location { pinned: Some(pinned), ..nl.loc.clone() })));
         assert_ne!(id, id_of(&Route { id: "r2".into(), ..nl.clone() }));
     }
@@ -1019,24 +1081,64 @@ mod tests {
     #[test]
     fn imported_servers_by_address_not_secret() {
         let bare = Route::new("r1", Location::default());
-        let wg = Route { wg: Some(WgPeer::new("home", "PRIVATE", vec!["10.0.0.2/32".into()], "PUB", "1.2.3.4:51820", vec!["0.0.0.0/0".into()])), ..bare.clone() };
+        let wg = Route {
+            wg: Some(WgPeer::new(
+                "home",
+                "PRIVATE",
+                vec!["10.0.0.2/32".into()],
+                "PUB",
+                "1.2.3.4:51820",
+                vec!["0.0.0.0/0".into()],
+            )),
+            ..bare.clone()
+        };
         let peer = wg.wg.clone().unwrap();
-        assert_eq!(id_of(&wg), id_of(&Route { wg: Some(WgPeer { private_key: "OTHER".into(), name: "renamed".into(), ..peer.clone() }), ..wg.clone() }));
-        assert_ne!(id_of(&wg), id_of(&Route { wg: Some(WgPeer { endpoint: "5.6.7.8:51820".into(), ..peer }), ..wg.clone() }));
-        let profile = OvpnProfile { name: "x".into(), config: "client\nremote a.example 1194\n<auth-user-pass>\nremote x\nSECRET\n</auth-user-pass>".into(), username: "u".into(), password: "p".into() };
+        assert_eq!(
+            id_of(&wg),
+            id_of(&Route {
+                wg: Some(WgPeer { private_key: "OTHER".into(), name: "renamed".into(), ..peer.clone() }),
+                ..wg.clone()
+            })
+        );
+        assert_ne!(
+            id_of(&wg),
+            id_of(&Route { wg: Some(WgPeer { endpoint: "5.6.7.8:51820".into(), ..peer }), ..wg.clone() })
+        );
+        let profile = OvpnProfile {
+            name: "x".into(),
+            config: "client\nremote a.example 1194\n<auth-user-pass>\nremote x\nSECRET\n</auth-user-pass>".into(),
+            username: "u".into(),
+            password: "p".into(),
+        };
         let ov = Route { ovpn: Some(profile.clone()), ..bare.clone() };
         let with = |p: OvpnProfile| Route { ovpn: Some(p), ..ov.clone() };
         let config = |c: &str| OvpnProfile { config: c.into(), ..profile.clone() };
         assert_eq!(
             id_of(&ov),
-            id_of(&with(OvpnProfile { name: "renamed".into(), config: "client\nremote a.example 1194\n<auth-user-pass>\nremote y\nNEW\n</auth-user-pass>".into(), password: "q".into(), ..profile.clone() }))
+            id_of(&with(OvpnProfile {
+                name: "renamed".into(),
+                config: "client\nremote a.example 1194\n<auth-user-pass>\nremote y\nNEW\n</auth-user-pass>".into(),
+                password: "q".into(),
+                ..profile.clone()
+            }))
         );
         assert_ne!(id_of(&ov), id_of(&with(config("client\nremote b.example 1194"))));
         assert_ne!(id_of(&ov), id_of(&with(config("client\nremote a.example 443"))));
         assert_ne!(id_of(&ov), id_of(&with(config("client\nremote a.example 1194\nproto tcp"))));
-        let shadow = SsProfile { name: "s".into(), server: "9.9.9.9".into(), port: 8388, method: "aes".into(), password: "pw".into(), plugin: None, plugin_opts: None };
+        let shadow = SsProfile {
+            name: "s".into(),
+            server: "9.9.9.9".into(),
+            port: 8388,
+            method: "aes".into(),
+            password: "pw".into(),
+            plugin: None,
+            plugin_opts: None,
+        };
         let ss = Route { ss: Some(shadow.clone()), ..bare.clone() };
-        assert_eq!(id_of(&ss), id_of(&Route { ss: Some(SsProfile { password: "other".into(), ..shadow }), ..ss.clone() }));
+        assert_eq!(
+            id_of(&ss),
+            id_of(&Route { ss: Some(SsProfile { password: "other".into(), ..shadow }), ..ss.clone() })
+        );
         assert_ne!(id_of(&ss), id_of(&Route { ts_exit: Some("100.64.0.1".into()), ..bare }));
         for r in [&wg, &ov, &ss] {
             for secret in ["PRIVATE", "SECRET", "pw", "PUB"] {
@@ -1075,20 +1177,45 @@ mod tests {
         let mut w = Worker::new(None);
         w.c.engine = (setup, [("r7".to_string(), "r-nl".to_string())].into_iter().collect(), IndexMap::new());
         w.c.started_at = 1_000;
-        w.apply(vec![ev(NEW, "a", Some((100, 1000)), (0, 0), false, 2_000), ev(UPDATE, "a", None, (10, 20), false, 0), ev(CLOSED, "a", Some((150, 1100)), (0, 0), true, 2_000)], false);
+        w.apply(
+            vec![
+                ev(NEW, "a", Some((100, 1000)), (0, 0), false, 2_000),
+                ev(UPDATE, "a", None, (10, 20), false, 0),
+                ev(CLOSED, "a", Some((150, 1100)), (0, 0), true, 2_000),
+            ],
+            false,
+        );
         // A close whose New the engine dropped: in full if it began while listening, else not at all.
-        w.apply(vec![ev(CLOSED, "b", Some((1, 2)), (0, 0), true, 3_000), ev(CLOSED, "c", Some((1, 2)), (0, 0), true, 500)], false);
+        w.apply(
+            vec![ev(CLOSED, "b", Some((1, 2)), (0, 0), true, 3_000), ev(CLOSED, "c", Some((1, 2)), (0, 0), true, 500)],
+            false,
+        );
         // A replay: "a" was counted to its close, "d" was open before recording began, "e" began unheard.
         w.c.count_from = 2_500;
-        w.apply(vec![ev(NEW, "a", Some((150, 1100)), (0, 0), true, 2_000), ev(NEW, "d", Some((7, 7)), (0, 0), false, 0), ev(NEW, "e", Some((3, 3)), (0, 0), false, 2_600)], true);
+        w.apply(
+            vec![
+                ev(NEW, "a", Some((150, 1100)), (0, 0), true, 2_000),
+                ev(NEW, "d", Some((7, 7)), (0, 0), false, 0),
+                ev(NEW, "e", Some((3, 3)), (0, 0), false, 2_600),
+            ],
+            true,
+        );
         w.apply(vec![ev(UPDATE, "d", None, (5, 5), false, 0)], false);
-        let sums: Vec<(i64, i64)> = w.daily.iter().map(|((_, app, exit), s)| {
-            assert_eq!(("?", id_of(&r7)), (app.as_str(), exit.clone()));
-            (s.up, s.down)
-        }).collect();
+        let sums: Vec<(i64, i64)> = w
+            .daily
+            .iter()
+            .map(|((_, app, exit), s)| {
+                assert_eq!(("?", id_of(&r7)), (app.as_str(), exit.clone()));
+                (s.up, s.down)
+            })
+            .collect();
         assert_eq!(vec![(100 + 10 + 40 + 1 + 3 + 5, 1000 + 20 + 80 + 2 + 3 + 5)], sums);
         assert_eq!(i64::MAX, w.c.count_from);
-        assert_eq!(vec!["d", "e"], { let mut seen: Vec<&str> = w.c.seen.keys().map(String::as_str).collect(); seen.sort(); seen });
+        assert_eq!(vec!["d", "e"], {
+            let mut seen: Vec<&str> = w.c.seen.keys().map(String::as_str).collect();
+            seen.sort();
+            seen
+        });
     }
 
     /// A history the earlier app kept opens unchanged: its ids, its database (made at an older version and upgraded in
@@ -1097,7 +1224,14 @@ mod tests {
     fn the_earlier_apps_history_reads_on() {
         // The earlier app's ids: the same digest of the same fields.
         assert_eq!("r1@ac9778c8bc", id_of(&nl()));
-        let wg = WgPeer::new("home", "PRIVATE", vec!["10.0.0.2/32".into()], "PUB", "1.2.3.4:51820", vec!["0.0.0.0/0".into()]);
+        let wg = WgPeer::new(
+            "home",
+            "PRIVATE",
+            vec!["10.0.0.2/32".into()],
+            "PUB",
+            "1.2.3.4:51820",
+            vec!["0.0.0.0/0".into()],
+        );
         assert_eq!("r1@87f9bc57d1", id_of(&Route { wg: Some(wg), ..Route::new("r1", Location::default()) }));
 
         // A version 1 database, as the earlier app first made it (no upload peaks, no combined runs), and its rows.
@@ -1119,11 +1253,23 @@ mod tests {
             .unwrap();
         let upsert = |sql: &str, p: &[&dyn rusqlite::ToSql]| earlier.execute(sql, p).unwrap();
         for _ in 0..2 {
-            upsert("INSERT INTO hourly VALUES(?,?,?,?) ON CONFLICT(h, exit) DO UPDATE SET up=up+excluded.up, down=down+excluded.down", &[&h, &nl, &10i64, &100i64]);
-            upsert("INSERT INTO daily VALUES(?,?,?,?,?) ON CONFLICT(d, app, exit) DO UPDATE SET up=up+excluded.up, down=down+excluded.down", &[&d, &"firefox", &nl, &10i64, &100i64]);
-            upsert("INSERT INTO server VALUES(?,?,?,?) ON CONFLICT(d, exit, name) DO UPDATE SET bytes=bytes+excluded.bytes", &[&d, &nl, &"nl812.nordvpn.com", &110i64]);
+            upsert(
+                "INSERT INTO hourly VALUES(?,?,?,?) ON CONFLICT(h, exit) DO UPDATE SET up=up+excluded.up, down=down+excluded.down",
+                &[&h, &nl, &10i64, &100i64],
+            );
+            upsert(
+                "INSERT INTO daily VALUES(?,?,?,?,?) ON CONFLICT(d, app, exit) DO UPDATE SET up=up+excluded.up, down=down+excluded.down",
+                &[&d, &"firefox", &nl, &10i64, &100i64],
+            );
+            upsert(
+                "INSERT INTO server VALUES(?,?,?,?) ON CONFLICT(d, exit, name) DO UPDATE SET bytes=bytes+excluded.bytes",
+                &[&d, &nl, &"nl812.nordvpn.com", &110i64],
+            );
         }
-        upsert("INSERT INTO daily VALUES(?,?,?,?,?) ON CONFLICT(d, app, exit) DO UPDATE SET up=up+excluded.up, down=down+excluded.down", &[&d, &"?", &"direct", &1i64, &2i64]);
+        upsert(
+            "INSERT INTO daily VALUES(?,?,?,?,?) ON CONFLICT(d, app, exit) DO UPDATE SET up=up+excluded.up, down=down+excluded.down",
+            &[&d, &"?", &"direct", &1i64, &2i64],
+        );
         upsert("INSERT OR REPLACE INTO exit VALUES(?,?,?,?,?)", &[&nl, &"NL", &"Netherlands", &2, &"NordVPN"]);
         upsert("INSERT INTO peak VALUES(?,?,?,?)", &[&d, &nl, &5_000_000i64, &now]);
         upsert("INSERT OR REPLACE INTO span VALUES(?,?,?)", &[&(now - 60_000), &(now - 30_000), &0]);
@@ -1142,9 +1288,15 @@ mod tests {
         assert_eq!(Some(&Bytes { up: 20, down: 200 }), per_day[&d].get(nl));
         assert_eq!(Some(&Bytes { up: 1, down: 2 }), per_day[&d].get("direct"));
         assert_eq!(Some(&Bytes { up: 20, down: 200 }), w.per_hour(d)[&(h - d * 24)].get(nl));
-        assert_eq!(vec![("firefox".to_string(), nl.to_string(), 220), ("?".to_string(), "direct".to_string(), 3)], w.apps(d, d));
+        assert_eq!(
+            vec![("firefox".to_string(), nl.to_string(), 220), ("?".to_string(), "direct".to_string(), 3)],
+            w.apps(d, d)
+        );
         assert_eq!(vec![("nl812.nordvpn.com".to_string(), 220)], w.servers(nl, d, d));
-        assert_eq!(vec![(now - 60_000, now - 30_000, false), (now - 30_000, now - 10_000, true)], w.spans(now - 3_600_000, now));
+        assert_eq!(
+            vec![(now - 60_000, now - 30_000, false), (now - 30_000, now - 10_000, true)],
+            w.spans(now - 3_600_000, now)
+        );
         let test = Test {
             at: now - 5_000,
             exit: nl.into(),

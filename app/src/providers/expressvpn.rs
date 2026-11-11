@@ -69,7 +69,9 @@ impl Provider for ExpressVpn {
         let pass = input.get("password").map_or("", |p| p.trim());
         require!(!user.is_empty() && !pass.is_empty(), "Enter the manual-configuration username and password");
         require!(
-            length(user) <= MAX_LOGIN && length(pass) <= MAX_LOGIN && !user.chars().chain(pass.chars()).any(|c| c.is_control() || c.is_whitespace()),
+            length(user) <= MAX_LOGIN
+                && length(pass) <= MAX_LOGIN
+                && !user.chars().chain(pass.chars()).any(|c| c.is_control() || c.is_whitespace()),
             "That username or password has characters ExpressVPN's manual-configuration login doesn't use"
         );
         encode(&Account { username: user.into(), password: pass.into() })
@@ -92,7 +94,11 @@ impl Provider for ExpressVpn {
     fn servers(&self, loc: &Location, _account: &str, limit: usize) -> Result<Vec<Server>> {
         let reachable: Vec<Entry> = fetch()?.into_iter().filter(|e| e.ips.iter().any(|ip| is_ipv4(ip))).collect();
         let rnd = &mut rand::rng();
-        Ok(catalog::pick(&reachable, loc).iter().take(limit).filter_map(|e| Some(server(e, ipv4s(e).choose(rnd)?))).collect())
+        Ok(catalog::pick(&reachable, loc)
+            .iter()
+            .take(limit)
+            .filter_map(|e| Some(server(e, ipv4s(e).choose(rnd)?)))
+            .collect())
     }
 }
 
@@ -114,15 +120,26 @@ pub(crate) fn link(entries: Option<&[Entry]>, loc: &Location, a: &Account, rnd: 
         // A list is always read when nothing is pinned.
         (None, None) => return Err(Error::State(String::new())),
         (Some(entries), Some(pinned)) => {
-            let e = entries.iter().find(|e| e.hostname == pinned.host).ok_or_else(|| Error::NoLongerOffered(pinned.name.clone()))?;
+            let e = entries
+                .iter()
+                .find(|e| e.hostname == pinned.host)
+                .ok_or_else(|| Error::NoLongerOffered(pinned.name.clone()))?;
             // Its current addresses; the one it had while it still has it.
             let ips = ipv4s(e);
-            let ip = if ips.contains(&pinned.ip.as_str()) { pinned.ip.as_str() } else { ips.choose(rnd).copied().ok_or_else(|| Error::NoLongerOffered(pinned.name.clone()))? };
+            let ip = if ips.contains(&pinned.ip.as_str()) {
+                pinned.ip.as_str()
+            } else {
+                ips.choose(rnd).copied().ok_or_else(|| Error::NoLongerOffered(pinned.name.clone()))?
+            };
             server(e, ip)
         }
         (Some(entries), None) => {
-            let reachable: Vec<Entry> = entries.iter().filter(|e| e.ips.iter().any(|ip| is_ipv4(ip))).cloned().collect();
-            let e = catalog::pick(&reachable, loc).into_iter().next().ok_or_else(|| Error::Io(format!("No ExpressVPN server for {}", loc.label())))?;
+            let reachable: Vec<Entry> =
+                entries.iter().filter(|e| e.ips.iter().any(|ip| is_ipv4(ip))).cloned().collect();
+            let e = catalog::pick(&reachable, loc)
+                .into_iter()
+                .next()
+                .ok_or_else(|| Error::Io(format!("No ExpressVPN server for {}", loc.label())))?;
             server(&e, ipv4s(&e).choose(rnd).copied().unwrap_or_default())
         }
     };
@@ -137,7 +154,12 @@ fn ipv4s(e: &Entry) -> Vec<&str> {
 /// Strict dotted IPv4: catalogue text is put into the OpenVPN profile, so nothing else may get through.
 fn is_ipv4(s: &str) -> bool {
     let parts: Vec<&str> = s.split('.').collect();
-    parts.len() == 4 && parts.iter().all(|p| (1..=3).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_digit()) && p.parse::<u32>().is_ok_and(|n| n <= 255))
+    parts.len() == 4
+        && parts.iter().all(|p| {
+            (1..=3).contains(&p.len())
+                && p.bytes().all(|b| b.is_ascii_digit())
+                && p.parse::<u32>().is_ok_and(|n| n <= 255)
+        })
 }
 
 fn server(e: &Entry, ip: &str) -> Server {
@@ -172,7 +194,10 @@ pub(crate) fn profile(ip: &str) -> Result<String> {
     p += &format!("<ca>\n{}</ca>\n", CAS.iter().map(|c| pem("CERTIFICATE", c)).collect::<String>());
     p += &format!("<cert>\n{}</cert>\n", pem("CERTIFICATE", CERT));
     p += &format!("<key>\n{}</key>\n", pem("RSA PRIVATE KEY", RSA_KEY));
-    p += &format!("<tls-auth>\n-----BEGIN OpenVPN Static key V1-----\n{}\n-----END OpenVPN Static key V1-----\n</tls-auth>\n", chunked(TLS_AUTH, 32).join("\n"));
+    p += &format!(
+        "<tls-auth>\n-----BEGIN OpenVPN Static key V1-----\n{}\n-----END OpenVPN Static key V1-----\n</tls-auth>\n",
+        chunked(TLS_AUTH, 32).join("\n")
+    );
     Ok(p)
 }
 

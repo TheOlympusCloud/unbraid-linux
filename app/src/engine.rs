@@ -5,8 +5,9 @@
 use crate::engine_api::daemon::managed_service_client::ManagedServiceClient;
 use crate::engine_api::daemon::started_service_client::StartedServiceClient;
 use crate::engine_api::daemon::{
-    ConnectionEvents, ServiceStatus, SetTailscaleExitNodeRequest, Status as EngineStatus, StunTestProgress, StunTestRequest, SubscribeConnectionsRequest, SubscribeStatusRequest,
-    TailscaleLogoutRequest, TailscaleStatusUpdate, service_status,
+    ConnectionEvents, ServiceStatus, SetTailscaleExitNodeRequest, Status as EngineStatus, StunTestProgress,
+    StunTestRequest, SubscribeConnectionsRequest, SubscribeStatusRequest, TailscaleLogoutRequest,
+    TailscaleStatusUpdate, service_status,
 };
 use crate::engine_api::desktop::application_service_client::ApplicationServiceClient;
 use crate::engine_api::desktop::desktop_service_client::DesktopServiceClient;
@@ -52,7 +53,9 @@ fn timed<T>(message: T, seconds: u64) -> Request<T> {
 
 /// The call `f`, ended with DEADLINE_EXCEEDED after `seconds` even if the engine never answers.
 async fn deadline<T>(seconds: u64, f: impl Future<Output = Result<T, Status>>) -> Result<T, Status> {
-    tokio::time::timeout(Duration::from_secs(seconds), f).await.unwrap_or_else(|_| Err(Status::deadline_exceeded("Deadline exceeded")))
+    tokio::time::timeout(Duration::from_secs(seconds), f)
+        .await
+        .unwrap_or_else(|_| Err(Status::deadline_exceeded("Deadline exceeded")))
 }
 
 /// The engine isn't there at all (service stopped or not installed), as opposed to one that refused something.
@@ -74,7 +77,12 @@ pub struct Engine {
 impl Engine {
     /// The engine on `socket`; `engine_binary` runs the worker that checks configs, with its socket in `runtime_dir`.
     pub fn new(socket: &Path, engine_binary: &Path, runtime_dir: &Path) -> Engine {
-        Engine { channel: channel(socket), engine_binary: engine_binary.into(), runtime_dir: runtime_dir.into(), worker: Mutex::new(None) }
+        Engine {
+            channel: channel(socket),
+            engine_binary: engine_binary.into(),
+            runtime_dir: runtime_dir.into(),
+            worker: Mutex::new(None),
+        }
     }
 
     fn desktop(&self) -> DesktopServiceClient<Channel> {
@@ -126,7 +134,11 @@ impl Engine {
             },
             move || {
                 let mut c = owner.clone();
-                async move { deadline(30, c.get_daemon_info(timed((), 30))).await.map(|i| i.into_inner().ownership == DaemonOwnership::Other as i32) }
+                async move {
+                    deadline(30, c.get_daemon_info(timed((), 30)))
+                        .await
+                        .map(|i| i.into_inner().ownership == DaemonOwnership::Other as i32)
+                }
             },
             move || {
                 let mut c = take.clone();
@@ -146,7 +158,9 @@ impl Engine {
     }
 
     pub async fn tailscale_logout(&self, tag: &str) -> Result<(), Status> {
-        deadline(15, self.started().tailscale_logout(timed(TailscaleLogoutRequest { endpoint_tag: tag.into() }, 15))).await.map(|_| ())
+        deadline(15, self.started().tailscale_logout(timed(TailscaleLogoutRequest { endpoint_tag: tag.into() }, 15)))
+            .await
+            .map(|_| ())
     }
 
     /// Deletes this user's files in the engine (the Tailscale node above all); it refuses while a service runs.
@@ -167,18 +181,28 @@ impl Engine {
     }
 
     pub async fn connections(&self, interval_ns: i64) -> Result<Streaming<ConnectionEvents>, Status> {
-        self.started().subscribe_connections(SubscribeConnectionsRequest { interval: interval_ns }).await.map(|r| r.into_inner())
+        self.started()
+            .subscribe_connections(SubscribeConnectionsRequest { interval: interval_ns })
+            .await
+            .map(|r| r.into_inner())
     }
 
     pub async fn stun(&self, server: &str, tag: &str) -> Result<Streaming<StunTestProgress>, Status> {
-        self.started().start_stun_test(StunTestRequest { server: server.into(), outbound_tag: tag.into() }).await.map(|r| r.into_inner())
+        self.started()
+            .start_stun_test(StunTestRequest { server: server.into(), outbound_tag: tag.into() })
+            .await
+            .map(|r| r.into_inner())
     }
 }
 
 /// `start`, taking the service over first (`take_over`) only from another user: refused while nobody owns it, it was the
 /// claim itself that polkit refused, and asking again would show the prompt twice. An engine that lost its owner between
 /// its check and its lock (ABORTED) is asked once more, claim and all; a second time the error stands.
-pub async fn starting(mut start: impl AsyncFnMut() -> Result<(), Status>, mut owned_by_other: impl AsyncFnMut() -> Result<bool, Status>, mut take_over: impl AsyncFnMut() -> Result<(), Status>) -> Result<(), Status> {
+pub async fn starting(
+    mut start: impl AsyncFnMut() -> Result<(), Status>,
+    mut owned_by_other: impl AsyncFnMut() -> Result<bool, Status>,
+    mut take_over: impl AsyncFnMut() -> Result<(), Status>,
+) -> Result<(), Status> {
     for attempt in 0..2 {
         let once = async {
             match start().await {

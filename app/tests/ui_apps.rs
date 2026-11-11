@@ -68,7 +68,8 @@ const KEY: &str = "5p4RkybdRU5uaDi90eu4KZPTFif0lKCg4Qp6t1c4F30=";
 /// The set-up app of the approved screenshots, once its apps were read: Private Browsing's and Tool's own routes went
 /// (one runs as Firefox, one is a script).
 fn setup() -> Setup {
-    let lab = WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
+    let lab =
+        WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
     let route = |id: &str, loc: Location, hue: i32| Route { hue, ..Route::new(id, loc) };
     let mut s = Setup {
         routes: vec![
@@ -78,10 +79,20 @@ fn setup() -> Setup {
             Route { wg: Some(lab), ..route("lab", Location::default(), 3) },
         ],
         default_route: "nl".into(),
-        profiles: vec![Profile::with_apps("Work", "nl", &[("firefox-private", "it")]), Profile::with_apps("Home", "nl", &[("firefox", "us")])],
+        profiles: vec![
+            Profile::with_apps("Work", "nl", &[("firefox-private", "it")]),
+            Profile::with_apps("Home", "nl", &[("firefox", "us")]),
+        ],
         ..Setup::default()
     };
-    for (k, v) in [("firefox", "us"), ("spotify", "it"), ("org.gnome.Terminal", DIRECT), ("thunderbird", "us"), ("discord", "it"), ("code", DIRECT)] {
+    for (k, v) in [
+        ("firefox", "us"),
+        ("spotify", "it"),
+        ("org.gnome.Terminal", DIRECT),
+        ("thunderbird", "us"),
+        ("discord", "it"),
+        ("code", DIRECT),
+    ] {
         s.apps.insert(k.into(), v.into());
     }
     s.prefs.stats = true;
@@ -92,8 +103,12 @@ fn setup() -> Setup {
 /// /usr/bin/true added as a program.
 fn installed(n: usize) -> Vec<AppInfo> {
     let app = AppInfo::new;
-    let firefox: &[&str] = if n > 14 { &["alacarte-made-1", "firefox", "firefox-private"] } else { &["firefox", "firefox-private"] };
-    let group = |pkg: &str, label: &str, g: &[&str]| AppInfo { group: g.iter().map(|k| k.to_string()).collect(), ..app(pkg, label) };
+    let firefox: &[&str] =
+        if n > 14 { &["alacarte-made-1", "firefox", "firefox-private"] } else { &["firefox", "firefox-private"] };
+    let group = |pkg: &str, label: &str, g: &[&str]| AppInfo {
+        group: g.iter().map(|k| k.to_string()).collect(),
+        ..app(pkg, label)
+    };
     let office = ["libreoffice-startcenter", "libreoffice-writer"];
     let mut all = vec![
         app("chromium", "Chromium"),
@@ -121,10 +136,17 @@ fn installed(n: usize) -> Vec<AppInfo> {
 }
 
 fn today() -> HashMap<String, i64> {
-    [("chromium", 16_000_000), ("discord", 4_000_000), ("firefox", 25_000_000), ("signal-desktop", 2_000_000), ("spotify", 10_000_000), ("thunderbird", 6_000_000)]
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v))
-        .collect()
+    [
+        ("chromium", 16_000_000),
+        ("discord", 4_000_000),
+        ("firefox", 25_000_000),
+        ("signal-desktop", 2_000_000),
+        ("spotify", 10_000_000),
+        ("thunderbird", 6_000_000),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v))
+    .collect()
 }
 
 /// Each app's stand-in program, as the screenshots' test made them: Private Browsing and Browser run Firefox's, Writer
@@ -169,7 +191,13 @@ fn show(page: &AppsPage, v: &AppsView) {
     page.set_use_label(text(&v.use_label));
     page.set_query(text(&v.query));
     page.set_all(v.all);
-    page.set_chips(model(v.chips.iter().map(|c| ExitChip { id: text(&c.id), label: text(&c.label), hue: c.hue, direct: c.direct, on: c.on })));
+    page.set_chips(model(v.chips.iter().map(|c| ExitChip {
+        id: text(&c.id),
+        label: text(&c.label),
+        hue: c.hue,
+        direct: c.direct,
+        on: c.on,
+    })));
     page.set_system(v.system);
     page.set_heads(model(v.heads.iter().map(|h| ColumnHead { text: text(&h.text), label: text(&h.label), on: h.on })));
     page.set_stats(v.stats);
@@ -212,7 +240,13 @@ fn show(page: &AppsPage, v: &AppsView) {
             direct: c.direct,
             on: c.on,
         })),
-        also: model(d.also.iter().map(|a| AlsoRow { key: text(&a.key), label: text(&a.label), letter: text(&a.letter), icon: Image::default(), note: text(&a.note) })),
+        also: model(d.also.iter().map(|a| AlsoRow {
+            key: text(&a.key),
+            label: text(&a.label),
+            letter: text(&a.letter),
+            icon: Image::default(),
+            note: text(&a.note),
+        })),
         lookups: d.lookups,
         lookups_sub: text(&d.lookups_sub),
         lookups_on: d.lookups_on,
@@ -230,7 +264,15 @@ fn refresh(w: &AppsWindow, s: &mut State) {
 /// change its table, the others are noted (and a route chosen is set, as the view model does).
 fn window(apps: Vec<AppInfo>, table: Table) -> (AppsWindow, Rc<RefCell<State>>) {
     let w = AppsWindow::new().expect("create the window");
-    let state = Rc::new(RefCell::new(State { apps, setup: setup(), viewing: None, disclosed: true, table, view: AppsView::default(), asked: vec![] }));
+    let state = Rc::new(RefCell::new(State {
+        apps,
+        setup: setup(),
+        viewing: None,
+        disclosed: true,
+        table,
+        view: AppsView::default(),
+        asked: vec![],
+    }));
     let page = AppsPage::get(&w);
     let on = |f: fn(&mut State, &str)| {
         let (state, weak) = (state.clone(), w.as_weak());
@@ -327,9 +369,17 @@ fn the_table_renders_dark_and_light() {
         shoot(&w, 1280, 800, Duration::ZERO);
         pointer(&w, 598.0, 747.0);
         let pixels = render(&w, 1280, 800, &dir.join("apps-dark.png"));
-        assert_eq!([0x1B, 0x21, 0x24], at(&pixels, 1280, 285, 747), "the row under the pointer: surface-high, and the hover's layer");
+        assert_eq!(
+            [0x1B, 0x21, 0x24],
+            at(&pixels, 1280, 285, 747),
+            "the row under the pointer: surface-high, and the hover's layer"
+        );
         assert_eq!([0x0F, 0x12, 0x14], at(&pixels, 1280, 600, 252), "the page's ground above the first row");
-        assert_eq!([0x1E, 0x24, 0x28], at(&pixels, 1280, 600, 246), "the line under the heads, where the approved look has it");
+        assert_eq!(
+            [0x1E, 0x24, 0x28],
+            at(&pixels, 1280, 600, 246),
+            "the line under the heads, where the approved look has it"
+        );
         assert_eq!([0x17, 0x1B, 0x1E], at(&pixels, 1280, 1100, 400), "the panel: surface");
         assert_eq!([0x1E, 0x24, 0x28], at(&pixels, 1280, 939, 400), "the panel's edge");
         let page = AppsPage::get(&w);
@@ -353,9 +403,16 @@ fn an_app_that_runs_as_another_says_so() {
     click(&w, 598.0, 643.0, PointerEventButton::Left);
     assert_eq!(Some("firefox-private"), state.borrow().table.selected.as_deref(), "a click selects the row");
     let pixels = render(&w, 1280, 800, &shots_dir().join("apps-runs-as-another.png"));
-    assert_eq!([0x35, 0x26, 0x1C], at(&pixels, 1280, 285, 643), "selected, under the pointer: the accent's container, and the hover's layer");
+    assert_eq!(
+        [0x35, 0x26, 0x1C],
+        at(&pixels, 1280, 285, 643),
+        "selected, under the pointer: the accent's container, and the hover's layer"
+    );
     let detail = AppsPage::get(&w).get_detail();
-    assert_eq!("Takes Firefox's route: it runs as Firefox, and unbraid can't tell their traffic apart.", detail.leader_note.as_str());
+    assert_eq!(
+        "Takes Firefox's route: it runs as Firefox, and unbraid can't tell their traffic apart.",
+        detail.leader_note.as_str()
+    );
     // Show Firefox, at the panel's button.
     click(&w, 1036.0, 161.0, PointerEventButton::Left);
     assert_eq!(Some("firefox"), state.borrow().table.selected.as_deref(), "Show Firefox selects it");
@@ -403,10 +460,18 @@ fn the_keys_search_and_walk_the_table() {
     assert_eq!("lib", state.borrow().table.query);
     assert_eq!(2, AppsPage::get(&w).get_rows().iter().count(), "LibreOffice and its Writer");
     press(&w, Key::DownArrow);
-    assert_eq!(Some("libreoffice-startcenter"), state.borrow().table.selected.as_deref(), "Down in the search: the first match");
+    assert_eq!(
+        Some("libreoffice-startcenter"),
+        state.borrow().table.selected.as_deref(),
+        "Down in the search: the first match"
+    );
     press(&w, Key::DownArrow);
     press(&w, Key::DownArrow);
-    assert_eq!(Some("libreoffice-writer"), state.borrow().table.selected.as_deref(), "the table has the keys now, and stops at its end");
+    assert_eq!(
+        Some("libreoffice-writer"),
+        state.borrow().table.selected.as_deref(),
+        "the table has the keys now, and stops at its end"
+    );
     press(&w, Key::UpArrow);
     assert_eq!(Some("libreoffice-startcenter"), state.borrow().table.selected.as_deref());
     // The Kind head.

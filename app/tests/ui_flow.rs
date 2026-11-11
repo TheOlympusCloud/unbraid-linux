@@ -17,7 +17,9 @@ use slint::{ComponentHandle, Global, LogicalPosition, Model, SharedString};
 use unbraid::desktop_settings::{self as ds, Theme};
 use unbraid::limits::LIMIT_OPT;
 use unbraid::model::{City, Country, DIRECT, Location, Profile, Route, Setup, VERSION, WgPeer};
-use unbraid::window::{self, AppWindow, AppsPage, Ink, PickerPage, SettingsPage, SignInPage, StatsPage, WelcomePage, Win};
+use unbraid::window::{
+    self, AppWindow, AppsPage, Ink, PickerPage, SettingsPage, SignInPage, StatsPage, WelcomePage, Win,
+};
 use unbraid::{app, paths, stats, tray, ui};
 
 const KEY: &str = "5p4RkybdRU5uaDi90eu4KZPTFif0lKCg4Qp6t1c4F30=";
@@ -45,7 +47,12 @@ fn app_once() {
     ONCE.call_once(|| {
         let dir = folders();
         let _ = std::fs::remove_dir_all(dir);
-        for (var, sub) in [("XDG_DATA_HOME", "home"), ("XDG_CONFIG_HOME", "config"), ("XDG_DATA_DIRS", "share"), ("XDG_RUNTIME_DIR", "run")] {
+        for (var, sub) in [
+            ("XDG_DATA_HOME", "home"),
+            ("XDG_CONFIG_HOME", "config"),
+            ("XDG_DATA_DIRS", "share"),
+            ("XDG_RUNTIME_DIR", "run"),
+        ] {
             std::fs::create_dir_all(dir.join(sub)).unwrap();
             // SAFETY: set before anything reads them, while the other flows wait for this one.
             unsafe { std::env::set_var(var, dir.join(sub)) };
@@ -73,22 +80,48 @@ fn app_once() {
             ("libreoffice-startcenter", "LibreOffice"),
             ("org.gimp.GIMP", "GIMP"),
         ] {
-            std::fs::write(apps.join(format!("{id}.desktop")), format!("[Desktop Entry]\nType=Application\nName={name}\nExec={} %u\n", program(id).display())).unwrap();
+            std::fs::write(
+                apps.join(format!("{id}.desktop")),
+                format!("[Desktop Entry]\nType=Application\nName={name}\nExec={} %u\n", program(id).display()),
+            )
+            .unwrap();
         }
         // Runs as LibreOffice: Writer is the same program.
         let office = programs().join("libreoffice-startcenter/libreoffice-startcenter");
-        std::fs::write(apps.join("libreoffice-writer.desktop"), format!("[Desktop Entry]\nType=Application\nName=LibreOffice Writer\nExec={} --writer %U\n", office.display())).unwrap();
+        std::fs::write(
+            apps.join("libreoffice-writer.desktop"),
+            format!(
+                "[Desktop Entry]\nType=Application\nName=LibreOffice Writer\nExec={} --writer %U\n",
+                office.display()
+            ),
+        )
+        .unwrap();
         // A launcher script that starts its program through a variable it can't see into: the default route only.
         let steam = programs().join("steam/steam");
         std::fs::create_dir_all(steam.parent().unwrap()).unwrap();
         std::fs::write(&steam, "#!/bin/sh\nexec \"$HOME/.steam/steam.sh\" \"$@\"\n").unwrap();
         executable(&steam);
-        std::fs::write(apps.join("steam.desktop"), format!("[Desktop Entry]\nType=Application\nName=Steam\nExec={} %U\n", steam.display())).unwrap();
+        std::fs::write(
+            apps.join("steam.desktop"),
+            format!("[Desktop Entry]\nType=Application\nName=Steam\nExec={} %U\n", steam.display()),
+        )
+        .unwrap();
         // Runs as Firefox: it takes Firefox's route.
         let firefox = programs().join("firefox/firefox");
-        std::fs::write(apps.join("firefox-private.desktop"), format!("[Desktop Entry]\nType=Application\nName=Private Browsing\nExec={} --private-window %u\n", firefox.display())).unwrap();
+        std::fs::write(
+            apps.join("firefox-private.desktop"),
+            format!(
+                "[Desktop Entry]\nType=Application\nName=Private Browsing\nExec={} --private-window %u\n",
+                firefox.display()
+            ),
+        )
+        .unwrap();
         // Runs as python3, like every other Python program: the engine can't tell it apart.
-        std::fs::write(apps.join("org.example.Tool.desktop"), "[Desktop Entry]\nType=Application\nName=Tool\nExec=python3 /opt/tool/tool.py\n").unwrap();
+        std::fs::write(
+            apps.join("org.example.Tool.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Tool\nExec=python3 /opt/tool/tool.py\n",
+        )
+        .unwrap();
         ui::tour::init();
         app::init(runtime().handle(), paths::data().unwrap());
     });
@@ -200,7 +233,10 @@ fn a_welcome_terms_and_sign_in() {
     click(&win.w, 815.0, 736.0); // Accept and continue
     wait_until(&win, "sign-in", |w| w.w.get_stage() == 1);
     let page = SignInPage::get(&win.w);
-    assert!([page.get_overline(), page.get_title(), page.get_sub()].iter().any(|t| t.contains("Choose your VPN")), "the first run's sign-in");
+    assert!(
+        [page.get_overline(), page.get_title(), page.get_sub()].iter().any(|t| t.contains("Choose your VPN")),
+        "the first run's sign-in"
+    );
     assert!(page.get_providers().iter().any(|p| p.name == "NordVPN"));
     shot(&win, "4-sign-in", 1280, 800);
     // Esc in a provider's form, typed in its field: the form's Back takes it and forgets what was typed.
@@ -224,7 +260,11 @@ fn week_of_traffic(s: &Setup) {
     let route = |id: &str| s.routes.iter().find(|r| r.id == id).unwrap();
     for id in ["nl", "us", "it"] {
         let r = route(id);
-        db.execute("INSERT OR REPLACE INTO exit VALUES(?,?,?,?,?)", rusqlite::params![stats::id_of(r), r.code(), r.name(), r.hue, r.source()]).unwrap();
+        db.execute(
+            "INSERT OR REPLACE INTO exit VALUES(?,?,?,?,?)",
+            rusqlite::params![stats::id_of(r), r.code(), r.name(), r.hue, r.source()],
+        )
+        .unwrap();
     }
     let hour = 3_600_000i64;
     let now = chrono::Utc::now().timestamp_millis();
@@ -285,7 +325,8 @@ fn b_screens_of_a_set_up_app() {
     let _turn = turn(1);
     // As the first flow leaves it, also when it ran in an earlier process.
     ui::tour::accept_terms(true);
-    let lab = WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
+    let lab =
+        WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
     edit(|s| {
         s.routes = vec![
             Route::new("nl", Location::country("nord", 153, "NL", "Netherlands")),
@@ -310,7 +351,10 @@ fn b_screens_of_a_set_up_app() {
         s.version = VERSION;
         // Here Private Browsing is the one of its group with a route: it leads, and keeps it. In Home both have one: the
         // first keeps it, and the notice names the profile.
-        s.profiles = vec![Profile::with_apps("Work", "nl", &[("firefox-private", "it")]), Profile::with_apps("Home", "nl", &[("firefox", "us"), ("firefox-private", "it")])];
+        s.profiles = vec![
+            Profile::with_apps("Work", "nl", &[("firefox-private", "it")]),
+            Profile::with_apps("Home", "nl", &[("firefox", "us"), ("firefox-private", "it")]),
+        ];
     });
     ui::tour::tour_seen();
     // A week of recorded traffic, so Stats and the Apps table's Today column have something to show.
@@ -323,7 +367,9 @@ fn b_screens_of_a_set_up_app() {
     let win = open();
     let w = &win.w;
     assert_eq!(2, w.get_stage());
-    wait_until(&win, "the default route", |w| unbraid::window::RoutesPage::get(&w.w).get_default_route().name == "Netherlands");
+    wait_until(&win, "the default route", |w| {
+        unbraid::window::RoutesPage::get(&w.w).get_default_route().name == "Netherlands"
+    });
     shot(&win, "5-routes", 1280, 800);
 
     w.invoke_page_clicked(1); // Apps
@@ -333,7 +379,9 @@ fn b_screens_of_a_set_up_app() {
     wait_until(&win, "the apps", |w| w.ui.apps.borrow().iter().any(|a| a.pkg == "spotify"));
     // Two of a group with routes (Firefox's own and its private window's): the first keeps its route, and the other's
     // is said.
-    wait_until(&win, "Private Browsing's route to go", |_| !app::store().current().apps.contains_key("firefox-private"));
+    wait_until(&win, "Private Browsing's route to go", |_| {
+        !app::store().current().apps.contains_key("firefox-private")
+    });
     let notice = win.ui.notice.borrow().clone().unwrap_or_default();
     assert!(notice.contains("Private Browsing runs as Firefox, so it takes Firefox's route now."), "{notice}");
     assert!(notice.contains("Private Browsing runs as Firefox, so it takes Firefox's route now in Home."), "{notice}");
@@ -346,16 +394,30 @@ fn b_screens_of_a_set_up_app() {
     // An app that runs as a script loses the route it could never take, and its panel says it follows the default.
     wait_until(&win, "Tool's route to go", |_| !app::store().current().apps.contains_key("org.example.Tool"));
     AppsPage::get(w).invoke_select("org.example.Tool".into());
-    assert!(AppsPage::get(w).get_detail().leader_note.contains("Follows the default route") || AppsPage::get(w).get_detail().default_only);
+    assert!(
+        AppsPage::get(w).get_detail().leader_note.contains("Follows the default route")
+            || AppsPage::get(w).get_detail().default_only
+    );
     // A new entry for Firefox's program, whose label sorts first, doesn't take Firefox's route: it takes the route too.
     let entries = folders().join("home/applications");
-    std::fs::write(entries.join("alacarte-made-1.desktop"), format!("[Desktop Entry]\nType=Application\nName=Browser\nExec={}\n", programs().join("firefox/firefox").display())).unwrap();
+    std::fs::write(
+        entries.join("alacarte-made-1.desktop"),
+        format!(
+            "[Desktop Entry]\nType=Application\nName=Browser\nExec={}\n",
+            programs().join("firefox/firefox").display()
+        ),
+    )
+    .unwrap();
     win.ui.refresh_apps();
     wait_until(&win, "Browser", |w| w.ui.apps.borrow().iter().any(|a| a.pkg == "alacarte-made-1"));
     assert_eq!(Some("us"), app::store().current().apps.get("firefox").map(String::as_str));
     assert_eq!(IndexMap::from([("firefox-private".to_string(), "it".to_string())]), profile("Work"));
     AppsPage::get(w).invoke_select("alacarte-made-1".into());
-    assert!(AppsPage::get(w).get_detail().leader_note.contains("Takes Firefox's route"), "{:?}", AppsPage::get(w).get_detail().leader_note);
+    assert!(
+        AppsPage::get(w).get_detail().leader_note.contains("Takes Firefox's route"),
+        "{:?}",
+        AppsPage::get(w).get_detail().leader_note
+    );
     // So does one that runs as another app and has no route of its own here.
     AppsPage::get(w).invoke_select("firefox-private".into());
     assert!(AppsPage::get(w).get_detail().leader_note.contains("Takes Firefox's route"));
@@ -392,7 +454,9 @@ fn b_screens_of_a_set_up_app() {
     win.ui.notice.send_replace(None); // the refusal's notice, which would show on the next screens
 
     w.invoke_page_clicked(2); // Stats
-    wait_until(&win, "the hub", |w| StatsPage::get(&w.w).get_loaded() && StatsPage::get(&w.w).get_hub().apps.row_count() > 0);
+    wait_until(&win, "the hub", |w| {
+        StatsPage::get(&w.w).get_loaded() && StatsPage::get(&w.w).get_hub().apps.row_count() > 0
+    });
     shot(&win, "7-stats", 1280, 800);
     // A tile opens its section, at a reading width; Back returns to the overview.
     StatsPage::get(w).invoke_go("usage".into());
@@ -484,7 +548,11 @@ fn b_screens_of_a_set_up_app() {
     shoot(w, 1280, 800, Duration::from_millis(500));
     // Removing a route takes it from the saved profiles that list it too: the menu says which, as the sheet does.
     let us = unbraid::window::RoutesPage::get(w).get_exceptions().iter().find(|c| c.id == "us").expect("the US route");
-    assert!(us.menu.iter().any(|a| a.text == "Remove route, also from Home"), "{:?}", us.menu.iter().map(|a| a.text).collect::<Vec<_>>());
+    assert!(
+        us.menu.iter().any(|a| a.text == "Remove route, also from Home"),
+        "{:?}",
+        us.menu.iter().map(|a| a.text).collect::<Vec<_>>()
+    );
 }
 
 /// The smallest window: the sidebar folds to a rail of icons whose names show on hover; the pages keep their layout.
@@ -533,7 +601,9 @@ fn d_tray_profile_switch() {
     // From the tray's menu: a switch that waits on the window shows it, on Routes.
     win.set_tab(window::SETTINGS);
     window::tray_action(tray::Action::Profile("Travel".into()));
-    wait_until(&win, "Routes, for Travel", |w| w.w.get_tab() == 0 && w.ui.viewing.borrow().as_deref() == Some("Travel"));
+    wait_until(&win, "Routes, for Travel", |w| {
+        w.w.get_tab() == 0 && w.ui.viewing.borrow().as_deref() == Some("Travel")
+    });
     win.ui.view(None);
     // The tour from Settings › About: each stop on its page, its spot on what it is about.
     SettingsPage::get(&win.w).invoke_tour();

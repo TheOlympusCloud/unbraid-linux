@@ -72,7 +72,12 @@ fn action(a: &logic::RouteAction) -> RouteAction {
 }
 
 fn sheet(s: &logic::Sheet) -> Sheet {
-    Sheet { title: text(&s.title), lead: text(&s.lead), actions: list(s.actions.iter().map(action).collect()), note: text(&s.note) }
+    Sheet {
+        title: text(&s.title),
+        lead: text(&s.lead),
+        actions: list(s.actions.iter().map(action).collect()),
+        note: text(&s.note),
+    }
 }
 
 fn exit(e: &logic::ExitLine) -> ExitLine {
@@ -136,8 +141,25 @@ fn show_routes(shot: &Shot, v: &logic::RoutesView) {
     page.set_all_default(v.all_default);
     page.set_nord_note(v.nord_note);
     page.set_lit(v.lit);
-    page.set_exits(list(v.exits.iter().map(|e| ExitRow { code: text(&e.code), hue: e.hue, name: text(&e.name), place: text(&e.place), speed: text(&e.speed), exit: exit(&e.exit) }).collect()));
-    page.set_home(v.home.as_ref().map(|h| HomeRow { sub: text(&h.sub), login_url: text(&h.login_url), lit: h.lit }).unwrap_or_default());
+    page.set_exits(list(
+        v.exits
+            .iter()
+            .map(|e| ExitRow {
+                code: text(&e.code),
+                hue: e.hue,
+                name: text(&e.name),
+                place: text(&e.place),
+                speed: text(&e.speed),
+                exit: exit(&e.exit),
+            })
+            .collect(),
+    ));
+    page.set_home(
+        v.home
+            .as_ref()
+            .map(|h| HomeRow { sub: text(&h.sub), login_url: text(&h.login_url), lit: h.lit })
+            .unwrap_or_default(),
+    );
     page.set_power(sheet(&v.power));
 }
 
@@ -166,14 +188,32 @@ fn show_profiles(shot: &Shot, s: &Setup, viewing: Option<&str>) {
     page.set_sub(text(&v.sub));
     page.set_at_limit(v.at_limit);
     page.set_full_note(text(&v.full_note));
-    page.set_profiles(list(v.rows.iter().map(|r| ProfileRow { name: text(&r.name), in_use: r.in_use, summary: text(&r.summary), code: text(&r.code), hue: r.hue, direct: r.direct }).collect()));
-    shot.set_chips(list(v.rows.iter().map(|r| ProfileChip { name: text(&r.name), in_use: r.in_use, shown: Some(r.name.as_str()) == viewing }).collect()));
+    page.set_profiles(list(
+        v.rows
+            .iter()
+            .map(|r| ProfileRow {
+                name: text(&r.name),
+                in_use: r.in_use,
+                summary: text(&r.summary),
+                code: text(&r.code),
+                hue: r.hue,
+                direct: r.direct,
+            })
+            .collect(),
+    ));
+    shot.set_chips(list(
+        v.rows
+            .iter()
+            .map(|r| ProfileChip { name: text(&r.name), in_use: r.in_use, shown: Some(r.name.as_str()) == viewing })
+            .collect(),
+    ));
 }
 
 /// The set-up app of the approved screenshots: three Nord countries and a WireGuard server no profile uses, apps on
 /// routes and Direct, and two saved profiles, neither in use.
 fn set_up() -> Setup {
-    let lab = WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
+    let lab =
+        WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
     Setup {
         routes: vec![
             Route::new("nl", Location::country("nord", 153, "NL", "Netherlands")),
@@ -182,15 +222,32 @@ fn set_up() -> Setup {
             Route { wg: Some(lab), hue: 3, ..Route::new("lab", Location::default()) },
         ],
         default_route: "nl".into(),
-        apps: [("firefox", "us"), ("spotify", "it"), ("org.gnome.Terminal", DIRECT), ("thunderbird", "us"), ("discord", "it"), ("code", DIRECT)].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
-        profiles: vec![Profile::with_apps("Work", "nl", &[("firefox-private", "it")]), Profile::with_apps("Home", "nl", &[("firefox", "us")])],
+        apps: [
+            ("firefox", "us"),
+            ("spotify", "it"),
+            ("org.gnome.Terminal", DIRECT),
+            ("thunderbird", "us"),
+            ("discord", "it"),
+            ("code", DIRECT),
+        ]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect(),
+        profiles: vec![
+            Profile::with_apps("Work", "nl", &[("firefox-private", "it")]),
+            Profile::with_apps("Home", "nl", &[("firefox", "us")]),
+        ],
         ..Setup::default()
     }
 }
 
 /// The apps the set-up app lists once their scan is allowed.
 fn listed() -> Vec<logic::App> {
-    let app = |pkg: &str, label: &str, group: &[&str]| logic::App { pkg: pkg.into(), label: label.into(), group: group.iter().map(|g| g.to_string()).collect() };
+    let app = |pkg: &str, label: &str, group: &[&str]| logic::App {
+        pkg: pkg.into(),
+        label: label.into(),
+        group: group.iter().map(|g| g.to_string()).collect(),
+    };
     let fx = ["firefox", "firefox-private", "alacarte-made-1"];
     let lo = ["libreoffice-startcenter", "libreoffice-writer"];
     vec![
@@ -216,7 +273,20 @@ fn listed() -> Vec<logic::App> {
 fn routes_view(s: &Setup, viewing: Option<&str>, apps: &[logic::App], vpn: &VpnState) -> logic::RoutesView {
     let exits = IndexMap::new();
     let setting_up = HashSet::new();
-    logic::view(&logic::Inputs { setup: s, viewing, vpn, asked: None, switching: None, refused: None, apps, exits: &exits, asking: false, setting_up: &setting_up, live: None, now: 0 })
+    logic::view(&logic::Inputs {
+        setup: s,
+        viewing,
+        vpn,
+        asked: None,
+        switching: None,
+        refused: None,
+        apps,
+        exits: &exits,
+        asking: false,
+        setting_up: &setting_up,
+        live: None,
+        now: 0,
+    })
 }
 
 /// A new shot of `s` (as `viewing` shows it), with or without its apps listed, the sidebar wide or folded.
@@ -282,10 +352,19 @@ fn routes_before_apps_and_smallest() {
     let dir = shots_dir();
     // As saved before the scan: Tool (a script) and Private Browsing (Firefox's program) still had routes of their own.
     let mut s = set_up();
-    s.apps = [("firefox", "us"), ("spotify", "it"), ("org.gnome.Terminal", DIRECT), ("org.example.Tool", "us"), ("firefox-private", "it"), ("thunderbird", "us"), ("discord", "it"), ("code", DIRECT)]
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect();
+    s.apps = [
+        ("firefox", "us"),
+        ("spotify", "it"),
+        ("org.gnome.Terminal", DIRECT),
+        ("org.example.Tool", "us"),
+        ("firefox-private", "it"),
+        ("thunderbird", "us"),
+        ("discord", "it"),
+        ("code", DIRECT),
+    ]
+    .iter()
+    .map(|(k, v)| (k.to_string(), v.to_string()))
+    .collect();
     let shot = routes_shot(&s, None, &[], false, true);
     render(&shot, 1280, 800, &dir.join("routes-before-apps.png"));
     drop(shot);
@@ -313,7 +392,11 @@ fn route_menu_and_sheet() {
     assert_eq!("direct", made.borrow().as_str(), "Make Direct the default");
     click(&shot, 400.0, 398.0, PointerEventButton::Left);
     let px = render(&shot, 1280, 800, &dir.join("routes-sheet.png"));
-    assert!(near(at(&px, 1280, 100, 400), [0x0d, 0x10, 0x12]) || near(at(&px, 1280, 100, 400), [0x0d, 0x0f, 0x11]), "the sidebar dims behind the sheet: {:?}", at(&px, 1280, 100, 400));
+    assert!(
+        near(at(&px, 1280, 100, 400), [0x0d, 0x10, 0x12]) || near(at(&px, 1280, 100, 400), [0x0d, 0x0f, 0x11]),
+        "the sidebar dims behind the sheet: {:?}",
+        at(&px, 1280, 100, 400)
+    );
     assert_eq!(SURFACE, at(&px, 1280, 640, 700), "the sheet's surface at the bottom");
     assert_eq!([0x9a, 0xa5, 0xad], at(&px, 1280, 640, 611), "the drag handle");
     shot.window().dispatch_event(WindowEvent::KeyPressed { text: slint::platform::Key::Escape.into() });
@@ -338,7 +421,8 @@ fn profiles() {
     let shot = routes_shot(&s, None, &listed(), false, true);
     let weak = shot.as_weak();
     let at_change = s.clone();
-    ProfilesPage::get(&shot).on_sheet_changed(move |editing, empty, name| show_sheet(&weak.unwrap(), &at_change, &editing, empty, &name));
+    ProfilesPage::get(&shot)
+        .on_sheet_changed(move |editing, empty, name| show_sheet(&weak.unwrap(), &at_change, &editing, empty, &name));
     ProfilesPage::get(&shot).invoke_add_profile(false);
     shoot(&shot, 1280, 800, Duration::from_secs(1));
     click(&shot, 640.0, 480.0, PointerEventButton::Left);
@@ -347,7 +431,11 @@ fn profiles() {
         shot.window().dispatch_event(WindowEvent::KeyReleased { text: c.to_string().into() });
     }
     let sheet = ProfilesPage::get(&shot).get_sheet();
-    assert_eq!(("Weekend at h", "12/12", "Weekend at h"), (sheet.name.as_str(), sheet.count.as_str(), sheet.valid.as_str()), "typing stops at twelve characters");
+    assert_eq!(
+        ("Weekend at h", "12/12", "Weekend at h"),
+        (sheet.name.as_str(), sheet.count.as_str(), sheet.valid.as_str()),
+        "typing stops at twelve characters"
+    );
     let px = render(&shot, 1280, 800, &dir.join("profiles-sheet.png"));
     assert_eq!(SURFACE, at(&px, 1280, 330, 790), "the sheet");
 }
@@ -359,23 +447,59 @@ fn routes_connected() {
     headless();
     let mut s = set_up();
     s.prefs.stats = true;
-    let server = |host: &str, load: i32, city: &str| unbraid::model::Server { name: host.into(), host: format!("{host}.nordvpn.com"), load, city: city.into(), ..Default::default() };
+    let server = |host: &str, load: i32, city: &str| unbraid::model::Server {
+        name: host.into(),
+        host: format!("{host}.nordvpn.com"),
+        load,
+        city: city.into(),
+        ..Default::default()
+    };
     let vpn = VpnState {
         phase: vpn::Phase::On,
         since: 1_000,
         engine: 1,
-        servers: [("nl", server("nl1256", 9, "Amsterdam")), ("us", server("us8812", 31, "New York")), ("it", server("it201", 12, "Milan"))].into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
+        servers: [
+            ("nl", server("nl1256", 9, "Amsterdam")),
+            ("us", server("us8812", 31, "New York")),
+            ("it", server("it201", 12, "Milan")),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect(),
         ..Default::default()
     };
-    let report = |id: &str, ip: Option<&str>| unbraid::exit_check::ExitReport { ip: ip.map(str::to_string), at: 0, engine: 1, server: vpn.servers.get(id).cloned() };
-    let exits: IndexMap<String, _> = [("nl".to_string(), report("nl", Some("185.212.170.53"))), ("it".to_string(), report("it", Some("2a0d:5600:24:a10::f")))].into_iter().collect();
+    let report = |id: &str, ip: Option<&str>| unbraid::exit_check::ExitReport {
+        ip: ip.map(str::to_string),
+        at: 0,
+        engine: 1,
+        server: vpn.servers.get(id).cloned(),
+    };
+    let exits: IndexMap<String, _> = [
+        ("nl".to_string(), report("nl", Some("185.212.170.53"))),
+        ("it".to_string(), report("it", Some("2a0d:5600:24:a10::f"))),
+    ]
+    .into_iter()
+    .collect();
     let mut live = unbraid::stats::Live { down_now: 48_300_000, up_now: 3_100_000, ..Default::default() };
     for (id, bps) in [("nl", 31_200_000.0), ("us", 12_800_000.0), ("it", 4_300_000.0)] {
         live.down.insert(unbraid::stats::id_of(s.route(Some(id)).unwrap()), vec![bps]);
     }
     let setting_up = HashSet::new();
     let apps = listed();
-    let v = logic::view(&logic::Inputs { setup: &s, viewing: None, vpn: &vpn, asked: None, switching: None, refused: None, apps: &apps, exits: &exits, asking: true, setting_up: &setting_up, live: Some(&live), now: 3_724_000 });
+    let v = logic::view(&logic::Inputs {
+        setup: &s,
+        viewing: None,
+        vpn: &vpn,
+        asked: None,
+        switching: None,
+        refused: None,
+        apps: &apps,
+        exits: &exits,
+        asking: true,
+        setting_up: &setting_up,
+        live: Some(&live),
+        now: 3_724_000,
+    });
     let shot = routes_shot(&s, None, &apps, false, true);
     show_routes(&shot, &v);
     let px = render(&shot, 1280, 800, &shots_dir().join("routes-connected.png"));

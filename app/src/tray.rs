@@ -74,14 +74,27 @@ const PAUSES: [(i32, &str); 4] = [(5, "5 minutes"), (15, "15 minutes"), (30, "30
 pub fn menu(s: &State, now: i64) -> Vec<Item> {
     let button = |text: &str, a: Action| Item::Button(text.into(), a);
     let mut m = vec![Item::Line(status_line(s, now)), Item::Separator];
-    m.push(if s.phase == Phase::Off { button("Connect", Action::Connect) } else { button("Disconnect", Action::Disconnect) });
+    m.push(if s.phase == Phase::Off {
+        button("Connect", Action::Connect)
+    } else {
+        button("Disconnect", Action::Disconnect)
+    });
     match s.phase {
-        Phase::On => m.push(Item::Menu("Pause for".into(), PAUSES.iter().map(|&(n, text)| button(text, Action::Pause(n))).collect())),
+        Phase::On => m.push(Item::Menu(
+            "Pause for".into(),
+            PAUSES.iter().map(|&(n, text)| button(text, Action::Pause(n))).collect(),
+        )),
         Phase::Paused => m.push(button("Resume now", Action::Resume)),
         Phase::Connecting | Phase::Off => {}
     }
     if !s.profiles.is_empty() {
-        m.push(Item::Menu("Profile".into(), s.profiles.iter().map(|p| Item::Radio(p.clone(), s.profile.as_ref() == Some(p), Action::Profile(p.clone()))).collect()));
+        m.push(Item::Menu(
+            "Profile".into(),
+            s.profiles
+                .iter()
+                .map(|p| Item::Radio(p.clone(), s.profile.as_ref() == Some(p), Action::Profile(p.clone())))
+                .collect(),
+        ));
     }
     m.extend([Item::Separator, button("Open dashboard", Action::Open), button("Quit", Action::Quit)]);
     m
@@ -113,8 +126,10 @@ const SIZES: [u32; 5] = [16, 22, 24, 32, 48];
 
 /// The icon for `phase`: the logo in its colour while connected, without it otherwise, with a pause badge while paused.
 fn icon(phase: Phase) -> &'static [ksni::Icon] {
-    static ICONS: LazyLock<[Vec<ksni::Icon>; 3]> =
-        LazyLock::new(|| [(false, false), (true, false), (true, true)].map(|(grey, badge)| SIZES.iter().map(|&n| pixmap(n, grey, badge)).collect()));
+    static ICONS: LazyLock<[Vec<ksni::Icon>; 3]> = LazyLock::new(|| {
+        [(false, false), (true, false), (true, true)]
+            .map(|(grey, badge)| SIZES.iter().map(|&n| pixmap(n, grey, badge)).collect())
+    });
     &ICONS[match phase {
         Phase::On => 0,
         Phase::Connecting | Phase::Off => 1,
@@ -199,8 +214,15 @@ fn entry(i: Item) -> MenuItem<Sni> {
     let text = |s: String| s.replace('_', "__");
     match i {
         Item::Line(label) => StandardItem { label: text(label), enabled: false, ..Default::default() }.into(),
-        Item::Button(label, a) => StandardItem { label: text(label), activate: Box::new(move |t: &mut Sni| (t.on)(a.clone())), ..Default::default() }.into(),
-        Item::Menu(label, items) => SubMenu { label: text(label), submenu: items.into_iter().map(entry).collect(), ..Default::default() }.into(),
+        Item::Button(label, a) => StandardItem {
+            label: text(label),
+            activate: Box::new(move |t: &mut Sni| (t.on)(a.clone())),
+            ..Default::default()
+        }
+        .into(),
+        Item::Menu(label, items) => {
+            SubMenu { label: text(label), submenu: items.into_iter().map(entry).collect(), ..Default::default() }.into()
+        }
         // A dbusmenu radio item is one with a radio mark, grouped by nothing: each option is a group of its own.
         Item::Radio(label, on, a) => RadioGroup {
             selected: if on { 0 } else { usize::MAX },
@@ -250,7 +272,9 @@ impl Tray {
             });
         });
         // A watcher that doesn't answer keeps the item waiting in the background, not the start.
-        if thread.is_err() || started.recv_timeout(Duration::from_secs(5)) == Err(std::sync::mpsc::RecvTimeoutError::Disconnected) {
+        if thread.is_err()
+            || started.recv_timeout(Duration::from_secs(5)) == Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
+        {
             shown.store(false, Ordering::Relaxed);
         }
         Tray { state: tx, shown }
@@ -324,22 +348,70 @@ mod tests {
     #[test]
     fn menu_in_each_phase() {
         assert_eq!(
-            vec!["(Protected · Netherlands)", "—", "Disconnect", "Pause for › 5 minutes, 15 minutes, 30 minutes, 1 hour", "Profile › • Home, Work_2", "—", "Open dashboard", "Quit"],
+            vec![
+                "(Protected · Netherlands)",
+                "—",
+                "Disconnect",
+                "Pause for › 5 minutes, 15 minutes, 30 minutes, 1 hour",
+                "Profile › • Home, Work_2",
+                "—",
+                "Open dashboard",
+                "Quit"
+            ],
             texts(&menu(&on(), NOW))
         );
         let paused = State { phase: Phase::Paused, paused_until: NOW + 12 * 60_000, ..on() };
-        assert_eq!(vec!["(Paused · 12 min left)", "—", "Disconnect", "Resume now", "Profile › • Home, Work_2", "—", "Open dashboard", "Quit"], texts(&menu(&paused, NOW)));
+        assert_eq!(
+            vec![
+                "(Paused · 12 min left)",
+                "—",
+                "Disconnect",
+                "Resume now",
+                "Profile › • Home, Work_2",
+                "—",
+                "Open dashboard",
+                "Quit"
+            ],
+            texts(&menu(&paused, NOW))
+        );
         let connecting = State { phase: Phase::Connecting, profiles: vec![], profile: None, ..on() };
-        assert_eq!(vec!["(Connecting…)", "—", "Disconnect", "—", "Open dashboard", "Quit"], texts(&menu(&connecting, NOW)));
+        assert_eq!(
+            vec!["(Connecting…)", "—", "Disconnect", "—", "Open dashboard", "Quit"],
+            texts(&menu(&connecting, NOW))
+        );
         let off = State { phase: Phase::Off, profile: None, ..on() };
-        assert_eq!(vec!["(Not connected)", "—", "Connect", "Profile › Home, Work_2", "—", "Open dashboard", "Quit"], texts(&menu(&off, NOW)));
+        assert_eq!(
+            vec!["(Not connected)", "—", "Connect", "Profile › Home, Work_2", "—", "Open dashboard", "Quit"],
+            texts(&menu(&off, NOW))
+        );
 
         // What each entry asks for.
         let m = menu(&on(), NOW);
         let Item::Menu(_, pauses) = &m[3] else { panic!("Pause for") };
-        assert_eq!(vec![Action::Pause(5), Action::Pause(15), Action::Pause(30), Action::Pause(60)], pauses.iter().map(|i| match i { Item::Button(_, a) => a.clone(), _ => panic!() }).collect::<Vec<_>>());
-        assert_eq!(Item::Menu("Profile".into(), vec![Item::Radio("Home".into(), true, Action::Profile("Home".into())), Item::Radio("Work_2".into(), false, Action::Profile("Work_2".into()))]), m[4]);
-        assert_eq!((Item::Button("Disconnect".into(), Action::Disconnect), Item::Button("Quit".into(), Action::Quit)), (m[2].clone(), m[7].clone()));
+        assert_eq!(
+            vec![Action::Pause(5), Action::Pause(15), Action::Pause(30), Action::Pause(60)],
+            pauses
+                .iter()
+                .map(|i| match i {
+                    Item::Button(_, a) => a.clone(),
+                    _ => panic!(),
+                })
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            Item::Menu(
+                "Profile".into(),
+                vec![
+                    Item::Radio("Home".into(), true, Action::Profile("Home".into())),
+                    Item::Radio("Work_2".into(), false, Action::Profile("Work_2".into()))
+                ]
+            ),
+            m[4]
+        );
+        assert_eq!(
+            (Item::Button("Disconnect".into(), Action::Disconnect), Item::Button("Quit".into(), Action::Quit)),
+            (m[2].clone(), m[7].clone())
+        );
         assert_eq!(Item::Button("Resume now".into(), Action::Resume), menu(&paused, NOW)[3]);
         assert_eq!(Item::Button("Connect".into(), Action::Connect), menu(&off, NOW)[2]);
         assert_eq!(Item::Button("Open dashboard".into(), Action::Open), menu(&off, NOW)[5]);
@@ -365,24 +437,45 @@ mod tests {
     /// The tray's state from the connection and the setup: the default route by name, Direct without one.
     #[test]
     fn state_of_the_setup() {
-        let setup = Setup { profiles: vec![Profile::new("Home", "nl"), Profile::new("Empty", "")], profile: Some("Home".into()), ..Setup::default() };
+        let setup = Setup {
+            profiles: vec![Profile::new("Home", "nl"), Profile::new("Empty", "")],
+            profile: Some("Home".into()),
+            ..Setup::default()
+        };
         let vpn = VpnState { phase: Phase::Paused, paused_until: NOW, ..VpnState::default() };
         let s = state(&vpn, "Paused until 14:30", &setup);
         assert_eq!(
-            State { phase: Phase::Paused, route: Setup::default().routes[0].name(), summary: "Paused until 14:30".into(), paused_until: NOW, profiles: vec!["Home".into(), "Empty".into()], profile: Some("Home".into()) },
+            State {
+                phase: Phase::Paused,
+                route: Setup::default().routes[0].name(),
+                summary: "Paused until 14:30".into(),
+                paused_until: NOW,
+                profiles: vec!["Home".into(), "Empty".into()],
+                profile: Some("Home".into())
+            },
             s
         );
-        let direct = Setup { default_route: crate::model::DIRECT.into(), routes: vec![Route::new("nl", Location::country("nord", 153, "NL", "Netherlands"))], ..Setup::default() };
+        let direct = Setup {
+            default_route: crate::model::DIRECT.into(),
+            routes: vec![Route::new("nl", Location::country("nord", 153, "NL", "Netherlands"))],
+            ..Setup::default()
+        };
         assert_eq!("Direct", state(&VpnState::default(), "", &direct).route);
     }
 
     /// Connected shows the logo in its colour; connecting and disconnected without it; paused adds the pause badge.
     #[test]
     fn icons_follow_the_phase() {
-        let coloured = |i: &ksni::Icon| i.data.as_chunks::<4>().0.iter().any(|&[a, r, g, b]| a > 0 && (r != g || g != b));
+        let coloured =
+            |i: &ksni::Icon| i.data.as_chunks::<4>().0.iter().any(|&[a, r, g, b]| a > 0 && (r != g || g != b));
         let (on, off, paused) = (icon(Phase::On), icon(Phase::Off), icon(Phase::Paused));
         assert_eq!(SIZES.to_vec(), on.iter().map(|i| i.width as u32).collect::<Vec<_>>());
-        assert!(on.iter().chain(off).chain(paused).all(|i| i.width == i.height && i.data.len() == (i.width * i.height * 4) as usize));
+        assert!(
+            on.iter()
+                .chain(off)
+                .chain(paused)
+                .all(|i| i.width == i.height && i.data.len() == (i.width * i.height * 4) as usize)
+        );
         assert!(on.iter().all(coloured));
         assert!(!off.iter().any(coloured));
         assert_eq!(off.as_ptr(), icon(Phase::Connecting).as_ptr());
@@ -405,11 +498,22 @@ mod tests {
         // ksni joins the bus DBUS_SESSION_BUS_ADDRESS names: the test runs again in a process with a bus of its own.
         if std::env::var_os("UNBRAID_TRAY_BUS").is_none() {
             let exe = std::env::current_exe().unwrap();
-            let Ok(out) = std::process::Command::new("dbus-run-session").arg("--").arg(exe).args(["--exact", "tray::tests::private_bus_round_trip"]).env("UNBRAID_TRAY_BUS", "1").output() else {
+            let Ok(out) = std::process::Command::new("dbus-run-session")
+                .arg("--")
+                .arg(exe)
+                .args(["--exact", "tray::tests::private_bus_round_trip"])
+                .env("UNBRAID_TRAY_BUS", "1")
+                .output()
+            else {
                 eprintln!("skipped: no dbus-run-session");
                 return;
             };
-            assert!(out.status.success(), "{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+            assert!(
+                out.status.success(),
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
             return;
         }
         tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap().block_on(round_trip());
@@ -422,7 +526,9 @@ mod tests {
         if let Variant::Structure(s) = v
             && let [Variant::I32(id), Variant::Dict(props), Variant::Array(children)] = s.fields()
         {
-            if let Some(label) = props.iter().find_map(|(k, v)| matches!(k, Variant::Str(k) if k.as_str() == "label").then(|| v.downcast_ref::<String>().ok()).flatten()) {
+            if let Some(label) = props.iter().find_map(|(k, v)| {
+                matches!(k, Variant::Str(k) if k.as_str() == "label").then(|| v.downcast_ref::<String>().ok()).flatten()
+            }) {
                 out.push((*id, label));
             }
             children.inner().iter().for_each(|c| entries(c, out));
@@ -447,7 +553,9 @@ mod tests {
         tokio::spawn(async move {
             while let Some(Ok(m)) = calls.next().await {
                 let h = m.header();
-                if h.message_type() == Kind::MethodCall && h.member().is_some_and(|n| n.as_str() == "RegisterStatusNotifierItem") {
+                if h.message_type() == Kind::MethodCall
+                    && h.member().is_some_and(|n| n.as_str() == "RegisterStatusNotifierItem")
+                {
                     watcher.reply(&h, &()).await.unwrap();
                     let _ = got.send(m.body().deserialize().unwrap());
                 }
@@ -464,27 +572,63 @@ mod tests {
 
         // A tray host's calls.
         let host = zbus::connection::Builder::session().build().await.unwrap();
-        async fn call<B: serde::Serialize + zbus::DynamicType>(host: &Connection, item: &str, path: &str, iface: &str, member: &str, body: &B) -> zbus::Message {
+        async fn call<B: serde::Serialize + zbus::DynamicType>(
+            host: &Connection,
+            item: &str,
+            path: &str,
+            iface: &str,
+            member: &str,
+            body: &B,
+        ) -> zbus::Message {
             host.call_method(Some(item), path, Some(iface), member, body).await.unwrap()
         }
         let prop = async |name: &str| -> OwnedVariant {
-            call(&host, &item, "/StatusNotifierItem", "org.freedesktop.DBus.Properties", "Get", &("org.kde.StatusNotifierItem", name)).await.body().deserialize().unwrap()
+            call(
+                &host,
+                &item,
+                "/StatusNotifierItem",
+                "org.freedesktop.DBus.Properties",
+                "Get",
+                &("org.kde.StatusNotifierItem", name),
+            )
+            .await
+            .body()
+            .deserialize()
+            .unwrap()
         };
         assert_eq!("Unbraid by TheOlympus", String::try_from(prop("Title").await).unwrap());
         assert_eq!("/MenuBar", zbus::OwnedObjectPath::try_from(prop("Menu").await).unwrap().as_str());
         // Every entry's id and label, from the layout as a host reads it ("Work_2" doubles its underscore: one alone
         // would mark an access key).
         let labels = async || -> Vec<(i32, String)> {
-            let m = call(&host, &item, "/MenuBar", "com.canonical.dbusmenu", "GetLayout", &(0i32, -1i32, Vec::<&str>::new())).await;
+            let m = call(
+                &host,
+                &item,
+                "/MenuBar",
+                "com.canonical.dbusmenu",
+                "GetLayout",
+                &(0i32, -1i32, Vec::<&str>::new()),
+            )
+            .await;
             let body = m.body();
             let layout: Structure = body.deserialize().unwrap();
             let mut out = vec![];
             entries(&layout.fields()[1], &mut out);
             out
         };
-        let id = async |label: &str| labels().await.into_iter().find(|(_, l)| l == label).unwrap_or_else(|| panic!("{label}")).0;
+        let id = async |label: &str| {
+            labels().await.into_iter().find(|(_, l)| l == label).unwrap_or_else(|| panic!("{label}")).0
+        };
         let click = async |id: i32| {
-            call(&host, &item, "/MenuBar", "com.canonical.dbusmenu", "Event", &(id, "clicked", Variant::from(0i32), 0u32)).await;
+            call(
+                &host,
+                &item,
+                "/MenuBar",
+                "com.canonical.dbusmenu",
+                "Event",
+                &(id, "clicked", Variant::from(0i32), 0u32),
+            )
+            .await;
         };
         click(id("15 minutes").await).await;
         assert_eq!(Some(Action::Pause(15)), clicks.recv().await);
@@ -504,7 +648,12 @@ mod tests {
         };
         assert_eq!("unbraid · NL default  ·  US 1", tooltip().await);
         let connected = prop("IconPixmap").await;
-        tray.show(State { phase: Phase::Paused, summary: "Paused until 14:30".into(), paused_until: now_ms() + 5 * 60_000, ..on() });
+        tray.show(State {
+            phase: Phase::Paused,
+            summary: "Paused until 14:30".into(),
+            paused_until: now_ms() + 5 * 60_000,
+            ..on()
+        });
         let mut shown = vec![];
         for _ in 0..50 {
             shown = labels().await.into_iter().map(|(_, l)| l).collect();
@@ -513,7 +662,10 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        assert!(shown.contains(&"Paused · 5 min left".to_string()) && !shown.contains(&"15 minutes".to_string()), "{shown:?}");
+        assert!(
+            shown.contains(&"Paused · 5 min left".to_string()) && !shown.contains(&"15 minutes".to_string()),
+            "{shown:?}"
+        );
         assert_eq!("unbraid · Paused until 14:30", tooltip().await);
         assert_ne!(connected, prop("IconPixmap").await);
         click(id("Resume now").await).await;

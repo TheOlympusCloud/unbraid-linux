@@ -64,14 +64,26 @@ fn cached(key: &str) -> Option<DesktopApp> {
 pub fn data_dirs() -> Vec<PathBuf> {
     let home = paths::home().to_string_lossy();
     let mut all = vec![env("XDG_DATA_HOME").unwrap_or_else(|| format!("{home}/.local/share"))];
-    all.extend(env("XDG_DATA_DIRS").unwrap_or_else(|| "/usr/local/share:/usr/share".into()).split(':').map(String::from));
-    all.extend([format!("{home}/.local/share/flatpak/exports/share"), "/var/lib/flatpak/exports/share".into(), "/var/lib/snapd/desktop".into()]);
+    all.extend(
+        env("XDG_DATA_DIRS").unwrap_or_else(|| "/usr/local/share:/usr/share".into()).split(':').map(String::from),
+    );
+    all.extend([
+        format!("{home}/.local/share/flatpak/exports/share"),
+        "/var/lib/flatpak/exports/share".into(),
+        "/var/lib/snapd/desktop".into(),
+    ]);
     all.into_iter().filter(|d| !d.is_empty()).collect::<IndexSet<_>>().into_iter().map(PathBuf::from).collect()
 }
 
 pub fn search_path() -> Vec<PathBuf> {
     let path = env("PATH").unwrap_or_default();
-    path.split(':').chain(["/usr/local/bin", "/usr/bin", "/bin", "/usr/games", "/snap/bin"]).filter(|d| !d.is_empty()).collect::<IndexSet<_>>().into_iter().map(PathBuf::from).collect()
+    path.split(':')
+        .chain(["/usr/local/bin", "/usr/bin", "/bin", "/usr/games", "/snap/bin"])
+        .filter(|d| !d.is_empty())
+        .collect::<IndexSet<_>>()
+        .into_iter()
+        .map(PathBuf::from)
+        .collect()
 }
 
 pub fn flatpak_installs() -> Vec<PathBuf> {
@@ -138,7 +150,8 @@ pub(crate) fn share_routes(apps: Vec<DesktopApp>) -> Vec<DesktopApp> {
         let mut group = vec![left.remove(0)];
         let mut i = 0;
         while i < group.len() {
-            let (joined, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut left).into_iter().partition(|a| overlap(&group[i].matchers, &a.matchers));
+            let (joined, rest): (Vec<_>, Vec<_>) =
+                std::mem::take(&mut left).into_iter().partition(|a| overlap(&group[i].matchers, &a.matchers));
             left = rest;
             group.extend(joined);
             i += 1;
@@ -149,8 +162,11 @@ pub(crate) fn share_routes(apps: Vec<DesktopApp>) -> Vec<DesktopApp> {
         let mut order: Vec<&DesktopApp> = group.iter().collect();
         order.sort_by_cached_key(|a| (a.system, a.argc, a.label.to_lowercase(), a.key.clone()));
         let keys: Vec<String> = order.iter().map(|a| a.key.clone()).collect();
-        let distinct = |f: fn(&Matchers) -> &Vec<String>| group.iter().flat_map(|a| f(&a.matchers)).cloned().collect::<IndexSet<_>>().into_iter().collect();
-        let all = Matchers { paths: distinct(|m| &m.paths), dirs: distinct(|m| &m.dirs), names: distinct(|m| &m.names) };
+        let distinct = |f: fn(&Matchers) -> &Vec<String>| {
+            group.iter().flat_map(|a| f(&a.matchers)).cloned().collect::<IndexSet<_>>().into_iter().collect()
+        };
+        let all =
+            Matchers { paths: distinct(|m| &m.paths), dirs: distinct(|m| &m.dirs), names: distinct(|m| &m.names) };
         for a in group {
             out.insert(a.key.clone(), DesktopApp { matchers: all.clone(), group: keys.clone(), ..a });
         }
@@ -160,7 +176,9 @@ pub(crate) fn share_routes(apps: Vec<DesktopApp>) -> Vec<DesktopApp> {
 
 /// Whether one process could match both `a` and `b`. A name is a program file's name; one in a matched folder counts too.
 fn overlap(a: &Matchers, b: &Matchers) -> bool {
-    let in_dirs = |n: &str, m: &Matchers| m.dirs.iter().any(|d| Path::new(d).join(n).is_file() || Path::new(d).join("bin").join(n).is_file());
+    let in_dirs = |n: &str, m: &Matchers| {
+        m.dirs.iter().any(|d| Path::new(d).join(n).is_file() || Path::new(d).join("bin").join(n).is_file())
+    };
     a.paths.iter().any(|p| matches(b, p))
         || b.paths.iter().any(|p| matches(a, p))
         || a.dirs.iter().any(|d| b.dirs.iter().any(|e| e.starts_with(d.as_str()) || d.starts_with(e.as_str())))
@@ -186,8 +204,14 @@ pub fn matchers(key: &str, routed: &[&str]) -> Matchers {
     }
     // An app installed since the last scan is found by reading the entries again, at most every 10 s (an uninstalled one never is).
     let fresh = cache().at.is_some_and(|at| at.elapsed() < Duration::from_secs(10));
-    let Some(app) = cached(key).or_else(|| if fresh { None } else { scan().into_iter().find(|a| a.key == key) }) else { return Matchers::default() };
-    if app.group.is_empty() || app.group.iter().find(|k| routed.contains(&k.as_str())).is_some_and(|k| k == key) { app.matchers } else { Matchers::default() }
+    let Some(app) = cached(key).or_else(|| if fresh { None } else { scan().into_iter().find(|a| a.key == key) }) else {
+        return Matchers::default();
+    };
+    if app.group.is_empty() || app.group.iter().find(|k| routed.contains(&k.as_str())).is_some_and(|k| k == key) {
+        app.matchers
+    } else {
+        Matchers::default()
+    }
 }
 
 /// The program `key` runs as, to show or copy: itself for a program, an entry's first program file.
@@ -208,17 +232,29 @@ pub fn key_of(process_path: &str, routed: &[&str]) -> String {
     if let Some(k) = routed.iter().find(|k| matches(&matchers(k, routed), process_path)) {
         return k.to_string();
     }
-    let owner = cache().apps.iter().find(|a| matches(&a.matchers, process_path)).map(|a| a.group.first().unwrap_or(&a.key).clone());
+    let owner = cache()
+        .apps
+        .iter()
+        .find(|a| matches(&a.matchers, process_path))
+        .map(|a| a.group.first().unwrap_or(&a.key).clone());
     owner.unwrap_or_else(|| process_path.into())
 }
 
 /// What the engine does with `m` ([`crate::linux_pass`]): an exact path, a folder prefix or a program name.
 pub fn matches(m: &Matchers, path: &str) -> bool {
-    m.paths.iter().any(|p| p == path) || m.dirs.iter().any(|d| path.starts_with(d.as_str())) || m.names.contains(&name(Path::new(path)))
+    m.paths.iter().any(|p| p == path)
+        || m.dirs.iter().any(|d| path.starts_with(d.as_str()))
+        || m.names.contains(&name(Path::new(path)))
 }
 
 /// A desktop entry's app, or none for one that isn't a launchable application.
-pub(crate) fn entry(id: &str, text: &str, dirs: &[PathBuf], path: &[PathBuf], installs: &[PathBuf]) -> Option<DesktopApp> {
+pub(crate) fn entry(
+    id: &str,
+    text: &str,
+    dirs: &[PathBuf],
+    path: &[PathBuf],
+    installs: &[PathBuf],
+) -> Option<DesktopApp> {
     let e = parse(text);
     let get = |k: &str| e.get(k).map(String::as_str);
     if get("Type") != Some("Application") || get("Hidden") == Some("true") || id == "unbraid" {
@@ -240,7 +276,10 @@ pub(crate) fn entry(id: &str, text: &str, dirs: &[PathBuf], path: &[PathBuf], in
     });
     let m = match &flatpak {
         None => resolve(&exec, path),
-        Some(id) => Matchers { names: flatpak_names(id, exec.iter().find_map(|a| a.strip_prefix("--command=")), installs), ..Matchers::default() },
+        Some(id) => Matchers {
+            names: flatpak_names(id, exec.iter().find_map(|a| a.strip_prefix("--command=")), installs),
+            ..Matchers::default()
+        },
     };
     let kind = if flatpak.is_some() {
         "Flatpak"
@@ -250,7 +289,16 @@ pub(crate) fn entry(id: &str, text: &str, dirs: &[PathBuf], path: &[PathBuf], in
         "App"
     };
     let icon = get("Icon").and_then(|i| icon(i, dirs));
-    Some(DesktopApp { key: id.into(), label: get("Name").unwrap_or(id).into(), system: get("NoDisplay") == Some("true"), icon, matchers: m, group: vec![], argc: exec.len(), kind })
+    Some(DesktopApp {
+        key: id.into(),
+        label: get("Name").unwrap_or(id).into(),
+        system: get("NoDisplay") == Some("true"),
+        icon,
+        matchers: m,
+        group: vec![],
+        argc: exec.len(),
+        kind,
+    })
 }
 
 /// The [Desktop Entry] group's keys (unlocalized: the app is English only).
@@ -323,7 +371,8 @@ pub(crate) fn resolve(argv: &[String], path: &[PathBuf]) -> Matchers {
     if wrapper(Path::new(prog)) || real.as_deref().is_some_and(wrapper) {
         // firejail's links (firecfg): /usr/local/bin/firefox runs the next firefox on the PATH, in its sandbox.
         if let Some(found) = found.as_ref().filter(|f| !wrapper(f)) {
-            let after: Vec<PathBuf> = path.iter().skip_while(|d| Some(d.as_path()) != found.parent()).skip(1).cloned().collect();
+            let after: Vec<PathBuf> =
+                path.iter().skip_while(|d| Some(d.as_path()) != found.parent()).skip(1).cloned().collect();
             return resolve(&[&[name(found)][..], &argv[1..]].concat(), &after);
         }
         // "env A=1 prog", "nice -n 5 prog", "prime-run prog": the program they start; none for "gtk-launch app.desktop".
@@ -357,7 +406,13 @@ pub(crate) fn resolve(argv: &[String], path: &[PathBuf]) -> Matchers {
     let own = dir.filter(|d| holds_programs(Path::new(d)));
     Matchers {
         paths: targets.iter().map(|t| t.to_string_lossy().into_owned()).collect(),
-        dirs: targets.iter().filter_map(|t| install_dir(t.parent())).chain(own).collect::<IndexSet<_>>().into_iter().collect(),
+        dirs: targets
+            .iter()
+            .filter_map(|t| install_dir(t.parent()))
+            .chain(own)
+            .collect::<IndexSet<_>>()
+            .into_iter()
+            .collect(),
         names: vec![],
     }
 }
@@ -373,23 +428,37 @@ fn program(f: &Path) -> Matchers {
     if runtime(f) || wrapper(f) || app_image(f) {
         return Matchers::default();
     }
-    Matchers { paths: vec![f.to_string_lossy().into_owned()], dirs: install_dir(f.parent()).into_iter().collect(), names: vec![] }
+    Matchers {
+        paths: vec![f.to_string_lossy().into_owned()],
+        dirs: install_dir(f.parent()).into_iter().collect(),
+        names: vec![],
+    }
 }
 
 /// Why the engine couldn't tell `f`'s traffic apart from other programs', or none for a program file it can.
 pub fn unroutable(f: &Path) -> Option<String> {
     let n = name(f);
-    let Some(real) = fs::canonicalize(f).ok().filter(|r| r.is_file()) else { return Some(format!("{n} isn't a program this computer can run.")) };
+    let Some(real) = fs::canonicalize(f).ok().filter(|r| r.is_file()) else {
+        return Some(format!("{n} isn't a program this computer can run."));
+    };
     if app_image(&real) {
-        Some(format!("{n} is an AppImage: its programs run from a new folder each time, so {APP} can't recognize them."))
+        Some(format!(
+            "{n} is an AppImage: its programs run from a new folder each time, so {APP} can't recognize them."
+        ))
     } else if head(&real, 2) == b"MZ" {
-        Some(format!("{n} is a Windows program: Wine runs it, as it runs every other one, so {APP} can't tell them apart."))
+        Some(format!(
+            "{n} is a Windows program: Wine runs it, as it runs every other one, so {APP} can't tell them apart."
+        ))
     } else if !can_execute(&real) {
         Some(format!("{n} isn't a program this computer can run."))
     } else if !elf(&real) && script(&real).is_some() {
-        Some(format!("{n} is a script: its traffic comes from the interpreter that runs it, which other programs share."))
+        Some(format!(
+            "{n} is a script: its traffic comes from the interpreter that runs it, which other programs share."
+        ))
     } else if !elf(&real) {
-        Some(format!("{n} isn't a Linux program: what runs it runs other programs too, so {APP} can't tell them apart."))
+        Some(format!(
+            "{n} isn't a Linux program: what runs it runs other programs too, so {APP} can't tell them apart."
+        ))
     } else if runtime(f) || runtime(&real) {
         Some(format!("{n} runs other programs too: routing it would move them all."))
     } else if wrapper(f) || wrapper(&real) {
@@ -414,7 +483,8 @@ static RUNTIMES: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// Shells and awk: interpreters too, but also the tools launcher scripts are written in, so only their own files count.
-static SHELLS: LazyLock<Regex> = LazyLock::new(|| whole("(sh|bash|dash|zsh|fish|ksh|mksh|tcsh|csh|busybox|gawk|mawk|awk)[0-9.-]*"));
+static SHELLS: LazyLock<Regex> =
+    LazyLock::new(|| whole("(sh|bash|dash|zsh|fish|ksh|mksh|tcsh|csh|busybox|gawk|mawk|awk)[0-9.-]*"));
 
 /// Programs that start another one and carry none of its traffic: the environment, priority, GPU, game, sandbox and
 /// proxy wrappers, and launchers that hand the start to the desktop (gtk-launch, kioclient, xdg-open).
@@ -454,7 +524,8 @@ fn runs_shared(text: &str, dir: Option<&str>) -> bool {
     lines[1..].iter().filter(|l| !l.trim_start().starts_with('#')).flat_map(|l| SEPARATORS.split(l)).any(|cmd| {
         let Some(w) = WS.split(cmd.trim()).find(|w| !SKIP.contains(w) && !ASSIGN.is_match(w)) else { return false };
         let w = w.trim_matches(['"', '\'']);
-        RUNTIMES.is_match(&name(Path::new(w))) && (!w.contains('/') || w.starts_with('/') && dir.is_none_or(|d| !w.starts_with(d)))
+        RUNTIMES.is_match(&name(Path::new(w)))
+            && (!w.contains('/') || w.starts_with('/') && dir.is_none_or(|d| !w.starts_with(d)))
     })
 }
 
@@ -467,7 +538,12 @@ fn app_image(f: &Path) -> bool {
 /// A folder with an app's own programs in it (or in its bin/), which a launcher script there starts.
 fn holds_programs(d: &Path) -> bool {
     list(d).into_iter().chain(list(&d.join("bin"))).take(500).any(|f| {
-        f.is_file() && can_execute(&f) && !runtime(&f) && !wrapper(&f) && elf(&f) && fs::canonicalize(&f).is_ok_and(|c| program(&c) != Matchers::default())
+        f.is_file()
+            && can_execute(&f)
+            && !runtime(&f)
+            && !wrapper(&f)
+            && elf(&f)
+            && fs::canonicalize(&f).is_ok_and(|c| program(&c) != Matchers::default())
     })
 }
 
@@ -493,8 +569,9 @@ fn head(f: &Path, n: u64) -> Vec<u8> {
     out
 }
 
-static ASSIGNMENT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"(?m)^[ \t\n\x0B\x0C\r]*(?:export[ \t\n\x0B\x0C\r]+)?([A-Za-z_][A-Za-z0-9_]*)=["']?([A-Za-z0-9._+/${}-]*)["']?[ \t\n\x0B\x0C\r]*$"#).unwrap());
+static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?m)^[ \t\n\x0B\x0C\r]*(?:export[ \t\n\x0B\x0C\r]+)?([A-Za-z_][A-Za-z0-9_]*)=["']?([A-Za-z0-9._+/${}-]*)["']?[ \t\n\x0B\x0C\r]*$"#).unwrap()
+});
 static VARIABLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?").unwrap());
 
 /// A script's text (its first 64 KB), or none for a file that isn't one. Its plain assignments are put in where they
@@ -510,7 +587,9 @@ fn script(f: &Path) -> Option<String> {
     }
     let mut out = text;
     for _ in 0..3 {
-        out = VARIABLE.replace_all(&out, |m: &Captures| vars.get(&m[1]).cloned().unwrap_or_else(|| m[0].to_string())).into_owned();
+        out = VARIABLE
+            .replace_all(&out, |m: &Captures| vars.get(&m[1]).cloned().unwrap_or_else(|| m[0].to_string()))
+            .into_owned();
     }
     Some(out)
 }
@@ -540,8 +619,32 @@ pub(crate) fn install_dir(d: Option<&Path>) -> Option<String> {
 }
 
 const SHARED: [&str; 26] = [
-    "/", "/bin", "/sbin", "/lib", "/lib64", "/usr", "/usr/bin", "/usr/sbin", "/usr/games", "/usr/lib", "/usr/lib32", "/usr/lib64", "/usr/libexec", "/usr/share", "/usr/local", "/usr/local/bin",
-    "/usr/local/sbin", "/usr/local/games", "/usr/local/lib", "/usr/local/share", "/opt", "/snap", "/snap/bin", "/var/lib/flatpak/exports/bin", "/tmp", "/var/tmp",
+    "/",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/usr",
+    "/usr/bin",
+    "/usr/sbin",
+    "/usr/games",
+    "/usr/lib",
+    "/usr/lib32",
+    "/usr/lib64",
+    "/usr/libexec",
+    "/usr/share",
+    "/usr/local",
+    "/usr/local/bin",
+    "/usr/local/sbin",
+    "/usr/local/games",
+    "/usr/local/lib",
+    "/usr/local/share",
+    "/opt",
+    "/snap",
+    "/snap/bin",
+    "/var/lib/flatpak/exports/bin",
+    "/tmp",
+    "/var/tmp",
 ];
 const HOME_SHARED: [&str; 7] = ["bin", ".local", ".local/bin", ".local/share", "Applications", "Downloads", "Desktop"];
 static MULTIARCH: LazyLock<Regex> = LazyLock::new(|| whole("/usr/lib(32|64)?/[a-z0-9_]+-linux-gnu[a-z0-9_]*"));
@@ -566,13 +669,15 @@ fn shared(d: Option<&Path>) -> bool {
 /// for a command on an interpreter, nor for an app whose command isn't known (no guessing from its id).
 /// shortcut: matched by name only, so another program of that name matches too; match by app id once the engine can.
 fn flatpak_names(app_id: &str, command: Option<&str>, installs: &[PathBuf]) -> Vec<String> {
-    let app = installs.iter().map(|i| i.join(format!("app/{app_id}/current/active"))).find(|a| a.join("metadata").is_file());
+    let app =
+        installs.iter().map(|i| i.join(format!("app/{app_id}/current/active"))).find(|a| a.join("metadata").is_file());
     let from_metadata = || {
         let text = fs::read_to_string(app.as_ref()?.join("metadata")).ok()?;
         text.split(['\n', '\r']).find_map(|l| l.strip_prefix("command=")).map(|c| c.trim().to_string())
     };
     let Some(cmd) = command.map(String::from).or_else(from_metadata) else { return vec![] };
-    let own = vec![name(Path::new(&cmd))].into_iter().filter(|n| !runtime(Path::new(n)) && !wrapper(Path::new(n))).collect();
+    let own =
+        vec![name(Path::new(&cmd))].into_iter().filter(|n| !runtime(Path::new(n)) && !wrapper(Path::new(n))).collect();
     let Some(app) = app else { return own };
     let files = app.join("files");
     let host = |p: &str| files.join(file(p.strip_prefix("/app/").unwrap_or(p).trim_start_matches('/')));
@@ -582,7 +687,12 @@ fn flatpak_names(app_id: &str, command: Option<&str>, installs: &[PathBuf]) -> V
     if runs_shared(&text, None) {
         return vec![];
     }
-    let targets: IndexSet<String> = APP_FILE.find_iter(&text).map(|m| host(m.as_str())).filter(|t| t.is_file() && elf(t) && !runtime(t) && !wrapper(t) && !app_image(t)).map(|t| name(&t)).collect();
+    let targets: IndexSet<String> = APP_FILE
+        .find_iter(&text)
+        .map(|m| host(m.as_str()))
+        .filter(|t| t.is_file() && elf(t) && !runtime(t) && !wrapper(t) && !app_image(t))
+        .map(|t| name(&t))
+        .collect();
     if targets.is_empty() { own } else { targets.into_iter().collect() }
 }
 
@@ -593,7 +703,8 @@ pub(crate) fn icon(icon_name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     if icon_name.starts_with('/') {
         return Some(file(icon_name)).filter(|f| f.is_file());
     }
-    let roots: Vec<PathBuf> = std::iter::once(paths::home().join(".icons")).chain(dirs.iter().map(|d| d.join("icons"))).collect();
+    let roots: Vec<PathBuf> =
+        std::iter::once(paths::home().join(".icons")).chain(dirs.iter().map(|d| d.join("icons"))).collect();
     for size in ["128x128", "96x96", "64x64", "256x256", "48x48", "scalable", "512x512", "32x32"] {
         for root in &roots {
             for ext in ["png", "svg"] {
@@ -604,7 +715,9 @@ pub(crate) fn icon(icon_name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
             }
         }
     }
-    dirs.iter().flat_map(|d| ["png", "svg"].map(|ext| d.join("pixmaps").join(format!("{icon_name}.{ext}")))).find(|f| f.is_file())
+    dirs.iter()
+        .flat_map(|d| ["png", "svg"].map(|ext| d.join("pixmaps").join(format!("{icon_name}.{ext}"))))
+        .find(|f| f.is_file())
 }
 
 /// A path as given in an entry or a script, its doubled and final '/' dropped (as the files' paths were compared).
@@ -671,7 +784,9 @@ mod tests {
         f.to_path_buf()
     }
     fn desktop(exec: &str, extra: &str) -> String {
-        format!("[Desktop Entry]\nType=Application\nName=Thing\nName[de]=Ding\nExec={exec}\n{extra}\n[Desktop Action new]\nExec=other\n")
+        format!(
+            "[Desktop Entry]\nType=Application\nName=Thing\nName[de]=Ding\nExec={exec}\n{extra}\n[Desktop Action new]\nExec=other\n"
+        )
     }
     /// `entry` with the usual data folders and Flatpak installs.
     fn entry_on(id: &str, text: &str, path: &[PathBuf]) -> Option<DesktopApp> {
@@ -731,9 +846,16 @@ mod tests {
         let real = make_elf(&tmp.path().join("usr/lib/chromium/chromium"));
         let launcher = make_script(
             &tmp.path().join("usr/bin/chromium"),
-            &format!("APPNAME=chromium\nLIBDIR={}/usr/lib/$APPNAME\nexport CHROMIUM_FLAGS=\"\"\nexec $LIBDIR/$APPNAME $CHROMIUM_FLAGS \"$@\"", s(tmp.path())),
+            &format!(
+                "APPNAME=chromium\nLIBDIR={}/usr/lib/$APPNAME\nexport CHROMIUM_FLAGS=\"\"\nexec $LIBDIR/$APPNAME $CHROMIUM_FLAGS \"$@\"",
+                s(tmp.path())
+            ),
         );
-        let want = Matchers { paths: vec![canonical(&real)], dirs: vec![canonical(real.parent().unwrap()) + "/"], names: vec![] };
+        let want = Matchers {
+            paths: vec![canonical(&real)],
+            dirs: vec![canonical(real.parent().unwrap()) + "/"],
+            names: vec![],
+        };
         assert_eq!(want, entry_on("c", &desktop(&format!("{} %U", s(&launcher)), ""), &[]).unwrap().matchers);
     }
 
@@ -746,8 +868,18 @@ mod tests {
         make_link(&bin.join("python3"), &make_elf(&bin.join("python3.13")));
         make_link(&bin.join("sh"), &make_elf(&bin.join("dash")));
         executable(&bin.join("yt-dlp"), b"#!/usr/bin/env python3\nimport yt_dlp\n");
-        for (id, exec) in [("a", "python3 /opt/foo/foo.py"), ("b", "sh -c \"exec foo\""), ("c", "yt-dlp %U"), ("d", "env LANG=C python3 -m http.server"), ("e", "missing-program")] {
-            assert_eq!(Matchers::default(), entry_on(id, &desktop(exec, ""), std::slice::from_ref(&bin)).unwrap().matchers, "{exec}");
+        for (id, exec) in [
+            ("a", "python3 /opt/foo/foo.py"),
+            ("b", "sh -c \"exec foo\""),
+            ("c", "yt-dlp %U"),
+            ("d", "env LANG=C python3 -m http.server"),
+            ("e", "missing-program"),
+        ] {
+            assert_eq!(
+                Matchers::default(),
+                entry_on(id, &desktop(exec, ""), std::slice::from_ref(&bin)).unwrap().matchers,
+                "{exec}"
+            );
         }
     }
 
@@ -765,8 +897,12 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("opt/google/chrome");
         make_elf(&dir.join("chrome"));
-        let launcher = make_script(&dir.join("google-chrome"), "HERE=\"${0%/*}\"\nexec -a \"$0\" \"$HERE/chrome\" \"$@\"");
-        assert_eq!(dirs(&[canonical(&dir) + "/"]), entry_on("chrome", &desktop(&s(&launcher), ""), &[]).unwrap().matchers);
+        let launcher =
+            make_script(&dir.join("google-chrome"), "HERE=\"${0%/*}\"\nexec -a \"$0\" \"$HERE/chrome\" \"$@\"");
+        assert_eq!(
+            dirs(&[canonical(&dir) + "/"]),
+            entry_on("chrome", &desktop(&s(&launcher), ""), &[]).unwrap().matchers
+        );
         // A script folder with only scripts (and interpreters) in it holds nothing the engine could match.
         let py = tmp.path().join("opt/tool");
         make_elf(&py.join("bin/python3"));
@@ -818,9 +954,25 @@ mod tests {
             "qemu-x86_64-static ./arm-app",
             "ld-linux-x86-64.so.2 /opt/app/app",
         ] {
-            assert_eq!(Matchers::default(), entry_on("x", &desktop(exec, ""), std::slice::from_ref(&bin)).unwrap().matchers, "{exec}");
+            assert_eq!(
+                Matchers::default(),
+                entry_on("x", &desktop(exec, ""), std::slice::from_ref(&bin)).unwrap().matchers,
+                "{exec}"
+            );
         }
-        for n in ["wine", "gjs", "guile", "mono", "dotnet", "electron37", "R", "pwsh", "wine64-preloader", "qemu-x86_64-static", "ld-linux-x86-64.so.2"] {
+        for n in [
+            "wine",
+            "gjs",
+            "guile",
+            "mono",
+            "dotnet",
+            "electron37",
+            "R",
+            "pwsh",
+            "wine64-preloader",
+            "qemu-x86_64-static",
+            "ld-linux-x86-64.so.2",
+        ] {
             assert!(unroutable(&bin.join(n)).unwrap().contains("runs other programs too"), "{n}");
         }
     }
@@ -838,7 +990,12 @@ mod tests {
         make_script(&bin.join("xdg-open"), "exec /usr/bin/gio open \"$1\"");
         let path = [bin.clone()];
         let own = entry_on("g", &desktop(&game, ""), &path).unwrap().matchers;
-        for exec in [format!("nice -n 10 {game}"), format!("prime-run {game} %U"), format!("env A=1 nice {game}"), format!("firejail --private {game}")] {
+        for exec in [
+            format!("nice -n 10 {game}"),
+            format!("prime-run {game} %U"),
+            format!("env A=1 nice {game}"),
+            format!("firejail --private {game}"),
+        ] {
             assert_eq!(own, entry_on("x", &desktop(&exec, ""), &path).unwrap().matchers, "{exec}");
         }
         for exec in ["gtk-launch org.example.App", "xdg-open https://example.org", "nice"] {
@@ -866,14 +1023,19 @@ mod tests {
             format!("exec \"{python}\" main.py"),
             format!("PY={python}\nexec \"$PY\" main.py"),
         ] {
-            assert_eq!(Matchers::default(), entry_on("x", &desktop(&s(&make_script(&dir.join("run.sh"), &body)), ""), &[]).unwrap().matchers, "{body}");
+            assert_eq!(
+                Matchers::default(),
+                entry_on("x", &desktop(&s(&make_script(&dir.join("run.sh"), &body)), ""), &[]).unwrap().matchers,
+                "{body}"
+            );
         }
         let run_py = executable(&dir.join("run.py"), b"#!/usr/bin/env python3\nimport foo\n");
         assert_eq!(Matchers::default(), entry_on("p", &desktop(&s(&run_py), ""), &[]).unwrap().matchers);
         let app = tmp.path().join("opt/app");
         make_elf(&app.join("jre/bin/java"));
         make_elf(&app.join("bin/helper"));
-        let launcher = make_script(&app.join("app.sh"), &format!("exec {0}/jre/bin/java -jar {0}/app.jar \"$@\"", s(&app)));
+        let launcher =
+            make_script(&app.join("app.sh"), &format!("exec {0}/jre/bin/java -jar {0}/app.jar \"$@\"", s(&app)));
         assert_eq!(dirs(&[canonical(&app) + "/"]), entry_on("a", &desktop(&s(&launcher), ""), &[]).unwrap().matchers);
         // JetBrains' and VS Code's launchers start the app's own programs through variables, and stay routed.
         let idea = tmp.path().join("opt/idea");
@@ -885,7 +1047,10 @@ mod tests {
         assert_eq!(dirs(&[canonical(&idea) + "/"]), entry_on("i", &desktop(&s(&idea_sh), ""), &[]).unwrap().matchers);
         let code = tmp.path().join("opt/code");
         make_elf(&code.join("code"));
-        let code_sh = make_script(&code.join("bin/code"), "ELECTRON=\"$VSCODE_PATH/code\"\nELECTRON_RUN_AS_NODE=1 \"$ELECTRON\" \"$CLI\" --ms-enable-electron-run-as-node \"$@\"\nexit $?");
+        let code_sh = make_script(
+            &code.join("bin/code"),
+            "ELECTRON=\"$VSCODE_PATH/code\"\nELECTRON_RUN_AS_NODE=1 \"$ELECTRON\" \"$CLI\" --ms-enable-electron-run-as-node \"$@\"\nexit $?",
+        );
         assert_eq!(dirs(&[canonical(&code) + "/"]), entry_on("c", &desktop(&s(&code_sh), ""), &[]).unwrap().matchers);
     }
 
@@ -901,7 +1066,13 @@ mod tests {
         let other = make_elf(&tmp.path().join("opt/other/other"));
         let apps = tmp.path().join("share/applications");
         fs::create_dir_all(&apps).unwrap();
-        let add = |id: &str, label: &str, exec: &str, extra: &str| fs::write(apps.join(format!("{id}.desktop")), desktop(exec, extra).replace("Name=Thing", &format!("Name={label}"))).unwrap();
+        let add = |id: &str, label: &str, exec: &str, extra: &str| {
+            fs::write(
+                apps.join(format!("{id}.desktop")),
+                desktop(exec, extra).replace("Name=Thing", &format!("Name={label}")),
+            )
+            .unwrap()
+        };
         add("office", "Office", &format!("{office} %U"), "");
         add("writer", "Writer", &format!("{office} --writer %U"), "");
         add("calc", "Calc", &format!("{office} --calc %U"), "");
@@ -910,11 +1081,16 @@ mod tests {
         add("chrome-flatpak", "Chrome Flatpak", "flatpak run --command=chrome com.google.Chrome", "");
         add("other", "Other", &s(&other), "");
         add("helper", "Office helper", &format!("{office} --headless"), "NoDisplay=true");
-        let all: HashMap<String, DesktopApp> = scan_in(&[tmp.path().join("share")], &[], &[]).into_iter().map(|a| (a.key.clone(), a)).collect();
+        let all: HashMap<String, DesktopApp> =
+            scan_in(&[tmp.path().join("share")], &[], &[]).into_iter().map(|a| (a.key.clone(), a)).collect();
         assert_eq!(vec!["office", "calc", "writer", "helper"], all["writer"].group);
         assert_eq!(vec!["chrome", "chrome-yt", "chrome-flatpak"], all["chrome-flatpak"].group);
         assert!(all["other"].group.is_empty());
-        let both = Matchers { paths: vec![canonical(&chrome)], dirs: vec![canonical(chrome.parent().unwrap()) + "/"], names: vec!["chrome".into()] };
+        let both = Matchers {
+            paths: vec![canonical(&chrome)],
+            dirs: vec![canonical(chrome.parent().unwrap()) + "/"],
+            names: vec!["chrome".into()],
+        };
         assert_eq!(both, all["chrome-yt"].matchers);
         assert_eq!(vec![canonical(&other)], matchers("other", &[]).paths);
         // The first routed one is matched, the others never: the web app routed alone takes the browser with it.
@@ -941,9 +1117,15 @@ mod tests {
         let ff = make_elf(&tmp.path().join("usr/lib/firefox/firefox"));
         let apps = tmp.path().join("share/applications");
         fs::create_dir_all(&apps).unwrap();
-        fs::write(apps.join("firefox.desktop"), desktop(&format!("{} %u", s(&ff)), "").replace("Name=Thing", "Name=Firefox")).unwrap();
-        fs::write(apps.join("alacarte-made-1.desktop"), desktop(&s(&ff), "").replace("Name=Thing", "Name=Browser")).unwrap();
-        let all: HashMap<String, DesktopApp> = scan_in(&[tmp.path().join("share")], &[], &[]).into_iter().map(|a| (a.key.clone(), a)).collect();
+        fs::write(
+            apps.join("firefox.desktop"),
+            desktop(&format!("{} %u", s(&ff)), "").replace("Name=Thing", "Name=Firefox"),
+        )
+        .unwrap();
+        fs::write(apps.join("alacarte-made-1.desktop"), desktop(&s(&ff), "").replace("Name=Thing", "Name=Browser"))
+            .unwrap();
+        let all: HashMap<String, DesktopApp> =
+            scan_in(&[tmp.path().join("share")], &[], &[]).into_iter().map(|a| (a.key.clone(), a)).collect();
         assert_eq!(vec!["alacarte-made-1", "firefox"], all["firefox"].group);
         assert_eq!(vec![canonical(&ff)], matchers("firefox", &["firefox"]).paths);
         assert_eq!(Matchers::default(), matchers("alacarte-made-1", &["firefox"]));
@@ -972,7 +1154,18 @@ mod tests {
         make_script(&files.join("bin/jtool"), "exec /app/jre/bin/java -jar /app/jtool.jar");
         make_elf(&files.join("jre/bin/java"));
         make_elf(&app("org.telegram.desktop", "telegram-desktop").join("bin/telegram-desktop"));
-        let names = |id: &str, extra: &str| entry("x", &desktop(&format!("/usr/bin/flatpak run {extra}{id}"), &format!("X-Flatpak={id}")), &data_dirs(), &[], std::slice::from_ref(&inst)).unwrap().matchers.names;
+        let names = |id: &str, extra: &str| {
+            entry(
+                "x",
+                &desktop(&format!("/usr/bin/flatpak run {extra}{id}"), &format!("X-Flatpak={id}")),
+                &data_dirs(),
+                &[],
+                std::slice::from_ref(&inst),
+            )
+            .unwrap()
+            .matchers
+            .names
+        };
         assert_eq!(vec!["Discord"], names("com.discordapp.Discord", ""));
         assert!(names("org.example.Tool", "").is_empty());
         assert!(names("org.example.Java", "").is_empty());
@@ -984,10 +1177,22 @@ mod tests {
 
     #[test]
     fn snap_and_flatpak() {
-        let spotify = desktop("env BAMF_DESKTOP_FILE_HINT=/var/lib/snapd/desktop/applications/spotify_spotify.desktop /snap/bin/spotify %U", "");
-        assert_eq!(dirs(&["/snap/spotify/".into()]), entry("s", &spotify, &data_dirs(), &search_path(), &flatpak_installs()).unwrap().matchers);
-        let firefox = desktop("/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=firefox --file-forwarding org.mozilla.firefox @@u %u @@", "");
-        assert_eq!(Matchers { names: vec!["firefox".into()], ..Matchers::default() }, entry("f", &firefox, &data_dirs(), &search_path(), &[]).unwrap().matchers);
+        let spotify = desktop(
+            "env BAMF_DESKTOP_FILE_HINT=/var/lib/snapd/desktop/applications/spotify_spotify.desktop /snap/bin/spotify %U",
+            "",
+        );
+        assert_eq!(
+            dirs(&["/snap/spotify/".into()]),
+            entry("s", &spotify, &data_dirs(), &search_path(), &flatpak_installs()).unwrap().matchers
+        );
+        let firefox = desktop(
+            "/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=firefox --file-forwarding org.mozilla.firefox @@u %u @@",
+            "",
+        );
+        assert_eq!(
+            Matchers { names: vec!["firefox".into()], ..Matchers::default() },
+            entry("f", &firefox, &data_dirs(), &search_path(), &[]).unwrap().matchers
+        );
     }
 
     #[test]
@@ -1004,7 +1209,9 @@ mod tests {
     #[test]
     fn shared_folders_are_never_matched_whole() {
         let local_bin = format!("{}/.local/bin", paths::home().to_string_lossy());
-        for d in ["/usr/bin", "/usr/lib", "/usr/lib/x86_64-linux-gnu", "/opt", "/usr/share", "/snap/bin", "/tmp", &local_bin] {
+        for d in
+            ["/usr/bin", "/usr/lib", "/usr/lib/x86_64-linux-gnu", "/opt", "/usr/share", "/snap/bin", "/tmp", &local_bin]
+        {
             assert_eq!(None, install_dir(Some(Path::new(d))), "{d}");
         }
         assert_eq!(Some("/opt/spotify/".to_string()), install_dir(Some(Path::new("/opt/spotify"))));
@@ -1019,7 +1226,10 @@ mod tests {
         assert_eq!("/usr/bin/wget", key_of("/usr/bin/wget", &["/usr/bin/wget"]));
         assert_eq!("?", key_of("", &[]));
         assert!(matches(&dirs(&["/opt/game/".into()]), "/opt/game/lib/helper"));
-        assert!(matches(&Matchers { names: vec!["firefox".into()], ..Matchers::default() }, "/app/lib/firefox/firefox"));
+        assert!(matches(
+            &Matchers { names: vec!["firefox".into()], ..Matchers::default() },
+            "/app/lib/firefox/firefox"
+        ));
     }
 
     #[test]
@@ -1033,7 +1243,14 @@ mod tests {
         fs::write(hi.join("a.desktop"), desktop("/bin/true", "").replace("Name=Thing", "Name=High")).unwrap();
         fs::write(lo.join("sub-a.desktop"), desktop("/bin/true", "").replace("Name=Thing", "Name=Low")).unwrap();
         fs::write(lo.join("b.desktop"), desktop("/bin/true", "").replace("Name=Thing", "Name=Beta")).unwrap();
-        let apps = scan_in(&[tmp.path().join("hi"), tmp.path().join("lo"), tmp.path().join("missing")], &[], &flatpak_installs());
-        assert_eq!(vec![("b", "Beta"), ("sub-a", "High")], apps.iter().map(|a| (a.key.as_str(), a.label.as_str())).collect::<Vec<_>>());
+        let apps = scan_in(
+            &[tmp.path().join("hi"), tmp.path().join("lo"), tmp.path().join("missing")],
+            &[],
+            &flatpak_installs(),
+        );
+        assert_eq!(
+            vec![("b", "Beta"), ("sub-a", "High")],
+            apps.iter().map(|a| (a.key.as_str(), a.label.as_str())).collect::<Vec<_>>()
+        );
     }
 }

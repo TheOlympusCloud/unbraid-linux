@@ -1,6 +1,6 @@
 //! Signing in: the first run's card, or Add provider beside the sidebar.
 
-use super::{sync, AppWindow, FormField, FormView, Other, OtherRow, ProviderRow, SignInPage, Win, list, text, with};
+use super::{AppWindow, FormField, FormView, Other, OtherRow, ProviderRow, SignInPage, Win, list, sync, text, with};
 use crate::app;
 use crate::desktop;
 use crate::ui::sign_in::{self as logic, form_key};
@@ -19,7 +19,13 @@ pub struct Glue {
 fn picture(png: &[u8]) -> slint::Image {
     image::load_from_memory(png)
         .map(|i| i.to_rgba8())
-        .map(|rgba| slint::Image::from_rgba8(slint::SharedPixelBuffer::clone_from_slice(rgba.as_raw(), rgba.width(), rgba.height())))
+        .map(|rgba| {
+            slint::Image::from_rgba8(slint::SharedPixelBuffer::clone_from_slice(
+                rgba.as_raw(),
+                rgba.width(),
+                rgba.height(),
+            ))
+        })
         .unwrap_or_default()
 }
 
@@ -121,7 +127,8 @@ pub(super) fn wire(w: &AppWindow) {
         with(|win| {
             let adding = win.s.borrow().adding;
             let ui = &win.ui;
-            let (accounts, forms, signing) = (ui.accounts().borrow().clone(), ui.forms.borrow().clone(), ui.signing.borrow().clone());
+            let (accounts, forms, signing) =
+                (ui.accounts().borrow().clone(), ui.forms.borrow().clone(), ui.signing.borrow().clone());
             let answers = logic::submit(&logic::Inputs {
                 adding,
                 accounts: &accounts,
@@ -179,7 +186,12 @@ pub(super) fn show(win: &Win, adding: bool) {
     page.set_closable(v.closable);
     page.set_notice(text(&v.notice));
     if old.is_none_or(|o| o.providers != v.providers) {
-        page.set_providers(list(v.providers.iter().map(|p| ProviderRow { id: text(&p.id), name: text(&p.name), fields: text(&p.fields) }).collect()));
+        page.set_providers(list(
+            v.providers
+                .iter()
+                .map(|p| ProviderRow { id: text(&p.id), name: text(&p.name), fields: text(&p.fields) })
+                .collect(),
+        ));
     }
     let other = |o: logic::Other| match o {
         logic::Other::File => Other::File,
@@ -187,7 +199,12 @@ pub(super) fn show(win: &Win, adding: bool) {
         logic::Other::Tailscale => Other::Tailscale,
     };
     if old.is_none_or(|o| o.others != v.others) {
-        page.set_others(list(v.others.iter().map(|o| OtherRow { other: other(o.other), title: text(&o.title), sub: text(&o.sub) }).collect()));
+        page.set_others(list(
+            v.others
+                .iter()
+                .map(|o| OtherRow { other: other(o.other), title: text(&o.title), sub: text(&o.sub) })
+                .collect(),
+        ));
     }
     page.set_import_error(text(&v.import_error));
     let f = &v.form;
@@ -208,4 +225,3 @@ pub(super) fn show(win: &Win, adding: bool) {
     });
     g.last = Some(v);
 }
-

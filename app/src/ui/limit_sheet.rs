@@ -22,7 +22,10 @@ mod tests {
     #[test]
     fn question_and_offer() {
         let text = crate::limits::warning("NordVPN", 10, "connection", 11);
-        assert_eq!(LimitSheetView { text: text.clone(), share: "Use nl1256 for both routes".into() }, view(&text, Some("nl1256")));
+        assert_eq!(
+            LimitSheetView { text: text.clone(), share: "Use nl1256 for both routes".into() },
+            view(&text, Some("nl1256"))
+        );
         assert_eq!("", view(&text, None).share);
     }
 }

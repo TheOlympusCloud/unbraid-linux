@@ -1,8 +1,8 @@
 //! Routes, the profiles page inside it, and the connection-limit sheet over any page.
 
 use super::{
-    APPS, Act, AppMark, AppWindow, ExitLine, ExitRow, HomeRow, LimitSheetPage, ProfileRow, ProfileSheetView, ProfilesPage, RouteAction, RouteCard,
-    RoutesPage, Sheet, UseBarView, Win, list, phase, sync, text, with,
+    APPS, Act, AppMark, AppWindow, ExitLine, ExitRow, HomeRow, LimitSheetPage, ProfileRow, ProfileSheetView,
+    ProfilesPage, RouteAction, RouteCard, RoutesPage, Sheet, UseBarView, Win, list, phase, sync, text, with,
 };
 use crate::model::Setup;
 use crate::ui::{limit_sheet, profiles as plogic, routes as logic};
@@ -46,7 +46,12 @@ fn action(a: &logic::RouteAction) -> RouteAction {
 }
 
 fn sheet(s: &logic::Sheet) -> Sheet {
-    Sheet { title: text(&s.title), lead: text(&s.lead), actions: list(s.actions.iter().map(action).collect()), note: text(&s.note) }
+    Sheet {
+        title: text(&s.title),
+        lead: text(&s.lead),
+        actions: list(s.actions.iter().map(action).collect()),
+        note: text(&s.note),
+    }
 }
 
 fn exit(e: &logic::ExitLine) -> ExitLine {
@@ -226,11 +231,19 @@ pub(super) fn show(win: &Win, setup: &Setup, vpn: &VpnState) {
     // Right after a sign-in a provider's new key may not reach all its servers for a minute: Routes says so.
     let setting_up: HashSet<String> = if on {
         let active = setup.active_routes();
-        providers::setting_up(now).into_iter().filter(|p| active.iter().any(|r| !r.imported() && r.loc.provider == *p)).collect()
+        providers::setting_up(now)
+            .into_iter()
+            .filter(|p| active.iter().any(|r| !r.imported() && r.loc.provider == *p))
+            .collect()
     } else {
         HashSet::new()
     };
-    let apps: Vec<logic::App> = ui.apps.borrow().iter().map(|a| logic::App { pkg: a.pkg.clone(), label: a.label.clone(), group: a.group.clone() }).collect();
+    let apps: Vec<logic::App> = ui
+        .apps
+        .borrow()
+        .iter()
+        .map(|a| logic::App { pkg: a.pkg.clone(), label: a.label.clone(), group: a.group.clone() })
+        .collect();
     let live = stats::live().borrow().clone();
     let viewing = ui.viewing.borrow().clone();
     let switching = vpn::profiles::switching().borrow().clone();
@@ -295,10 +308,28 @@ pub(super) fn show(win: &Win, setup: &Setup, vpn: &VpnState) {
     page.set_nord_note(v.nord_note);
     page.set_lit(v.lit);
     if old.is_none_or(|o| o.exits != v.exits) {
-        sync(&g.exits, v.exits.iter().map(|e| ExitRow { code: text(&e.code), hue: e.hue, name: text(&e.name), place: text(&e.place), speed: text(&e.speed), exit: exit(&e.exit) }).collect());
+        sync(
+            &g.exits,
+            v.exits
+                .iter()
+                .map(|e| ExitRow {
+                    code: text(&e.code),
+                    hue: e.hue,
+                    name: text(&e.name),
+                    place: text(&e.place),
+                    speed: text(&e.speed),
+                    exit: exit(&e.exit),
+                })
+                .collect(),
+        );
         page.set_exits(ModelRc::from(g.exits.clone()));
     }
-    page.set_home(v.home.as_ref().map(|h| HomeRow { sub: text(&h.sub), login_url: text(&h.login_url), lit: h.lit }).unwrap_or_default());
+    page.set_home(
+        v.home
+            .as_ref()
+            .map(|h| HomeRow { sub: text(&h.sub), login_url: text(&h.login_url), lit: h.lit })
+            .unwrap_or_default(),
+    );
     if old.is_none_or(|o| o.power != v.power) {
         page.set_power(sheet(&v.power));
     }
@@ -311,7 +342,17 @@ pub(super) fn show(win: &Win, setup: &Setup, vpn: &VpnState) {
         p.set_at_limit(pv.at_limit);
         p.set_full_note(text(&pv.full_note));
         p.set_profiles(list(
-            pv.rows.iter().map(|r| ProfileRow { name: text(&r.name), in_use: r.in_use, summary: text(&r.summary), code: text(&r.code), hue: r.hue, direct: r.direct }).collect(),
+            pv.rows
+                .iter()
+                .map(|r| ProfileRow {
+                    name: text(&r.name),
+                    in_use: r.in_use,
+                    summary: text(&r.summary),
+                    code: text(&r.code),
+                    hue: r.hue,
+                    direct: r.direct,
+                })
+                .collect(),
         ));
         g.profiles = Some(pv);
     }

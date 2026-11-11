@@ -22,7 +22,8 @@ impl Autostart {
         self.file.is_file()
             && fs::read_to_string(&self.file).is_ok_and(|text| {
                 let e = apps::parse(&text);
-                e.get("Hidden").map(String::as_str) != Some("true") && e.get("X-GNOME-Autostart-enabled").map(String::as_str) != Some("false")
+                e.get("Hidden").map(String::as_str) != Some("true")
+                    && e.get("X-GNOME-Autostart-enabled").map(String::as_str) != Some("false")
             })
     }
 
@@ -51,8 +52,17 @@ impl Autostart {
         if let Some(dir) = self.file.parent() {
             let _ = fs::create_dir_all(dir);
         }
-        let exec = format!("unbraid{}{}", if minimised { " --background" } else { "" }, if connect { " --connect" } else { "" });
-        fs::write(&self.file, format!("[Desktop Entry]\nType=Application\nName=unbraid\nComment=Starts unbraid at login\nExec={exec}\nIcon=unbraid\nNoDisplay=true\nX-GNOME-Autostart-enabled=true\n"))?;
+        let exec = format!(
+            "unbraid{}{}",
+            if minimised { " --background" } else { "" },
+            if connect { " --connect" } else { "" }
+        );
+        fs::write(
+            &self.file,
+            format!(
+                "[Desktop Entry]\nType=Application\nName=unbraid\nComment=Starts unbraid at login\nExec={exec}\nIcon=unbraid\nNoDisplay=true\nX-GNOME-Autostart-enabled=true\n"
+            ),
+        )?;
         Ok(())
     }
 }

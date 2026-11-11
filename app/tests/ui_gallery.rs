@@ -25,7 +25,9 @@ fn gallery_renders_in_both_themes() {
     headless();
     let dir = shots_dir();
     // (light, file, the theme's ground: Ink.ground)
-    for (light, file, ground) in [(false, "gallery-dark.png", [0x0f, 0x12, 0x14]), (true, "gallery-light.png", [0xf5, 0xf2, 0xee])] {
+    for (light, file, ground) in
+        [(false, "gallery-dark.png", [0x0f, 0x12, 0x14]), (true, "gallery-light.png", [0xf5, 0xf2, 0xee])]
+    {
         let gallery = Gallery::new().expect("create the gallery");
         gallery.set_light(light);
         let (width, height) = gallery_size(&gallery);

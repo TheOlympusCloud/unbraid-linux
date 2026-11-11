@@ -38,7 +38,9 @@ pub fn message(e: &(dyn std::error::Error + 'static), fallback: &str) -> String 
         Some(Error::Auth { .. } | Error::Fail(_) | Error::NoLongerOffered(_)) => own(),
         None if e.is::<serde_json::Error>() => fallback.into(),
         Some(Error::Invalid(_) | Error::State(_)) => own(),
-        Some(Error::Challenge(_) | Error::Status { .. } | Error::Io(_)) => "Couldn't reach the server. Check the connection.".into(),
+        Some(Error::Challenge(_) | Error::Status { .. } | Error::Io(_)) => {
+            "Couldn't reach the server. Check the connection.".into()
+        }
         None if e.is::<std::io::Error>() => "Couldn't reach the server. Check the connection.".into(),
         None => fallback.into(),
     }
@@ -68,7 +70,9 @@ mod tests {
 
     #[test]
     fn keys_and_config_fragments_are_removed() {
-        let raw = format!("decode config: {{\"type\":\"wireguard\",\"private_key\":\"{KEY}\",\"peers\":[{{\"public_key\":\"{KEY}\"}}]}} password=hunter2");
+        let raw = format!(
+            "decode config: {{\"type\":\"wireguard\",\"private_key\":\"{KEY}\",\"peers\":[{{\"public_key\":\"{KEY}\"}}]}} password=hunter2"
+        );
         let out = clean(&raw);
         assert!(!out.contains(KEY));
         assert!(!out.contains("hunter2"));
@@ -108,12 +112,23 @@ mod tests {
     #[test]
     fn message_chooses_a_fixed_text_for_unknown_classes() {
         assert_eq!("Sign in to Nord", message(&Error::Auth { message: "Sign in to Nord".into(), url: None }, "x"));
-        assert_eq!("Netherlands: de1 is unreachable", message(&Error::Fail("Netherlands: de1 is unreachable".into()), "x"));
-        assert_eq!("Invalid WireGuard key for Sweden", message(&Error::Invalid("Invalid WireGuard key for Sweden".into()), "x"));
-        let parse = <serde_json::Error as serde::de::Error>::custom(format!("Unexpected JSON token near \"private_key\":\"{KEY}\""));
+        assert_eq!(
+            "Netherlands: de1 is unreachable",
+            message(&Error::Fail("Netherlands: de1 is unreachable".into()), "x")
+        );
+        assert_eq!(
+            "Invalid WireGuard key for Sweden",
+            message(&Error::Invalid("Invalid WireGuard key for Sweden".into()), "x")
+        );
+        let parse = <serde_json::Error as serde::de::Error>::custom(format!(
+            "Unexpected JSON token near \"private_key\":\"{KEY}\""
+        ));
         assert_eq!("fallback", message(&parse, "fallback"));
         let other: Box<dyn std::error::Error + Send + Sync> = format!("private_key={KEY}").into();
         assert_eq!("fallback", message(&*other, "fallback"));
-        assert_eq!("Couldn't reach the server. Check the connection.", message(&Error::Io(format!("GET https://x/?token={KEY}")), "fallback"));
+        assert_eq!(
+            "Couldn't reach the server. Check the connection.",
+            message(&Error::Io(format!("GET https://x/?token={KEY}")), "fallback")
+        );
     }
 }

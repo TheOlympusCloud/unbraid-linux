@@ -21,7 +21,12 @@ use url::{Host, Url};
 
 const MAX_BODY: usize = 8 << 20;
 
-pub fn get(url: &str, headers: &[(&str, &str)], tls: Option<&RootCertStore>, verify_host: Option<&str>) -> Result<String> {
+pub fn get(
+    url: &str,
+    headers: &[(&str, &str)],
+    tls: Option<&RootCertStore>,
+    verify_host: Option<&str>,
+) -> Result<String> {
     call(Method::GET, url, headers, None, tls, verify_host)
 }
 
@@ -45,8 +50,12 @@ pub fn explain(e: &(dyn std::error::Error + 'static), provider: &str) -> String 
         Some(Error::Invalid(_) | Error::Auth { .. } | Error::Fail(_) | Error::NoLongerOffered(_)) => own(),
         // A JSON error is input that couldn't be used, like any other.
         None if e.is::<serde_json::Error>() => own(),
-        Some(Error::Status { code: 429 }) => format!("{provider} has had too many attempts. Wait a few minutes and try again"),
-        Some(Error::Status { code }) => format!("{provider} couldn't sign you in right now (error {code}). Try again later"),
+        Some(Error::Status { code: 429 }) => {
+            format!("{provider} has had too many attempts. Wait a few minutes and try again")
+        }
+        Some(Error::Status { code }) => {
+            format!("{provider} couldn't sign you in right now (error {code}). Try again later")
+        }
         Some(Error::Io(_) | Error::Challenge(_)) => format!("Couldn't reach {provider}. Check the connection."),
         None if e.is::<std::io::Error>() => format!("Couldn't reach {provider}. Check the connection."),
         _ => format!("Something went wrong signing in to {provider}. Try again"),
@@ -69,7 +78,9 @@ pub fn enc(s: &str) -> String {
 pub fn named(tls: Option<&RootCertStore>, verify_host: Option<&str>) -> Result<ClientConfig> {
     let roots = tls.map_or_else(|| SYSTEM.clone(), |r| Arc::new(r.clone()));
     // A name no certificate can hold fails like a handshake would.
-    let name = verify_host.map(|h| ServerName::try_from(h.to_string()).map_err(|_| Error::Io(format!("Invalid host name: {h}")))).transpose()?;
+    let name = verify_host
+        .map(|h| ServerName::try_from(h.to_string()).map_err(|_| Error::Io(format!("Invalid host name: {h}"))))
+        .transpose()?;
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let algs = provider.signature_verification_algorithms;
     Ok(ClientConfig::builder_with_provider(provider)
@@ -113,8 +124,9 @@ impl ServerCertVerifier for Named {
             None => server_name,
         };
         match verify_server_name(&cert, name) {
-            Err(rustls::Error::InvalidCertificate(CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. }))
-                if common_name(end_entity, name) => {}
+            Err(rustls::Error::InvalidCertificate(
+                CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. },
+            )) if common_name(end_entity, name) => {}
             r => r?,
         }
         Ok(ServerCertVerified::assertion())
@@ -346,12 +358,19 @@ mod tests {
         fn x(e: &(dyn std::error::Error + 'static)) -> String {
             explain(e, "Mullvad")
         }
-        assert_eq!("Mullvad has had too many attempts. Wait a few minutes and try again", x(&Error::Status { code: 429 }));
-        assert_eq!("Mullvad couldn't sign you in right now (error 503). Try again later", x(&Error::Status { code: 503 }));
+        assert_eq!(
+            "Mullvad has had too many attempts. Wait a few minutes and try again",
+            x(&Error::Status { code: 429 })
+        );
+        assert_eq!(
+            "Mullvad couldn't sign you in right now (error 503). Try again later",
+            x(&Error::Status { code: 503 })
+        );
         assert_eq!("Couldn't reach Mullvad. Check the connection.", x(&Error::Io("api.mullvad.net".into())));
         assert_eq!("Couldn't reach Mullvad. Check the connection.", x(&Error::Io("timeout".into())));
         assert_eq!("Sign-in was refused", x(&Error::Auth { message: "Sign-in was refused".into(), url: None }));
-        let parse = parsed("Mullvad", || serde_json::from_str::<HashMap<String, i32>>("{\"token\":\"secret-value\"}")).unwrap_err();
+        let parse = parsed("Mullvad", || serde_json::from_str::<HashMap<String, i32>>("{\"token\":\"secret-value\"}"))
+            .unwrap_err();
         assert_eq!("Unexpected reply from Mullvad. Try again later", x(&parse));
         let unknown: Box<dyn std::error::Error + Send + Sync> = "o[k] secret-value".into();
         assert_eq!("Something went wrong signing in to Mullvad. Try again", x(&*unknown));

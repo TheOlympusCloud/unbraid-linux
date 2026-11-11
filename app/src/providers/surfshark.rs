@@ -43,7 +43,8 @@ pub(crate) type Source<T> = Arc<dyn Fn() -> Result<T> + Send + Sync>;
 /// Host name → IPv4 addresses.
 type Book = IndexMap<String, Vec<String>>;
 
-static CATALOGUE: LazyLock<RwLock<Source<Vec<Entry>>>> = LazyLock::new(|| RwLock::new(Arc::new(|| catalog::fetch("surfshark", "wireguard"))));
+static CATALOGUE: LazyLock<RwLock<Source<Vec<Entry>>>> =
+    LazyLock::new(|| RwLock::new(Arc::new(|| catalog::fetch("surfshark", "wireguard"))));
 
 /// Where the addresses come from; another source is read afresh.
 #[cfg(test)]
@@ -55,7 +56,8 @@ pub(crate) fn set_catalogue(f: impl Fn() -> Result<Vec<Entry>> + Send + Sync + '
 }
 
 /// The last address list read, kept for when the catalogue can't be read.
-pub(crate) static ADDRESS_BOOK: LazyLock<RwLock<Snapshot>> = LazyLock::new(|| RwLock::new(Snapshot::file("addresses-surfshark.json")));
+pub(crate) static ADDRESS_BOOK: LazyLock<RwLock<Snapshot>> =
+    LazyLock::new(|| RwLock::new(Snapshot::file("addresses-surfshark.json")));
 
 struct Addresses {
     list: Option<Book>,
@@ -66,9 +68,11 @@ struct Addresses {
 static ADDRESSES: Mutex<Addresses> = Mutex::new(Addresses { list: None, at: 0, tried_at: 0 });
 
 /// The last list read from Surfshark's own API: its keys still apply when the API can't be reached.
-pub(crate) static SNAPSHOT: LazyLock<RwLock<Snapshot>> = LazyLock::new(|| RwLock::new(Snapshot::file("servers-surfshark.json")));
+pub(crate) static SNAPSHOT: LazyLock<RwLock<Snapshot>> =
+    LazyLock::new(|| RwLock::new(Snapshot::file("servers-surfshark.json")));
 
-pub(crate) static LIVE: LazyLock<RwLock<Source<String>>> = LazyLock::new(|| RwLock::new(Arc::new(|| http::get(API, &[], None, None))));
+pub(crate) static LIVE: LazyLock<RwLock<Source<String>>> =
+    LazyLock::new(|| RwLock::new(Arc::new(|| http::get(API, &[], None, None))));
 
 fn snapshot() -> Option<String> {
     SNAPSHOT.read().unwrap_or_else(PoisonError::into_inner).read()
@@ -88,7 +92,8 @@ pub(crate) fn addresses(now: i64) -> Result<Book> {
     }
     a.tried_at = now;
     let catalogue = CATALOGUE.read().unwrap_or_else(PoisonError::into_inner).clone();
-    let fresh = unless_io(catalogue())?.map(|all| literal(fallback(all).into_iter().map(|e| (e.hostname, e.ips)).collect()));
+    let fresh =
+        unless_io(catalogue())?.map(|all| literal(fallback(all).into_iter().map(|e| (e.hostname, e.ips)).collect()));
     match fresh.filter(|f| !f.is_empty()) {
         Some(fresh) => {
             if let Ok(text) = serde_json::to_string(&fresh) {
@@ -110,14 +115,21 @@ pub(crate) fn addresses(now: i64) -> Result<Book> {
 
 fn literal(m: Book) -> Book {
     let literal = |ip: &String| !ip.contains('/') && compiler::ipv4(ip).is_some();
-    m.into_iter().map(|(host, ips)| (host, ips.into_iter().filter(literal).collect::<Vec<_>>())).filter(|(_, ips)| !ips.is_empty()).collect()
+    m.into_iter()
+        .map(|(host, ips)| (host, ips.into_iter().filter(literal).collect::<Vec<_>>()))
+        .filter(|(_, ips)| !ips.is_empty())
+        .collect()
 }
 
 pub(crate) fn parse(body: &str) -> Result<Vec<Entry>> {
     let all: Vec<Cluster> = http::parsed("Surfshark", || serde_json::from_str(body))?;
     Ok(all
         .into_iter()
-        .filter(|c| !c.country.trim().is_empty() && !c.connection_name.trim().is_empty() && c.pub_key.as_deref().is_some_and(|k| KEY.is_match(k)))
+        .filter(|c| {
+            !c.country.trim().is_empty()
+                && !c.connection_name.trim().is_empty()
+                && c.pub_key.as_deref().is_some_and(|k| KEY.is_match(k))
+        })
         .map(|c| Entry {
             vpn: "wireguard".into(),
             country: Some(c.country),
@@ -147,7 +159,11 @@ impl Provider for Surfshark {
     }
 
     fn fields(&self) -> Vec<Field> {
-        vec![Field { hint: "Paste the whole file, or the private key".into(), file: true, ..Field::new("key", "WireGuard key or .conf") }]
+        vec![Field {
+            hint: "Paste the whole file, or the private key".into(),
+            file: true,
+            ..Field::new("key", "WireGuard key or .conf")
+        }]
     }
 
     fn help(&self) -> String {
@@ -204,7 +220,10 @@ impl KeyProvider for Surfshark {
     /// A saved or pinned key is reused only if Surfshark's own list (the last copy read) still has it, or it is the server
     /// key of the user's own downloaded .conf (it came from Surfshark too).
     fn trusts_key(&self, key: &str, a: &Account) -> bool {
-        a.public_key.as_deref() == Some(key) || snapshot().and_then(|s| parse(&s).ok()).is_some_and(|l| l.iter().any(|e| e.wgpubkey.as_deref() == Some(key)))
+        a.public_key.as_deref() == Some(key)
+            || snapshot()
+                .and_then(|s| parse(&s).ok())
+                .is_some_and(|l| l.iter().any(|e| e.wgpubkey.as_deref() == Some(key)))
     }
 
     fn entries(&self, _a: &Account) -> Result<Vec<Entry>> {
@@ -214,7 +233,10 @@ impl KeyProvider for Surfshark {
             SNAPSHOT.read().unwrap_or_else(PoisonError::into_inner).write(&body);
             return Ok(l);
         }
-        snapshot().and_then(|s| parse(&s).ok()).filter(|l| !l.is_empty()).ok_or_else(|| Error::Io("Surfshark's server list can't be reached right now".into()))
+        snapshot()
+            .and_then(|s| parse(&s).ok())
+            .filter(|l| !l.is_empty())
+            .ok_or_else(|| Error::Io("Surfshark's server list can't be reached right now".into()))
     }
 
     /// Each of the location's hosts once, with its catalogue addresses and Surfshark's own key; hosts without one are skipped.

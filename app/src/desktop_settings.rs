@@ -30,19 +30,23 @@ impl Theme {
 pub fn theme() -> &'static watch::Sender<Theme> {
     static THEME: LazyLock<watch::Sender<Theme>> = LazyLock::new(|| {
         let saved = prefs().map_or(0, |p| p.get_int("theme", 0));
-        watch::Sender::new(usize::try_from(saved).ok().and_then(|i| Theme::ENTRIES.get(i).copied()).unwrap_or(Theme::System))
+        watch::Sender::new(
+            usize::try_from(saved).ok().and_then(|i| Theme::ENTRIES.get(i).copied()).unwrap_or(Theme::System),
+        )
     });
     &THEME
 }
 
 /// Closing the window leaves unbraid in the tray; off, closing quits and the connection ends.
 pub fn close_to_tray() -> &'static watch::Sender<bool> {
-    static ON: LazyLock<watch::Sender<bool>> = LazyLock::new(|| watch::Sender::new(prefs().map(|p| p.get_boolean("close_to_tray", true)).unwrap_or(true)));
+    static ON: LazyLock<watch::Sender<bool>> =
+        LazyLock::new(|| watch::Sender::new(prefs().map(|p| p.get_boolean("close_to_tray", true)).unwrap_or(true)));
     &ON
 }
 
 pub fn remember_window() -> &'static watch::Sender<bool> {
-    static ON: LazyLock<watch::Sender<bool>> = LazyLock::new(|| watch::Sender::new(prefs().map(|p| p.get_boolean("remember_window", true)).unwrap_or(true)));
+    static ON: LazyLock<watch::Sender<bool>> =
+        LazyLock::new(|| watch::Sender::new(prefs().map(|p| p.get_boolean("remember_window", true)).unwrap_or(true)));
     &ON
 }
 
@@ -85,7 +89,13 @@ pub fn placement() -> Option<Placement> {
     if !*remember_window().borrow() || !p.contains("width") {
         return None;
     }
-    Some(Placement { x: p.get_int("x", 0), y: p.get_int("y", 0), width: p.get_int("width", 1280), height: p.get_int("height", 800), maximized: p.get_boolean("maximized", false) })
+    Some(Placement {
+        x: p.get_int("x", 0),
+        y: p.get_int("y", 0),
+        width: p.get_int("width", 1280),
+        height: p.get_int("height", 800),
+        maximized: p.get_boolean("maximized", false),
+    })
 }
 
 pub fn save(p: Placement) {
@@ -112,9 +122,20 @@ pub fn quits_when_hidden(visible: bool, was_on: bool, tray: bool) -> bool {
 
 /// The place to remember for a window at `x`, `y` (none until the desktop has placed it) and of this size: maximized
 /// keeps the size it had before, to come back to; full screen and a place not set yet aren't remembered.
-pub fn to_save(was: Option<Placement>, x: Option<i32>, y: Option<i32>, width: i32, height: i32, maximized: bool, floating: bool) -> Option<Placement> {
+pub fn to_save(
+    was: Option<Placement>,
+    x: Option<i32>,
+    y: Option<i32>,
+    width: i32,
+    height: i32,
+    maximized: bool,
+    floating: bool,
+) -> Option<Placement> {
     if maximized {
-        Some(Placement { maximized: true, ..was.unwrap_or(Placement { x: 0, y: 0, width: 1280, height: 800, maximized: false }) })
+        Some(Placement {
+            maximized: true,
+            ..was.unwrap_or(Placement { x: 0, y: 0, width: 1280, height: 800, maximized: false })
+        })
     } else if let (true, Some(x), Some(y)) = (floating, x, y) {
         Some(Placement { x, y, width, height, maximized: false })
     } else {
@@ -145,9 +166,14 @@ pub fn on_screen(p: Placement, screens: &[Rect]) -> bool {
 /// Whether two areas share some of their surface; an empty one shares none.
 fn overlaps(a: Rect, b: Rect) -> bool {
     let end = |at: i32, len: i32| i64::from(at) + i64::from(len);
-    a.width > 0 && a.height > 0 && b.width > 0 && b.height > 0
-        && end(a.x, a.width) > i64::from(b.x) && end(b.x, b.width) > i64::from(a.x)
-        && end(a.y, a.height) > i64::from(b.y) && end(b.y, b.height) > i64::from(a.y)
+    a.width > 0
+        && a.height > 0
+        && b.width > 0
+        && b.height > 0
+        && end(a.x, a.width) > i64::from(b.x)
+        && end(b.x, b.width) > i64::from(a.x)
+        && end(a.y, a.height) > i64::from(b.y)
+        && end(b.y, b.height) > i64::from(a.y)
 }
 
 #[cfg(test)]
@@ -172,9 +198,18 @@ mod tests {
     #[test]
     fn window_placement() {
         let was = Placement { x: 100, y: 80, width: 1100, height: 700, maximized: false };
-        assert_eq!(Some(Placement { x: 40, y: 30, width: 1280, height: 800, maximized: false }), to_save(Some(was), Some(40), Some(30), 1280, 800, false, true));
-        assert_eq!(Some(Placement { maximized: true, ..was }), to_save(Some(was), Some(0), Some(0), 1920, 1080, true, false));
-        assert_eq!(Some(Placement { x: 0, y: 0, width: 1280, height: 800, maximized: true }), to_save(None, Some(0), Some(0), 1920, 1080, true, false));
+        assert_eq!(
+            Some(Placement { x: 40, y: 30, width: 1280, height: 800, maximized: false }),
+            to_save(Some(was), Some(40), Some(30), 1280, 800, false, true)
+        );
+        assert_eq!(
+            Some(Placement { maximized: true, ..was }),
+            to_save(Some(was), Some(0), Some(0), 1920, 1080, true, false)
+        );
+        assert_eq!(
+            Some(Placement { x: 0, y: 0, width: 1280, height: 800, maximized: true }),
+            to_save(None, Some(0), Some(0), 1920, 1080, true, false)
+        );
         assert_eq!(None, to_save(Some(was), None, None, 1280, 800, false, true));
         assert_eq!(None, to_save(Some(was), Some(0), Some(0), 1920, 1080, false, false));
         // A place on a screen that has gone isn't used: the window opens where the desktop puts it.

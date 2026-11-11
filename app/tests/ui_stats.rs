@@ -75,7 +75,11 @@ fn part(p: &logic::Part) -> Part {
 
 /// A chart's parts in their colours: the page's ink for each hue, in the theme shown.
 fn columns(page: &StatsPage, v: &[Vec<logic::Part>]) -> ModelRc<ModelRc<ChartPart>> {
-    list(v.iter().map(|c| list(c.iter().map(|p| ChartPart { value: p.value, color: page.invoke_ink(p.hue) }).collect())).collect())
+    list(
+        v.iter()
+            .map(|c| list(c.iter().map(|p| ChartPart { value: p.value, color: page.invoke_ink(p.hue) }).collect()))
+            .collect(),
+    )
 }
 
 fn go_button(g: &logic::GoButton) -> GoButton {
@@ -87,7 +91,11 @@ fn gauge(g: &logic::Gauge) -> Gauge {
 }
 
 fn cards(v: &[logic::SpeedCard]) -> ModelRc<SpeedCard> {
-    list(v.iter().map(|c| SpeedCard { title: s(&c.title), value: s(&c.value), unit: s(&c.unit), active: c.active }).collect())
+    list(
+        v.iter()
+            .map(|c| SpeedCard { title: s(&c.title), value: s(&c.value), unit: s(&c.unit), active: c.active })
+            .collect(),
+    )
 }
 
 fn choices(v: &[logic::Choice]) -> ModelRc<Choice> {
@@ -127,18 +135,49 @@ fn speed_view(v: &logic::SpeedView) -> SpeedView {
             measuring: t.measuring,
             gauge: gauge(&t.gauge),
             exits: t.exits,
-            bars: list(t.bars.iter().map(|b| LegBar { code: s(&b.code), hue: b.hue, frac: b.frac, now: s(&b.now), stopped: b.stopped }).collect()),
+            bars: list(
+                t.bars
+                    .iter()
+                    .map(|b| LegBar { code: s(&b.code), hue: b.hue, frac: b.frac, now: s(&b.now), stopped: b.stopped })
+                    .collect(),
+            ),
             finished: t.finished,
             error: s(&t.error),
             done: t.done,
             window: s(&t.window),
             share: list(t.share.iter().map(part).collect()),
             results: list(
-                t.results.iter().map(|r| LegResult { code: s(&r.code), hue: r.hue, name: s(&r.name), line: s(&r.line), failed: r.failed, down: s(&r.down), up: s(&r.up), ping: s(&r.ping) }).collect(),
+                t.results
+                    .iter()
+                    .map(|r| LegResult {
+                        code: s(&r.code),
+                        hue: r.hue,
+                        name: s(&r.name),
+                        line: s(&r.line),
+                        failed: r.failed,
+                        down: s(&r.down),
+                        up: s(&r.up),
+                        ping: s(&r.ping),
+                    })
+                    .collect(),
             ),
             heading: s(&t.heading),
             working: t.working,
-            picks: list(t.picks.iter().map(|k| LegPick { id: s(&k.id), code: s(&k.code), hue: k.hue, name: s(&k.name), sub: s(&k.sub), on: k.on, state: s(&k.state), tone: k.tone }).collect()),
+            picks: list(
+                t.picks
+                    .iter()
+                    .map(|k| LegPick {
+                        id: s(&k.id),
+                        code: s(&k.code),
+                        hue: k.hue,
+                        name: s(&k.name),
+                        sub: s(&k.sub),
+                        on: k.on,
+                        state: s(&k.state),
+                        tone: k.tone,
+                    })
+                    .collect(),
+            ),
             nodes: choices(&t.nodes),
             go: go_button(&t.go),
             note: s(&t.note),
@@ -147,7 +186,17 @@ fn speed_view(v: &logic::SpeedView) -> SpeedView {
             decisions: list(
                 t.decisions
                     .iter()
-                    .map(|d| Decision { exit: s(&d.exit), code: s(&d.code), hue: d.hue, title: s(&d.title), text: s(&d.text), choice: d.choice, via: s(&d.via), out: s(&d.out), via_on: d.via_on })
+                    .map(|d| Decision {
+                        exit: s(&d.exit),
+                        code: s(&d.code),
+                        hue: d.hue,
+                        title: s(&d.title),
+                        text: s(&d.text),
+                        choice: d.choice,
+                        via: s(&d.via),
+                        out: s(&d.out),
+                        via_on: d.via_on,
+                    })
                     .collect(),
             ),
             cost: s(&t.cost),
@@ -162,7 +211,13 @@ fn speed_view(v: &logic::SpeedView) -> SpeedView {
 fn show(shot: &Shot, v: &logic::StatsView) {
     let page = StatsPage::get(shot);
     page.set_recording(v.recording);
-    page.set_off(OffView { overline: s(&v.off.overline), title: s(&v.off.title), text: s(&v.off.text), button: s(&v.off.button), saved: v.off.saved });
+    page.set_off(OffView {
+        overline: s(&v.off.overline),
+        title: s(&v.off.title),
+        text: s(&v.off.text),
+        button: s(&v.off.button),
+        saved: v.off.saved,
+    });
     page.set_loaded(v.loaded);
     page.set_period(v.period);
     page.set_section(s(&v.section));
@@ -193,8 +248,24 @@ fn show(shot: &Shot, v: &logic::StatsView) {
         legend: list(h.legend.iter().map(|l| Legend { name: s(&l.name), hue: l.hue }).collect()),
         columns: columns(&page, &h.columns),
         summary: s(&h.summary),
-        apps: list(h.apps.iter().map(|a| AppBar { name: s(&a.name), code: s(&a.code), hue: a.hue, frac: a.frac, bytes: s(&a.bytes) }).collect()),
-        exits: list(h.exits.iter().map(|e| ExitBar { code: s(&e.code), hue: e.hue, name: s(&e.name), apps: s(&e.apps), bytes: s(&e.bytes) }).collect()),
+        apps: list(
+            h.apps
+                .iter()
+                .map(|a| AppBar { name: s(&a.name), code: s(&a.code), hue: a.hue, frac: a.frac, bytes: s(&a.bytes) })
+                .collect(),
+        ),
+        exits: list(
+            h.exits
+                .iter()
+                .map(|e| ExitBar {
+                    code: s(&e.code),
+                    hue: e.hue,
+                    name: s(&e.name),
+                    apps: s(&e.apps),
+                    bytes: s(&e.bytes),
+                })
+                .collect(),
+        ),
     });
     let u = &v.usage;
     page.set_usage(UsageView {
@@ -213,10 +284,20 @@ fn show(shot: &Shot, v: &logic::StatsView) {
         empty: s(&l.empty),
         now: num(&l.now),
         sub: s(&l.sub),
-        series: list(l.series.iter().map(|x| ChartSeries { values: list(x.values.clone()), color: page.invoke_ink(x.hue) }).collect()),
+        series: list(
+            l.series
+                .iter()
+                .map(|x| ChartSeries { values: list(x.values.clone()), color: page.invoke_ink(x.hue) })
+                .collect(),
+        ),
         cap: l.cap,
         summary: s(&l.summary),
-        rows: list(l.rows.iter().map(|r| LiveRow { code: s(&r.code), hue: r.hue, name: s(&r.name), via: s(&r.via), now: num(&r.now) }).collect()),
+        rows: list(
+            l.rows
+                .iter()
+                .map(|r| LiveRow { code: s(&r.code), hue: r.hue, name: s(&r.name), via: s(&r.via), now: num(&r.now) })
+                .collect(),
+        ),
     });
     let f = &v.flows;
     page.set_flows(FlowsView {
@@ -242,8 +323,26 @@ fn show(shot: &Shot, v: &logic::StatsView) {
                 })
                 .collect(),
         ),
-        pills: list(f.pills.iter().map(|p| Pill { id: s(&p.id), code: s(&p.code), hue: p.hue, text: s(&p.text), on: p.on }).collect()),
-        rows: list(f.rows.iter().map(|r| FlowRow { pkg: s(&r.pkg), letter: s(&r.letter), name: s(&r.name), code: s(&r.code), hue: r.hue, bytes: s(&r.bytes), frac: r.frac }).collect()),
+        pills: list(
+            f.pills
+                .iter()
+                .map(|p| Pill { id: s(&p.id), code: s(&p.code), hue: p.hue, text: s(&p.text), on: p.on })
+                .collect(),
+        ),
+        rows: list(
+            f.rows
+                .iter()
+                .map(|r| FlowRow {
+                    pkg: s(&r.pkg),
+                    letter: s(&r.letter),
+                    name: s(&r.name),
+                    code: s(&r.code),
+                    hue: r.hue,
+                    bytes: s(&r.bytes),
+                    frac: r.frac,
+                })
+                .collect(),
+        ),
         more: s(&f.more),
     });
     let j = &v.journal;
@@ -266,7 +365,21 @@ fn show(shot: &Shot, v: &logic::StatsView) {
         tested: t.tested,
         best: s(&t.best),
         sub: s(&t.sub),
-        rows: list(t.rows.iter().map(|r| TunnelRow { id: s(&r.id), code: s(&r.code), hue: r.hue, name: s(&r.name), via: s(&r.via), tested: r.tested, test: s(&r.test), frac: r.frac }).collect()),
+        rows: list(
+            t.rows
+                .iter()
+                .map(|r| TunnelRow {
+                    id: s(&r.id),
+                    code: s(&r.code),
+                    hue: r.hue,
+                    name: s(&r.name),
+                    via: s(&r.via),
+                    tested: r.tested,
+                    test: s(&r.test),
+                    frac: r.frac,
+                })
+                .collect(),
+        ),
     });
     let t = &v.tunnel;
     page.set_tunnel(TunnelView {
@@ -299,7 +412,19 @@ fn show(shot: &Shot, v: &logic::StatsView) {
                     up: s(&r.up),
                     ping: s(&r.ping),
                     line: s(&r.line),
-                    members: list(r.members.iter().map(|m| Member { code: s(&m.code), hue: m.hue, name: s(&m.name), down: s(&m.down), up: s(&m.up), ping: s(&m.ping) }).collect()),
+                    members: list(
+                        r.members
+                            .iter()
+                            .map(|m| Member {
+                                code: s(&m.code),
+                                hue: m.hue,
+                                name: s(&m.name),
+                                down: s(&m.down),
+                                up: s(&m.up),
+                                ping: s(&m.ping),
+                            })
+                            .collect(),
+                    ),
                 })
                 .collect(),
         ),
@@ -308,7 +433,8 @@ fn show(shot: &Shot, v: &logic::StatsView) {
 
 /// The set-up app of the approved screenshots, recording statistics.
 fn set_up() -> Setup {
-    let lab = WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
+    let lab =
+        WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
     Setup {
         routes: vec![
             Route::new("nl", Location::country("nord", 153, "NL", "Netherlands")),
@@ -332,8 +458,14 @@ fn now() -> NaiveDateTime {
 fn week_of_traffic(s: &Setup, period: Period) -> Data {
     let now_ms = Local.from_local_datetime(&now()).earliest().expect("a local time").timestamp_millis();
     let exit = |id: &str| stats::id_of(s.route(Some(id)).expect("a route"));
-    let apps =
-        [("firefox", "us", 3e6, 60e6), ("spotify", "it", 1e6, 24e6), ("chromium", "nl", 2e6, 38e6), ("thunderbird", "us", 1e6, 6e6), ("discord", "it", 2e6, 9e6), ("signal-desktop", "nl", 1e6, 3e6)];
+    let apps = [
+        ("firefox", "us", 3e6, 60e6),
+        ("spotify", "it", 1e6, 24e6),
+        ("chromium", "nl", 2e6, 38e6),
+        ("thunderbird", "us", 1e6, 6e6),
+        ("discord", "it", 2e6, 9e6),
+        ("signal-desktop", "nl", 1e6, 3e6),
+    ];
     let (a, b) = logic::range(period, now().date());
     let (from, to) = (logic::epoch_day(a), logic::epoch_day(b));
     let mut d = Data::default();
@@ -366,15 +498,29 @@ fn week_of_traffic(s: &Setup, period: Period) -> Data {
 
 /// The installed apps' names, as listed.
 fn labels() -> IndexMap<String, String> {
-    [("firefox", "Firefox"), ("spotify", "Spotify"), ("chromium", "Chromium"), ("thunderbird", "Thunderbird"), ("signal-desktop", "Signal"), ("discord", "Discord")]
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect()
+    [
+        ("firefox", "Firefox"),
+        ("spotify", "Spotify"),
+        ("chromium", "Chromium"),
+        ("thunderbird", "Thunderbird"),
+        ("signal-desktop", "Signal"),
+        ("discord", "Discord"),
+    ]
+    .iter()
+    .map(|(k, v)| (k.to_string(), v.to_string()))
+    .collect()
 }
 
 /// The page as the window shows it for `section`, with `data`.
 fn stats_view(s: &Setup, data: &Data, period: Period, section: &str) -> logic::StatsView {
-    World { setup: s.clone(), data: data.clone(), vpn: VpnState::default(), tags: IndexMap::new(), live: Live::default() }.view(period, section, None)
+    World {
+        setup: s.clone(),
+        data: data.clone(),
+        vpn: VpnState::default(),
+        tags: IndexMap::new(),
+        live: Live::default(),
+    }
+    .view(period, section, None)
 }
 
 /// What the page reads besides the stats file, for one picture of the app.
@@ -391,7 +537,13 @@ impl World {
         self.view_with(period, section, journal_day, SpeedInputs::default())
     }
 
-    fn view_with(&self, period: Period, section: &str, journal_day: Option<i64>, speed: SpeedInputs) -> logic::StatsView {
+    fn view_with(
+        &self,
+        period: Period,
+        section: &str,
+        journal_day: Option<i64>,
+        speed: SpeedInputs,
+    ) -> logic::StatsView {
         let on = self.vpn.phase == VpnPhase::On;
         logic::view(&Inputs {
             data: Some(&self.data),
@@ -416,13 +568,30 @@ impl World {
 /// Local time `h:m` on day `d` of November 2026, or `d` days before 1 November when negative, in epoch ms.
 fn ms(d: i64, h: u32, m: u32) -> i64 {
     let day = NaiveDate::from_ymd_opt(2026, 11, 1).expect("a date") + chrono::TimeDelta::days(d - 1);
-    Local.from_local_datetime(&day.and_hms_opt(h, m, 0).expect("a time")).earliest().expect("a local time").timestamp_millis()
+    Local
+        .from_local_datetime(&day.and_hms_opt(h, m, 0).expect("a time"))
+        .earliest()
+        .expect("a local time")
+        .timestamp_millis()
 }
 
 /// A speed test; `run` is its combined run's start and size ((0, 1) alone).
 fn test(at: i64, exit: &str, server: &str, down: f64, up: f64, ping: i32, run: (i64, i32)) -> Test {
     let (grp, n) = run;
-    Test { at, exit: exit.into(), via: "Nord".into(), server: server.into(), ip: String::new(), down: (down * 1e6) as i64, up: (up * 1e6) as i64, idle: ping, busy_down: 0, busy_up: 0, grp, n }
+    Test {
+        at,
+        exit: exit.into(),
+        via: "Nord".into(),
+        server: server.into(),
+        ip: String::new(),
+        down: (down * 1e6) as i64,
+        up: (up * 1e6) as i64,
+        idle: ping,
+        busy_down: 0,
+        busy_up: 0,
+        grp,
+        n,
+    }
 }
 
 /// The same week, connected: three tunnels with their servers, a minute of live samples, speed tests (one a combined
@@ -443,7 +612,10 @@ fn connected() -> World {
         test(ms(9, 19, 40), &us, "us8412", 236.8, 41.2, 96, (0, 1)),
     ];
     // Most days of the last weeks, and Tuesday in full: a morning, a pause at noon, the afternoon and the evening.
-    data.spans = (2..80).filter(|k| k % 7 != 3).map(|k| (ms(11 - k, 8, 30), ms(11 - k, 9 + (k * 5 % 9) as u32, 10), false)).collect();
+    data.spans = (2..80)
+        .filter(|k| k % 7 != 3)
+        .map(|k| (ms(11 - k, 8, 30), ms(11 - k, 9 + (k * 5 % 9) as u32, 10), false))
+        .collect();
     data.spans.extend([
         (ms(10, 8, 10), ms(10, 12, 0), false),
         (ms(10, 12, 0), ms(10, 12, 25), true),
@@ -453,16 +625,41 @@ fn connected() -> World {
     ]);
     data.spans.sort();
     data.servers = vec![("nl1256".into(), 820_000_000), ("nl1190".into(), 310_000_000), ("nl977".into(), 95_000_000)];
-    let server =
-        |name: &str, city: &str| Server { name: name.into(), host: format!("{name}.nordvpn.com"), ip: String::new(), public_key: String::new(), load: 9, city: city.into(), country: String::new() };
+    let server = |name: &str, city: &str| Server {
+        name: name.into(),
+        host: format!("{name}.nordvpn.com"),
+        ip: String::new(),
+        public_key: String::new(),
+        load: 9,
+        city: city.into(),
+        country: String::new(),
+    };
     let vpn = VpnState {
         phase: VpnPhase::On,
         since: ms(11, 0, 5),
-        servers: [("nl".to_string(), server("nl1256", "Amsterdam")), ("us".into(), server("us8412", "New York")), ("it".into(), server("it204", "Milan"))].into_iter().collect(),
+        servers: [
+            ("nl".to_string(), server("nl1256", "Amsterdam")),
+            ("us".into(), server("us8412", "New York")),
+            ("it".into(), server("it204", "Milan")),
+        ]
+        .into_iter()
+        .collect(),
         ..VpnState::default()
     };
-    let wave = |base: f32, swing: f32, phase: f32| (0..60).map(|i| (base + swing * ((i as f32 + phase) / 6.0).sin()).max(0.0) * 1e6).collect::<Vec<f32>>();
-    let live = Live { down: [(nl.clone(), wave(18.0, 7.0, 0.0)), (us.clone(), wave(7.5, 3.0, 9.0)), (it.clone(), wave(2.4, 1.2, 20.0))].into_iter().collect(), down_now: 0, up_now: 1_240_000 };
+    let wave = |base: f32, swing: f32, phase: f32| {
+        (0..60).map(|i| (base + swing * ((i as f32 + phase) / 6.0).sin()).max(0.0) * 1e6).collect::<Vec<f32>>()
+    };
+    let live = Live {
+        down: [
+            (nl.clone(), wave(18.0, 7.0, 0.0)),
+            (us.clone(), wave(7.5, 3.0, 9.0)),
+            (it.clone(), wave(2.4, 1.2, 20.0)),
+        ]
+        .into_iter()
+        .collect(),
+        down_now: 0,
+        up_now: 1_240_000,
+    };
     let live = Live { down_now: live.down.values().map(|s| s[59] as i64).sum(), ..live };
     let tags = ["nl", "us", "it"].iter().map(|r| (r.to_string(), r.to_string())).collect();
     World { setup, data, vpn, tags, live }
@@ -495,7 +692,10 @@ fn hub_as_approved() {
     let data = week_of_traffic(&s, Period::Week);
     let v = stats_view(&s, &data, Period::Week, "");
     assert_eq!("9–15 NOV", v.hub.overline);
-    assert_eq!(vec!["United States", "Netherlands", "Italy"], v.hub.exits.iter().map(|e| e.name.as_str()).collect::<Vec<_>>());
+    assert_eq!(
+        vec!["United States", "Netherlands", "Italy"],
+        v.hub.exits.iter().map(|e| e.name.as_str()).collect::<Vec<_>>()
+    );
     for (light, file) in [(false, "stats-dark.png"), (true, "stats-light.png")] {
         let shot = shot_of(&v, light, true);
         let px = render(&shot, 1280, 800, &dir.join(file));
@@ -558,7 +758,12 @@ fn sections() {
             assert_eq!("Tuesday 10 November", v.journal.date);
             assert_eq!(
                 vec!["13 h 20 m", "6 h 15 m"],
-                v.journal.facts.iter().take(2).map(|f| f.parts.iter().map(|p| format!("{} {}", p.value, p.unit)).collect::<Vec<_>>().join(" ")).collect::<Vec<_>>()
+                v.journal
+                    .facts
+                    .iter()
+                    .take(2)
+                    .map(|f| f.parts.iter().map(|p| format!("{} {}", p.value, p.unit)).collect::<Vec<_>>().join(" "))
+                    .collect::<Vec<_>>()
             );
             assert_eq!("pauses · 25 m", v.journal.facts[2].label);
         }
@@ -605,14 +810,41 @@ fn mlab(city: &str, country: &str, machine: &str) -> ndt7::Server {
     ndt7::Server { machine: machine.into(), city: city.into(), country: country.into(), ..ndt7::Server::default() }
 }
 
-fn leg(exit: &str, server: Option<ndt7::Server>, missing: bool, now: f64, down: Option<f64>, up: Option<f64>, ping: Option<i32>) -> Leg {
+fn leg(
+    exit: &str,
+    server: Option<ndt7::Server>,
+    missing: bool,
+    now: f64,
+    down: Option<f64>,
+    up: Option<f64>,
+    ping: Option<i32>,
+) -> Leg {
     let mbits = |m: f64| (m * 1e6) as i64;
-    Leg { server, missing, now: mbits(now), down: down.map(mbits), up: up.map(mbits), ping: ping.map(|median| Ping { median, low: median - 2, high: median + 5 }), ..Leg::new(exit) }
+    Leg {
+        server,
+        missing,
+        now: mbits(now),
+        down: down.map(mbits),
+        up: up.map(mbits),
+        ping: ping.map(|median| Ping { median, low: median - 2, high: median + 5 }),
+        ..Leg::new(exit)
+    }
 }
 
 fn combined(phase: Stage, legs: Vec<Leg>) -> All {
     let now = legs.iter().map(|l| l.now).sum();
-    All { id: 1, legs, metered: true, phase, now, down: None, up: None, elapsed_ms: 7_200, window_ms: 9_400, error: None }
+    All {
+        id: 1,
+        legs,
+        metered: true,
+        phase,
+        now,
+        down: None,
+        up: None,
+        elapsed_ms: 7_200,
+        window_ms: 9_400,
+        error: None,
+    }
 }
 
 /// The speed test, connected: one exit's finished test and one measuring; then every route together, before, while
@@ -623,8 +855,16 @@ fn speed() {
     let dir = shots_dir();
     let w = connected();
     let ams = mlab("Amsterdam", "NL", "mlab1-ams09.mlab-oti.measurement-lab.org");
-    let done = Run { phase: Stage::Done, down: Some(412_300_000), up: Some(88_100_000), ping: Some(Ping { median: 12, low: 10, high: 17 }), server: Some(ams.clone()), ..Run::new("nl") };
-    let measuring = Run { phase: Stage::Download, now: 287_400_000, down: None, up: None, elapsed_ms: 6_400, ..done.clone() };
+    let done = Run {
+        phase: Stage::Done,
+        down: Some(412_300_000),
+        up: Some(88_100_000),
+        ping: Some(Ping { median: 12, low: 10, high: 17 }),
+        server: Some(ams.clone()),
+        ..Run::new("nl")
+    };
+    let measuring =
+        Run { phase: Stage::Download, now: 287_400_000, down: None, up: None, elapsed_ms: 6_400, ..done.clone() };
     let mut s = w.setup.clone();
     s.apps.insert("firefox".into(), "us".into());
     s.apps.insert("spotify".into(), "it".into());
@@ -639,7 +879,10 @@ fn speed() {
                 leg("nl", Some(ams.clone()), false, 0.0, Some(611.0), Some(140.2), Some(13)),
                 leg("us", Some(mlab("New York", "US", "mlab1-lga03")), false, 0.0, Some(402.6), Some(96.1), Some(91)),
                 leg("it", Some(mlab("Milan", "IT", "mlab1-mil04")), false, 0.0, Some(270.4), Some(65.7), Some(37)),
-                Leg { error: Some("The route didn't connect.".into()), ..leg("lab", None, false, 0.0, None, None, None) },
+                Leg {
+                    error: Some("The route didn't connect.".into()),
+                    ..leg("lab", None, false, 0.0, None, None, None)
+                },
             ],
         )
     };
@@ -661,9 +904,15 @@ fn speed() {
     );
     let cases: [(&str, SpeedInputs); 6] = [
         ("stats-speed.png", SpeedInputs { run: Some(&done), chosen: Some("nl"), ..SpeedInputs::default() }),
-        ("stats-speed-measuring.png", SpeedInputs { run: Some(&measuring), chosen: Some("nl"), testing: true, ..SpeedInputs::default() }),
+        (
+            "stats-speed-measuring.png",
+            SpeedInputs { run: Some(&measuring), chosen: Some("nl"), testing: true, ..SpeedInputs::default() },
+        ),
         ("stats-speed-all.png", SpeedInputs { chosen: Some(speed_test::ALL), ..SpeedInputs::default() }),
-        ("stats-speed-all-measuring.png", SpeedInputs { all: Some(&all_measuring), testing: true, ..SpeedInputs::default() }),
+        (
+            "stats-speed-all-measuring.png",
+            SpeedInputs { all: Some(&all_measuring), testing: true, ..SpeedInputs::default() },
+        ),
         ("stats-speed-all-done.png", SpeedInputs { all: Some(&all_done), ..SpeedInputs::default() }),
         ("stats-speed-deciding.png", SpeedInputs { all: Some(&deciding), tests_today: 4, ..SpeedInputs::default() }),
     ];
@@ -682,11 +931,18 @@ fn speed() {
             "stats-speed-measuring.png" => assert_eq!("1/2 · Download", v.speed.gauge.status),
             "stats-speed-all.png" => {
                 assert_eq!("Selected 4 of 4", v.speed.together.heading);
-                assert!(v.speed.together.note.ends_with("restarts for a moment before and after."), "the Home lab route has no apps");
+                assert!(
+                    v.speed.together.note.ends_with("restarts for a moment before and after."),
+                    "the Home lab route has no apps"
+                );
             }
             "stats-speed-all-done.png" => assert_eq!("3 exits, same 9 s", v.speed.together.window),
             "stats-speed-deciding.png" => {
-                assert_eq!(vec!["lab"], v.speed.together.nearest, "an exit without a server at home goes via the nearest one");
+                assert_eq!(
+                    vec!["lab"],
+                    v.speed.together.nearest,
+                    "an exit without a server at home goes via the nearest one"
+                );
                 assert_eq!("Start 3 together", v.speed.together.yes);
                 assert!(near(at(&px, 1280, 900, 460), SURFACE), "the sheet over the page");
             }

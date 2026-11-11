@@ -1,12 +1,12 @@
 //! The Routes page: where each route goes out, the default route and the connection.
 
-use crate::ui::picker::NORD_GROUPS;
-use crate::ui::stats::rate;
 use crate::exit_check::ExitReport;
 use crate::model::{DIRECT, Route, Server, Setup};
 use crate::providers;
 use crate::stats;
+use crate::ui::picker::NORD_GROUPS;
 use crate::ui::profiles::{UseBarView, use_bar};
+use crate::ui::stats::rate;
 use crate::vpn::{Ask, Phase, VpnState, vpn_on};
 use indexmap::{IndexMap, IndexSet};
 use std::collections::HashSet;
@@ -206,7 +206,11 @@ fn count(n: usize) -> String {
 
 /// Server name and, where the provider publishes it, its load: "nl1256 · 9% load".
 pub fn server_id(r: &Route, s: &Server) -> String {
-    let name = if r.loc.provider == "nord" { s.host.split('.').next().unwrap_or_default().to_string() } else { s.name.clone() };
+    let name = if r.loc.provider == "nord" {
+        s.host.split('.').next().unwrap_or_default().to_string()
+    } else {
+        s.name.clone()
+    };
     let load = s.load >= 0 && providers::get(&r.loc.provider).is_some_and(|p| p.has_load());
     if load { format!("{name} · {}% load", s.load) } else { name }
 }
@@ -228,21 +232,40 @@ pub fn place(r: &Route, live: &IndexMap<String, Server>) -> String {
     }
     let nord = r.loc.provider == "nord";
     // Standard servers say nothing.
-    let group = NORD_GROUPS.iter().find(|(id, _)| nord && id.is_some() && r.loc.group.as_deref() == *id).map(|(_, label)| label.to_string());
-    let city = r.loc.pinned.as_ref().map(|p| p.name.clone()).or_else(|| r.loc.city.clone()).or_else(|| live.get(&r.id).map(|s| s.city.clone()).filter(|c| !c.trim().is_empty()));
+    let group = NORD_GROUPS
+        .iter()
+        .find(|(id, _)| nord && id.is_some() && r.loc.group.as_deref() == *id)
+        .map(|(_, label)| label.to_string());
+    let city = r
+        .loc
+        .pinned
+        .as_ref()
+        .map(|p| p.name.clone())
+        .or_else(|| r.loc.city.clone())
+        .or_else(|| live.get(&r.id).map(|s| s.city.clone()).filter(|c| !c.trim().is_empty()));
     let tech = match nord.then(|| providers::nord::tech(&r.loc)).as_deref() {
         Some("openvpn_udp") => Some("OpenVPN".to_string()),
         Some("openvpn_tcp") => Some("OpenVPN TCP".to_string()),
         _ => None,
     };
-    [Some(r.source()), group, Some(city.unwrap_or_else(|| "Fastest".into())), tech].into_iter().flatten().collect::<Vec<_>>().join(" · ")
+    [Some(r.source()), group, Some(city.unwrap_or_else(|| "Fastest".into())), tech]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 /// App names for a small group ("Signal", "Bank A, Bank B"), the app count for a larger one ("7 apps").
 pub fn apps_label(pkgs: &[&str], labels: &IndexMap<&str, &str>) -> String {
     match pkgs.len() {
         0 => "No apps assigned".into(),
-        1..=3 => pkgs.iter().map(|p| labels.get(p).map_or_else(|| p.rsplit('.').next().unwrap_or_default().to_string(), |l| l.to_string())).collect::<Vec<_>>().join(", "),
+        1..=3 => pkgs
+            .iter()
+            .map(|p| {
+                labels.get(p).map_or_else(|| p.rsplit('.').next().unwrap_or_default().to_string(), |l| l.to_string())
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
         n => count(n),
     }
 }
@@ -259,14 +282,18 @@ pub fn status_line(vpn: &VpnState, switching: bool, now: i64) -> String {
         }
         Phase::Connecting => "Connecting".into(),
         Phase::Off => "Not connected".into(),
-        Phase::Paused if vpn.paused_until > 0 => format!("Paused · resumes {}{}", if vpn.paused_about { "about " } else { "" }, clock(vpn.paused_until)),
+        Phase::Paused if vpn.paused_until > 0 => {
+            format!("Paused · resumes {}{}", if vpn.paused_about { "about " } else { "" }, clock(vpn.paused_until))
+        }
         Phase::Paused => "Paused".into(),
     }
 }
 
 /// A time of day, as the desktop's clock shows it: "14:30".
 fn clock(ms: i64) -> String {
-    chrono::DateTime::from_timestamp_millis(ms).map(|t| t.with_timezone(&chrono::Local).format("%H:%M").to_string()).unwrap_or_default()
+    chrono::DateTime::from_timestamp_millis(ms)
+        .map(|t| t.with_timezone(&chrono::Local).format("%H:%M").to_string())
+        .unwrap_or_default()
 }
 
 /// How much of a timed pause is left, 1 to 0, for its ring.
@@ -283,7 +310,11 @@ fn action(act: Act, text: impl Into<String>) -> RouteAction {
 
 /// The saved profiles, other than the one in use, that list route `id`: removing it takes it from them too.
 fn also_in(s: &Setup, id: &str) -> Vec<String> {
-    s.saved().into_iter().filter(|p| Some(&p.name) != s.profile.as_ref() && p.own().contains(id)).map(|p| p.name).collect()
+    s.saved()
+        .into_iter()
+        .filter(|p| Some(&p.name) != s.profile.as_ref() && p.own().contains(id))
+        .map(|p| p.name)
+        .collect()
 }
 
 /// What route `id`'s right click offers (`menu`) and what its sheet does, in `shown` (the setup as the profile shown
@@ -327,10 +358,16 @@ fn route_actions(s: &Setup, shown: &Setup, draft: Option<&str>, id: &str) -> (Ve
     if id != s.default_route {
         let others = also_in(s, id).join(", ");
         menu.push(action(Act::MakeDefault, "Make default"));
-        menu.push(action(Act::Remove, if others.is_empty() { "Remove route".into() } else { format!("Remove route, also from {others}") }));
+        menu.push(action(
+            Act::Remove,
+            if others.is_empty() { "Remove route".into() } else { format!("Remove route, also from {others}") },
+        ));
         sheet.actions.push(action(Act::MakeDefault, "Make default"));
         sheet.actions.push(action(Act::Remove, "Remove route"));
-        sheet.note = format!("Its apps will use the default route.{}", if others.is_empty() { String::new() } else { format!(" It also goes from {others}.") });
+        sheet.note = format!(
+            "Its apps will use the default route.{}",
+            if others.is_empty() { String::new() } else { format!(" It also goes from {others}.") }
+        );
     }
     (menu, sheet)
 }
@@ -338,11 +375,19 @@ fn route_actions(s: &Setup, shown: &Setup, draft: Option<&str>, id: &str) -> (Ve
 /// Pause or disconnect: offered by the power button while connected. With blocking on, a pause takes every app offline.
 fn power_sheet(lockdown: bool) -> Sheet {
     let what = if lockdown { "Pause internet for" } else { "Pause" };
-    let mut actions: Vec<RouteAction> = [(5, "5 minutes"), (15, "15 minutes"), (60, "1 hour")].iter().map(|(m, label)| RouteAction { minutes: *m, ..action(Act::Pause, format!("{what} {label}")) }).collect();
+    let mut actions: Vec<RouteAction> = [(5, "5 minutes"), (15, "15 minutes"), (60, "1 hour")]
+        .iter()
+        .map(|(m, label)| RouteAction { minutes: *m, ..action(Act::Pause, format!("{what} {label}")) })
+        .collect();
     actions.push(action(Act::Disconnect, "Disconnect"));
     Sheet {
         title: "Pause or disconnect".into(),
-        lead: if lockdown { "Blocking is on: every app, Direct apps included, is offline while paused." } else { "While paused, apps use your normal connection." }.into(),
+        lead: if lockdown {
+            "Blocking is on: every app, Direct apps included, is offline while paused."
+        } else {
+            "While paused, apps use your normal connection."
+        }
+        .into(),
         actions,
         note: String::new(),
     }
@@ -350,7 +395,21 @@ fn power_sheet(lockdown: bool) -> Sheet {
 
 /// Up to five app icons for `pkgs`, and how many more there are.
 fn marks(pkgs: &[&str], labels: &IndexMap<&str, &str>) -> (Vec<AppMark>, i32) {
-    let apps = pkgs.iter().take(5).map(|p| AppMark { pkg: p.to_string(), letter: labels.get(p).copied().unwrap_or(*p).chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default() }).collect();
+    let apps = pkgs
+        .iter()
+        .take(5)
+        .map(|p| AppMark {
+            pkg: p.to_string(),
+            letter: labels
+                .get(p)
+                .copied()
+                .unwrap_or(*p)
+                .chars()
+                .next()
+                .map(|c| c.to_uppercase().collect())
+                .unwrap_or_default(),
+        })
+        .collect();
     (apps, pkgs.len().saturating_sub(5) as i32)
 }
 
@@ -371,10 +430,19 @@ pub fn view(i: &Inputs) -> RoutesView {
     // A profile lists its own routes, and routes nothing uses yet (one just added), never another profile's.
     let hidden = s.hidden_routes(draft);
     // Direct is built in, not a route: listed once an app in this profile uses it (its default shows as the card above).
-    let ids: Vec<&str> = shown.routes.iter().map(|r| r.id.as_str()).chain([DIRECT]).filter(|id| *id != shown.default_route && !hidden.contains(*id) && (*id != DIRECT || by_route.contains_key(DIRECT))).collect();
+    let ids: Vec<&str> = shown
+        .routes
+        .iter()
+        .map(|r| r.id.as_str())
+        .chain([DIRECT])
+        .filter(|id| {
+            *id != shown.default_route && !hidden.contains(*id) && (*id != DIRECT || by_route.contains_key(DIRECT))
+        })
+        .collect();
     let labels: IndexMap<&str, &str> = i.apps.iter().map(|a| (a.pkg.as_str(), a.label.as_str())).collect();
     // The default carries every app not sent elsewhere.
-    let default_apps = i.apps.iter().filter(|a| shown.route_of(a.follows(&shown).unwrap_or(&a.pkg)) == shown.default_route).count();
+    let default_apps =
+        i.apps.iter().filter(|a| shown.route_of(a.follows(&shown).unwrap_or(&a.pkg)) == shown.default_route).count();
     // A route's report holds only for the engine and server it was taken on. A route with a tunnel and no answer yet is
     // being checked, so its card keeps its size meanwhile; it couldn't be checked only once every attempt failed.
     let exit_of = |id: &str| -> ExitLine {
@@ -416,7 +484,8 @@ pub fn view(i: &Inputs) -> RoutesView {
     };
     let default_route = {
         let route = shown.route(Some(&shown.default_route));
-        let server = route.and_then(|r| vpn.servers.get(&r.id).filter(|_| lit).map(|sv| server_id(r, sv))).unwrap_or_default();
+        let server =
+            route.and_then(|r| vpn.servers.get(&r.id).filter(|_| lit).map(|sv| server_id(r, sv))).unwrap_or_default();
         RouteCard {
             apps_label: format!("All other apps · {default_apps}"),
             place: route.map_or_else(|| "No VPN for these apps".into(), |r| place(r, live)),
@@ -430,16 +499,40 @@ pub fn view(i: &Inputs) -> RoutesView {
     };
     let exceptions: Vec<RouteCard> = ids.iter().map(|id| card(id)).collect();
     let speeds = s.prefs.stats && on;
-    let exits = [shown.default_route.as_str()].into_iter().chain(ids.iter().copied()).collect::<IndexSet<_>>().into_iter().filter_map(|id| shown.route(Some(id))).map(|r| ExitRow {
-        code: r.code(),
-        hue: r.hue,
-        name: r.name(),
-        place: place(r, live),
-        speed: i.live.filter(|_| speeds).and_then(|l| l.down.get(&stats::id_of(r))).and_then(|d| d.last()).map(|b| rate(*b as i64)).map(|(v, u)| format!("{v} {u}")).unwrap_or_default(),
-        exit: exit_of(&r.id),
-    });
+    let exits = [shown.default_route.as_str()]
+        .into_iter()
+        .chain(ids.iter().copied())
+        .collect::<IndexSet<_>>()
+        .into_iter()
+        .filter_map(|id| shown.route(Some(id)))
+        .map(|r| ExitRow {
+            code: r.code(),
+            hue: r.hue,
+            name: r.name(),
+            place: place(r, live),
+            speed: i
+                .live
+                .filter(|_| speeds)
+                .and_then(|l| l.down.get(&stats::id_of(r)))
+                .and_then(|d| d.last())
+                .map(|b| rate(*b as i64))
+                .map(|(v, u)| format!("{v} {u}"))
+                .unwrap_or_default(),
+            exit: exit_of(&r.id),
+        });
     let home = (s.home.tailscale || s.home.wg.is_some()).then(|| {
-        let via = if s.home.tailscale { "Tailscale".into() } else { format!("WireGuard · {}", s.home.wg.as_ref().map(|w| w.endpoint.rsplit_once(':').map_or(w.endpoint.as_str(), |(host, _)| host)).unwrap_or_default()) };
+        let via = if s.home.tailscale {
+            "Tailscale".into()
+        } else {
+            format!(
+                "WireGuard · {}",
+                s.home
+                    .wg
+                    .as_ref()
+                    .map(|w| w.endpoint.rsplit_once(':').map_or(w.endpoint.as_str(), |(host, _)| host))
+                    .unwrap_or_default()
+            )
+        };
         let subnets = s.home.subnets.join(", ");
         HomeRow {
             sub: if subnets.trim().is_empty() { via } else { format!("{via} · {subnets}") },
@@ -449,17 +542,28 @@ pub fn view(i: &Inputs) -> RoutesView {
     });
     // Right after a sign-in, a provider's new key may not reach all its servers for a minute: say so instead of nothing.
     let setting_up: Vec<String> = if on {
-        s.active_routes().into_iter().filter(|r| !r.imported() && i.setting_up.contains(&r.loc.provider)).map(|r| r.loc.provider.clone()).collect::<IndexSet<_>>().into_iter().map(|p| providers::get(&p).map_or(p, |x| x.name().to_string())).collect()
+        s.active_routes()
+            .into_iter()
+            .filter(|r| !r.imported() && i.setting_up.contains(&r.loc.provider))
+            .map(|r| r.loc.provider.clone())
+            .collect::<IndexSet<_>>()
+            .into_iter()
+            .map(|p| providers::get(&p).map_or(p, |x| x.name().to_string()))
+            .collect()
     } else {
         vec![]
     };
     let sub = match () {
         _ if i.switching.is_some() => format!("To {} · apps reconnect for a moment", i.switching.unwrap_or_default()),
         _ if vpn.error.is_some() => vpn.error.clone().unwrap_or_default(),
-        _ if !setting_up.is_empty() => format!("{} is setting up your key. Its routes can take a minute to work", setting_up.join(" and ")),
+        _ if !setting_up.is_empty() => {
+            format!("{} is setting up your key. Its routes can take a minute to work", setting_up.join(" and "))
+        }
         _ => match vpn.phase {
             Phase::On => "Every app leaves through its own exit. Click to pause or disconnect.".into(),
-            Phase::Paused if vpn.lockdown => "Apps are offline (Block connections without VPN) · click to resume".into(),
+            Phase::Paused if vpn.lockdown => {
+                "Apps are offline (Block connections without VPN) · click to resume".into()
+            }
             Phase::Paused => "Apps skip the VPN · click to resume".into(),
             Phase::Connecting => "Setting up your routes".into(),
             Phase::Off => "Click to connect".into(),
@@ -502,7 +606,15 @@ pub fn view(i: &Inputs) -> RoutesView {
         down_unit,
         up,
         up_unit,
-        refused: i.refused.map(|(to, kept)| format!("Couldn't switch to {to}.{}", kept.map(|k| format!(" {k} is still in use.")).unwrap_or_default())).unwrap_or_default(),
+        refused: i
+            .refused
+            .map(|(to, kept)| {
+                format!(
+                    "Couldn't switch to {to}.{}",
+                    kept.map(|k| format!(" {k} is still in use.")).unwrap_or_default()
+                )
+            })
+            .unwrap_or_default(),
         retry: i.refused.map(|(to, _)| to.to_string()).unwrap_or_default(),
         use_bar: draft.map(|d| use_bar(d, s.profile.as_deref(), s.profiles.iter().any(|p| p.name == d && p.ready()))),
         not_set: shown.default_route.is_empty(),
@@ -526,7 +638,14 @@ mod tests {
 
     /// The set-up app of the approved screenshots: three Nord countries and a WireGuard server, apps on routes and Direct.
     fn set_up() -> Setup {
-        let lab = WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
+        let lab = WgPeer::new(
+            "Home lab",
+            KEY,
+            vec!["10.8.0.2/32".into()],
+            KEY,
+            "203.0.113.7:51820",
+            vec!["0.0.0.0/0".into()],
+        );
         Setup {
             routes: vec![
                 Route::new("nl", Location::country("nord", 153, "NL", "Netherlands")),
@@ -535,8 +654,21 @@ mod tests {
                 Route { wg: Some(lab), hue: 3, ..Route::new("lab", Location::default()) },
             ],
             default_route: "nl".into(),
-            apps: [("firefox", "us"), ("spotify", "it"), ("org.gnome.Terminal", DIRECT), ("thunderbird", "us"), ("discord", "it"), ("code", DIRECT)].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
-            profiles: vec![Profile::with_apps("Work", "nl", &[("firefox-private", "it")]), Profile::with_apps("Home", "nl", &[("firefox", "us"), ("firefox-private", "it")])],
+            apps: [
+                ("firefox", "us"),
+                ("spotify", "it"),
+                ("org.gnome.Terminal", DIRECT),
+                ("thunderbird", "us"),
+                ("discord", "it"),
+                ("code", DIRECT),
+            ]
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
+            profiles: vec![
+                Profile::with_apps("Work", "nl", &[("firefox-private", "it")]),
+                Profile::with_apps("Home", "nl", &[("firefox", "us"), ("firefox-private", "it")]),
+            ],
             ..Setup::default()
         }
     }
@@ -579,10 +711,29 @@ mod tests {
 
     impl Fixture {
         fn new(setup: Setup) -> Self {
-            Fixture { setup, vpn: VpnState::default(), apps: listed(), exits: IndexMap::new(), setting_up: HashSet::new() }
+            Fixture {
+                setup,
+                vpn: VpnState::default(),
+                apps: listed(),
+                exits: IndexMap::new(),
+                setting_up: HashSet::new(),
+            }
         }
         fn view(&self, viewing: Option<&str>) -> RoutesView {
-            view(&Inputs { setup: &self.setup, viewing, vpn: &self.vpn, asked: None, switching: None, refused: None, apps: &self.apps, exits: &self.exits, asking: false, setting_up: &self.setting_up, live: None, now: 0 })
+            view(&Inputs {
+                setup: &self.setup,
+                viewing,
+                vpn: &self.vpn,
+                asked: None,
+                switching: None,
+                refused: None,
+                apps: &self.apps,
+                exits: &self.exits,
+                asking: false,
+                setting_up: &self.setting_up,
+                live: None,
+                now: 0,
+            })
         }
     }
 
@@ -592,16 +743,45 @@ mod tests {
     fn set_up_app_as_approved() {
         let v = Fixture::new(set_up()).view(None);
         assert_eq!("Every app, its own exit", v.overline);
-        assert_eq!(("NOT CONNECTED".to_string(), "Unprotected", "Click to connect", "Connect"), (v.status.to_uppercase(), v.title.as_str(), v.sub.as_str(), v.label.as_str()));
-        assert!(!v.power_menu && !v.lit && !v.not_set && !v.all_default);
-        assert_eq!(("All other apps · 8", "Netherlands", "Nord · Fastest", "NL"), (v.default_route.apps_label.as_str(), v.default_route.name.as_str(), v.default_route.place.as_str(), v.default_route.code.as_str()));
-        let rows: Vec<_> = v.exceptions.iter().map(|r| (r.name.as_str(), r.place.as_str(), r.apps_label.as_str(), r.apps.iter().map(|a| a.letter.as_str()).collect::<String>())).collect();
         assert_eq!(
-            vec![("United States", "Nord · Fastest", "Firefox, Thunderbird", "FT".into()), ("Italy", "Nord · Fastest", "Spotify, Discord", "SD".into()), ("Direct", "Skips the VPN", "Terminal, Visual Studio Code", "TV".into())],
+            ("NOT CONNECTED".to_string(), "Unprotected", "Click to connect", "Connect"),
+            (v.status.to_uppercase(), v.title.as_str(), v.sub.as_str(), v.label.as_str())
+        );
+        assert!(!v.power_menu && !v.lit && !v.not_set && !v.all_default);
+        assert_eq!(
+            ("All other apps · 8", "Netherlands", "Nord · Fastest", "NL"),
+            (
+                v.default_route.apps_label.as_str(),
+                v.default_route.name.as_str(),
+                v.default_route.place.as_str(),
+                v.default_route.code.as_str()
+            )
+        );
+        let rows: Vec<_> = v
+            .exceptions
+            .iter()
+            .map(|r| {
+                (
+                    r.name.as_str(),
+                    r.place.as_str(),
+                    r.apps_label.as_str(),
+                    r.apps.iter().map(|a| a.letter.as_str()).collect::<String>(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            vec![
+                ("United States", "Nord · Fastest", "Firefox, Thunderbird", "FT".into()),
+                ("Italy", "Nord · Fastest", "Spotify, Discord", "SD".into()),
+                ("Direct", "Skips the VPN", "Terminal, Visual Studio Code", "TV".into())
+            ],
             rows
         );
         assert!(v.exceptions[2].direct && !v.exceptions[0].direct);
-        assert_eq!(vec!["Netherlands", "United States", "Italy"], v.exits.iter().map(|e| e.name.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["Netherlands", "United States", "Italy"],
+            v.exits.iter().map(|e| e.name.as_str()).collect::<Vec<_>>()
+        );
         assert!(v.home.is_none());
     }
 
@@ -626,8 +806,14 @@ mod tests {
         let v = Fixture::new(set_up()).view(None);
         let texts = |a: &[RouteAction]| a.iter().map(|x| x.text.clone()).collect::<Vec<_>>();
         assert_eq!(vec!["Change location…", "Make Direct the default"], texts(&v.default_route.menu));
-        assert_eq!(("Netherlands", vec!["Change location".to_string(), "Make Direct the default".into()]), (v.default_route.sheet.title.as_str(), texts(&v.default_route.sheet.actions)));
-        assert_eq!(vec!["Change location…", "Make default", "Remove route, also from Home"], texts(&v.exceptions[0].menu));
+        assert_eq!(
+            ("Netherlands", vec!["Change location".to_string(), "Make Direct the default".into()]),
+            (v.default_route.sheet.title.as_str(), texts(&v.default_route.sheet.actions))
+        );
+        assert_eq!(
+            vec!["Change location…", "Make default", "Remove route, also from Home"],
+            texts(&v.exceptions[0].menu)
+        );
         assert_eq!("Its apps will use the default route. It also goes from Home.", v.exceptions[0].sheet.note);
         assert!(v.exceptions[0].menu[2].danger);
         assert_eq!(vec!["Make default"], texts(&v.exceptions[2].menu));
@@ -654,14 +840,24 @@ mod tests {
         assert_eq!("Profile Trip · not in use", v.overline);
         assert!(v.not_set && v.exceptions.is_empty() && !v.all_default);
         let bar = v.use_bar.unwrap();
-        assert_eq!(("Trip · not in use", "Choose a default route to use it", "Back", false), (bar.title.as_str(), bar.sub.as_str(), bar.back.as_str(), bar.ready));
+        assert_eq!(
+            ("Trip · not in use", "Choose a default route to use it", "Back", false),
+            (bar.title.as_str(), bar.sub.as_str(), bar.back.as_str(), bar.ready)
+        );
         assert_eq!("Profile Desk · in use", f.view(None).overline);
         assert_eq!(None, f.view(Some("Desk")).use_bar, "the profile in use is no draft");
         let mut s = f.setup.clone();
-        s = s.editing(Some("Trip"), |p| Profile { default_route: "nl".into(), apps: [("spotify".to_string(), "it".to_string())].into_iter().collect(), ..p });
+        s = s.editing(Some("Trip"), |p| Profile {
+            default_route: "nl".into(),
+            apps: [("spotify".to_string(), "it".to_string())].into_iter().collect(),
+            ..p
+        });
         let v = Fixture::new(s).view(Some("Trip"));
         let it = &v.exceptions[0];
-        assert_eq!(vec!["Change location…", "Make default", "Remove from Trip"], it.menu.iter().map(|a| a.text.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            vec!["Change location…", "Make default", "Remove from Trip"],
+            it.menu.iter().map(|a| a.text.as_str()).collect::<Vec<_>>()
+        );
         assert_eq!(Act::Drop, it.menu[2].act);
         assert_eq!("Its apps in Trip will use its default route. The route stays for other profiles.", it.sheet.note);
         assert!(v.use_bar.unwrap().ready);
@@ -672,13 +868,49 @@ mod tests {
     #[test]
     fn connected() {
         let mut f = Fixture::new(set_up());
-        let sv = Server { name: "Amsterdam #1256".into(), host: "nl1256.nordvpn.com".into(), load: 9, city: "Amsterdam".into(), ..Default::default() };
-        f.vpn = VpnState { phase: Phase::On, since: 1_000, engine: 2, servers: [("nl".to_string(), sv.clone()), ("us".to_string(), Server { host: "us1.nordvpn.com".into(), load: -1, ..Default::default() })].into_iter().collect(), ..Default::default() };
+        let sv = Server {
+            name: "Amsterdam #1256".into(),
+            host: "nl1256.nordvpn.com".into(),
+            load: 9,
+            city: "Amsterdam".into(),
+            ..Default::default()
+        };
+        f.vpn = VpnState {
+            phase: Phase::On,
+            since: 1_000,
+            engine: 2,
+            servers: [
+                ("nl".to_string(), sv.clone()),
+                ("us".to_string(), Server { host: "us1.nordvpn.com".into(), load: -1, ..Default::default() }),
+            ]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
         f.exits.insert("nl".into(), ExitReport { ip: Some("185.1.2.3".into()), at: 0, engine: 2, server: Some(sv) });
         f.exits.insert("it".into(), ExitReport { ip: Some("2a00::1".into()), at: 0, engine: 1, server: None });
-        let v = view(&Inputs { setup: &f.setup, viewing: None, vpn: &f.vpn, asked: None, switching: None, refused: None, apps: &f.apps, exits: &f.exits, asking: true, setting_up: &f.setting_up, live: None, now: 3_723_000 + 1_000 });
-        assert_eq!(("Connected · 01:02:03", "Protected", true, true), (v.status.as_str(), v.title.as_str(), v.lit, v.power_menu));
-        assert_eq!(("Nord · Amsterdam", "nl1256 · 9% load"), (v.default_route.place.as_str(), v.default_route.server.as_str()));
+        let v = view(&Inputs {
+            setup: &f.setup,
+            viewing: None,
+            vpn: &f.vpn,
+            asked: None,
+            switching: None,
+            refused: None,
+            apps: &f.apps,
+            exits: &f.exits,
+            asking: true,
+            setting_up: &f.setting_up,
+            live: None,
+            now: 3_723_000 + 1_000,
+        });
+        assert_eq!(
+            ("Connected · 01:02:03", "Protected", true, true),
+            (v.status.as_str(), v.title.as_str(), v.lit, v.power_menu)
+        );
+        assert_eq!(
+            ("Nord · Amsterdam", "nl1256 · 9% load"),
+            (v.default_route.place.as_str(), v.default_route.server.as_str())
+        );
         assert_eq!(ExitLine { text: "185.1.2.3".into(), ip: true, failed: false }, v.default_route.exit);
         assert_eq!("Checking the exit…", v.exceptions[0].exit.text);
         assert_eq!(ExitLine::default(), v.exceptions[1].exit, "no tunnel and an old report: nothing to say");
@@ -697,16 +929,37 @@ mod tests {
         let setting_up: HashSet<String> = ["nord".to_string()].into_iter().collect();
         let mut vpn = VpnState { phase: Phase::On, error: Some("NordVPN refused".into()), ..Default::default() };
         let refused = Some(("Home", Some("Work")));
-        let at = |vpn: &VpnState, switching: Option<&str>| view(&Inputs { setup: &f.setup, viewing: None, vpn, asked: None, switching, refused, apps: &[], exits: &f.exits, asking: false, setting_up: &setting_up, live: None, now: 0 });
+        let at = |vpn: &VpnState, switching: Option<&str>| {
+            view(&Inputs {
+                setup: &f.setup,
+                viewing: None,
+                vpn,
+                asked: None,
+                switching,
+                refused,
+                apps: &[],
+                exits: &f.exits,
+                asking: false,
+                setting_up: &setting_up,
+                live: None,
+                now: 0,
+            })
+        };
         let v = at(&vpn, Some("Home"));
-        assert_eq!(("Switching profile", "Switching", "To Home · apps reconnect for a moment", true), (v.status.as_str(), v.title.as_str(), v.sub.as_str(), v.sub_bad));
+        assert_eq!(
+            ("Switching profile", "Switching", "To Home · apps reconnect for a moment", true),
+            (v.status.as_str(), v.title.as_str(), v.sub.as_str(), v.sub_bad)
+        );
         assert_eq!(("Couldn't switch to Home. Work is still in use.", "Home"), (v.refused.as_str(), v.retry.as_str()));
         assert_eq!("NordVPN refused", at(&vpn, None).sub);
         vpn.error = None;
         assert_eq!("NordVPN is setting up your key. Its routes can take a minute to work", at(&vpn, None).sub);
         vpn = VpnState { phase: Phase::Paused, lockdown: true, paused_until: 0, ..Default::default() };
         let v = at(&vpn, None);
-        assert_eq!(("Paused", "Apps are offline (Block connections without VPN) · click to resume", "Resume"), (v.status.as_str(), v.sub.as_str(), v.label.as_str()));
+        assert_eq!(
+            ("Paused", "Apps are offline (Block connections without VPN) · click to resume", "Resume"),
+            (v.status.as_str(), v.sub.as_str(), v.label.as_str())
+        );
         assert_eq!("Pause internet for 5 minutes", v.power.actions[0].text);
         assert_eq!("Blocking is on: every app, Direct apps included, is offline while paused.", v.power.lead);
     }
@@ -714,7 +967,13 @@ mod tests {
     /// A timed pause names when it ends and drains its ring.
     #[test]
     fn pause_ring() {
-        let vpn = VpnState { phase: Phase::Paused, paused_at: 1_000, paused_until: 61_000, paused_about: true, ..Default::default() };
+        let vpn = VpnState {
+            phase: Phase::Paused,
+            paused_at: 1_000,
+            paused_until: 61_000,
+            paused_about: true,
+            ..Default::default()
+        };
         assert_eq!(0.5, paused_left(&vpn, 31_000));
         assert_eq!(0.0, paused_left(&vpn, 90_000));
         assert_eq!(format!("Paused · resumes about {}", clock(61_000)), status_line(&vpn, false, 31_000));
@@ -724,11 +983,19 @@ mod tests {
     /// A route's place: its own server's kind, or the provider, Nord's group, the city or Fastest, and Nord's OpenVPN.
     #[test]
     fn places() {
-        let mut r = Route::new("x", Location { group: Some("legacy_double_vpn".into()), city: Some("Paris".into()), ..Location::country("nord", 74, "FR", "France") });
+        let mut r = Route::new(
+            "x",
+            Location {
+                group: Some("legacy_double_vpn".into()),
+                city: Some("Paris".into()),
+                ..Location::country("nord", 74, "FR", "France")
+            },
+        );
         assert_eq!("Nord · Double VPN · Paris · OpenVPN", place(&r, &IndexMap::new()));
         r.loc = Location { protocol: Some("openvpn_tcp".into()), ..Location::country("nord", 74, "FR", "France") };
         assert_eq!("Nord · Fastest · OpenVPN TCP", place(&r, &IndexMap::new()));
-        let live: IndexMap<String, Server> = [("x".to_string(), Server { city: "Lyon".into(), ..Default::default() })].into_iter().collect();
+        let live: IndexMap<String, Server> =
+            [("x".to_string(), Server { city: "Lyon".into(), ..Default::default() })].into_iter().collect();
         r.loc = Location::country("mullvad", 1, "FR", "France");
         assert_eq!("Mullvad · Lyon", place(&r, &live));
         r.ts_exit = Some("100.64.0.1".into());
@@ -769,7 +1036,14 @@ mod tests {
         s.home.subnets = vec!["192.168.1.0/24".into()];
         let v = Fixture::new(s).view(None);
         assert!(v.nord_note);
-        assert_eq!(Some(HomeRow { sub: "WireGuard · home.example.net · 192.168.1.0/24".into(), login_url: String::new(), lit: false }), v.home);
+        assert_eq!(
+            Some(HomeRow {
+                sub: "WireGuard · home.example.net · 192.168.1.0/24".into(),
+                login_url: String::new(),
+                lit: false
+            }),
+            v.home
+        );
         let mut s = set_up();
         s.apps.clear();
         let v = Fixture::new(s).view(None);

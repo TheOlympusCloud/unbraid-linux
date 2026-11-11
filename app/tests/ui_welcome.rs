@@ -128,7 +128,11 @@ fn model<T: Clone + 'static>(items: impl Iterator<Item = T>) -> ModelRc<T> {
 fn show_welcome(w: &WelcomeWindow, v: &welcome::WelcomeView) {
     let page = WelcomePage::get(w);
     page.set_fresh(v.fresh);
-    page.set_steps(model(v.steps.iter().map(|s| WelcomeStep { overline: text(&s.overline), title: text(&s.title), lead: text(&s.lead) })));
+    page.set_steps(model(v.steps.iter().map(|s| WelcomeStep {
+        overline: text(&s.overline),
+        title: text(&s.title),
+        lead: text(&s.lead),
+    })));
     page.set_strands(model(v.strands.iter().map(|s| Strand { path: text(&s.path), colour: s.colour, front: s.front })));
 }
 
@@ -297,7 +301,11 @@ fn tour_stops() {
     show_tour(&w, &tour::view(0, true));
     let px = render(&w, 1280, 800, &dir.join("tour-dark.png"));
     assert_eq!(ACCENT, at(&px, 1280, 1178, 129), "the spot's ring, 6 px around the power button");
-    assert!(near(at(&px, 1280, 1178, 187), [0xff, 0x8a, 0x80]), "the power button, not dimmed: {:?}", at(&px, 1280, 1178, 187));
+    assert!(
+        near(at(&px, 1280, 1178, 187), [0xff, 0x8a, 0x80]),
+        "the power button, not dimmed: {:?}",
+        at(&px, 1280, 1178, 187)
+    );
     assert!(at(&px, 1280, 1000, 600)[0] < GROUND[0], "the page around it, dimmed");
     Ink::get(&w).set_light(true);
     render(&w, 1280, 800, &dir.join("tour-light.png"));

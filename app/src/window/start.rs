@@ -1,6 +1,8 @@
 //! The welcome and the terms, before anything else; the tour over the pages.
 
-use super::{AppWindow, ProfileChip, ROUTES, SETTINGS, Strand, TourPage, WelcomePage, WelcomeStep, Win, list, text, with};
+use super::{
+    AppWindow, ProfileChip, ROUTES, SETTINGS, Strand, TourPage, WelcomePage, WelcomeStep, Win, list, text, with,
+};
 use crate::desktop;
 use crate::ui::{settings, tour, welcome};
 use slint::Global;
@@ -67,7 +69,8 @@ fn end(win: &Win) {
 
 pub(super) fn show_welcome(win: &Win) {
     // A new install gets the whole welcome; someone updating from before the terms only the terms.
-    let fresh = *win.s.borrow_mut().fresh.get_or_insert_with(|| !*win.ui.signed_in.borrow() && !*win.ui.disclosed.borrow());
+    let fresh =
+        *win.s.borrow_mut().fresh.get_or_insert_with(|| !*win.ui.signed_in.borrow() && !*win.ui.disclosed.borrow());
     let mut g = win.start.borrow_mut();
     if g.welcome == Some(fresh) {
         return;
@@ -76,8 +79,15 @@ pub(super) fn show_welcome(win: &Win) {
     let v = welcome::view(fresh);
     let p = WelcomePage::get(&win.w);
     p.set_fresh(v.fresh);
-    p.set_steps(list(v.steps.iter().map(|s| WelcomeStep { overline: text(&s.overline), title: text(&s.title), lead: text(&s.lead) }).collect()));
-    p.set_strands(list(v.strands.iter().map(|s| Strand { path: text(&s.path), colour: s.colour, front: s.front }).collect()));
+    p.set_steps(list(
+        v.steps
+            .iter()
+            .map(|s| WelcomeStep { overline: text(&s.overline), title: text(&s.title), lead: text(&s.lead) })
+            .collect(),
+    ));
+    p.set_strands(list(
+        v.strands.iter().map(|s| Strand { path: text(&s.path), colour: s.colour, front: s.front }).collect(),
+    ));
 }
 
 pub(super) fn show_tour(win: &Win) {
