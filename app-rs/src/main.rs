@@ -3,16 +3,6 @@ use unbraid::instance::{self, Args};
 
 slint::include_modules!();
 
-/// The user's runtime folder for unbraid's sockets, private to the user.
-fn runtime_dir() -> std::path::PathBuf {
-    let base = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    let dir = base.join("unbraid");
-    let _ = std::fs::create_dir_all(&dir);
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
-    dir
-}
-
 fn main() {
     let args = Args::parse(&std::env::args().skip(1).collect::<Vec<_>>());
     if args.help {
@@ -27,7 +17,11 @@ fn main() {
         eprintln!("{}", instance::USAGE);
         std::process::exit(2);
     }
-    let socket = instance::socket(&runtime_dir());
+    let runtime = unbraid::paths::runtime().unwrap_or_else(|e| {
+        eprintln!("{}: {e}", unbraid::APP);
+        std::process::exit(1)
+    });
+    let socket = instance::socket(runtime);
     // Another instance runs: it does what was asked.
     let line = if args.command.is_empty() { "ping" } else { args.command.as_str() };
     if let Some(answer) = instance::send(&socket, line) {

@@ -15,7 +15,7 @@ use hyper_util::rt::TokioIo;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 use tokio::net::UnixStream;
 use tonic::transport::{Channel, Endpoint, Uri};
@@ -23,6 +23,16 @@ use tonic::{Code, Request, Status, Streaming};
 
 /// The engine isn't there at all (service stopped or not installed), as opposed to one that refused something.
 pub const MISSING: &str = "The unbraid engine isn't running. Start it with: sudo systemctl enable --now unbraid-engine";
+
+/// The engine the app talks to ([`crate::paths::engine`]). Its first use must be inside the async runtime, where the
+/// channel starts its task; the runtime folder exists by then (the app checks it at start).
+pub fn get() -> &'static Engine {
+    static ENGINE: LazyLock<Engine> = LazyLock::new(|| {
+        let runtime = crate::paths::runtime().expect("the runtime folder is made at start");
+        Engine::new(Path::new(&crate::paths::engine()), Path::new(&crate::paths::engine_binary()), runtime)
+    });
+    &ENGINE
+}
 
 /// A gRPC channel to the daemon on `socket`, connected on first use.
 pub fn channel(socket: &Path) -> Channel {
