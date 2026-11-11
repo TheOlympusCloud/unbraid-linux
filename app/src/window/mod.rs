@@ -209,18 +209,28 @@ pub fn run(args: &Args, socket: &Path) {
     if !instance::serve(socket, Arc::new(handle)) {
         return; // lost a race with another start
     }
-    // The engine's worker and statistics end with the app; the tunnels end with it too.
+    // The engine's worker and statistics end with the app; the tunnels end with it too, however it ends: SIGTERM,
+    // Ctrl+C, its terminal closing (SIGHUP), the event loop's end (below), or an exit() inside a library, such as Xlib's
+    // when the display goes (atexit).
     app::runtime().spawn(async {
         use tokio::signal::unix::{SignalKind, signal};
-        let (Ok(mut term), Ok(mut int)) = (signal(SignalKind::terminate()), signal(SignalKind::interrupt())) else {
+        let (Ok(mut term), Ok(mut int), Ok(mut hup)) =
+            (signal(SignalKind::terminate()), signal(SignalKind::interrupt()), signal(SignalKind::hangup()))
+        else {
             return;
         };
         tokio::select! {
             _ = term.recv() => {}
             _ = int.recv() => {}
+            _ = hup.recv() => {}
         }
         quit();
     });
+    extern "C" fn at_exit() {
+        end();
+    }
+    // SAFETY: a plain function with no arguments, as atexit takes; it runs on the thread that calls exit().
+    unsafe { libc::atexit(at_exit) };
     let _ = slint::set_xdg_app_id(APP); // the launcher entry's StartupWMClass and the desktop's app id
     start_tray();
     // A connect that can't happen yet (setup unfinished) shows the window too.
@@ -253,6 +263,7 @@ pub fn run(args: &Args, socket: &Path) {
         win.show();
     }
     let _ = slint::run_event_loop_until_quit();
+    end();
 }
 
 /// A screen's area in the units of [`ds::Placement`] (logical pixels), from what the windowing system says of it.
@@ -270,9 +281,18 @@ fn screen(at: winit::dpi::PhysicalPosition<i32>, size: winit::dpi::PhysicalSize<
 pub fn quit() {
     with(|win| win.save_place());
     std::thread::spawn(|| {
+        end();
+        std::process::exit(0)
+    });
+}
+
+/// What is still to be saved, then the connection's end (up to 10 s): once, whichever way the app ends first. A second
+/// way waits for the first to finish.
+fn end() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
         app::store().flush();
         vpn::quit();
-        std::process::exit(0)
     });
 }
 
