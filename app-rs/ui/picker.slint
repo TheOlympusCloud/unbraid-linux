@@ -1,0 +1,1097 @@
+// The location picker, a dialog over the page it came from: two tabs, Providers (the provider and protocol fields, then
+// their locations) and My servers (Tailscale devices and the servers saved in Settings); a country's cities and servers
+// beside the list; Route options in a sheet.
+
+import { Ink, Overline, Code, Title, Body, Sub, Caption } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { Motion } from "motion.slint";
+import { Metrics, StateLayer, FocusRing, Tappable, IconTap, Screen, SearchField, CodeChip, SectionLabel, GroupRow, RowText, RowKind, Toggle, Secondary, Modal } from "components.slint";
+import { Chevron, CaptionRow } from "inputs.slint";
+import { BottomSheet } from "limit_sheet.slint";
+
+// The symbols this dialog needs that Icons lacks, from the same Material Symbols Rounded set.
+export global PickerIcons {
+    // expand_less: Icons.expand turned over, for what opens upwards or is open.
+    out property <string> expand-less: "M480-598q-8 0-15 2.5t-13 8.5L268-403q-11 11-11 28t11 28q11 11 28 11t28-11l156-156 156 156q11 11 28 11t28-11q11-11 11-28t-11-28L508-587q-6-6-13-8.5t-15-2.5Z";
+}
+
+// What a row of the picker's lists is.
+export enum PickKind { place, label, title, all, note, message, device, typed, server, settings }
+
+// What a place row has at its start.
+export enum Lead { none, code, fastest, direct }
+
+// One row of the list or of the country's panel; see the lib's PickRow for what each field means per kind.
+export struct PickRow {
+    kind: PickKind,
+    key: string,
+    title: string,
+    sub: string,
+    lead: Lead,
+    code: string,
+    on: bool,
+    online: bool,
+    star: bool,
+    starred: bool,
+    more: bool,
+    action: string,
+    i: int,
+    n: int,
+    small: bool,
+}
+
+// One choice of a field's menu, or a server type's chip; [key] "" is none (NordLynx, Standard).
+export struct Choice {
+    key: string,
+    label: string,
+    sub: string,
+    on: bool,
+    enabled: bool,
+}
+
+// The provider's own blocking for this route; [title] "" when there is none.
+export struct Blocking {
+    title: string,
+    sub: string,
+    on: bool,
+    enabled: bool,
+}
+
+export global PickerPage {
+    in property <string> overline;
+    in property <string> title;
+    in property <string> sub;
+    // The route's colour: what is in use is tinted with it, the chosen tab too.
+    in property <int> hue;
+    in property <bool> mine;
+    // The provider and protocol fields.
+    in property <bool> fields;
+    in property <string> provider-id;
+    in property <string> provider;
+    in property <[Choice]> providers;
+    in property <string> protocol;
+    // NordVPN's protocols; none makes the field read-only.
+    in property <[Choice]> protocols;
+    in-out property <string> query;
+    in property <string> placeholder;
+    in property <[PickRow]> rows;
+    // Route options' value; "" hides the bar.
+    in property <string> options;
+    // The country open beside the list ("" none), its rows, and what the panel says while none is.
+    in property <string> country;
+    in property <[PickRow]> panel;
+    in property <string> hint;
+    in property <bool> options-open;
+    in property <[Choice]> groups;
+    in property <Blocking> blocking;
+    callback close();
+    callback tab(mine: bool);
+    callback choose-provider(id: string);
+    callback add-provider();
+    // "" is NordLynx.
+    callback choose-protocol(key: string);
+    callback search(text: string);
+    // A place row's key: pick it, or star it.
+    callback choose(key: string);
+    callback star(key: string);
+    callback direct();
+    callback toggle-all();
+    callback open-country(key: string);
+    callback close-country();
+    callback toggle-servers();
+    callback retry(provider: string);
+    callback ts-exit(ip: string, name: string);
+    callback use-server(id: string);
+    callback settings();
+    callback open-options();
+    callback close-options();
+    // "" is standard servers.
+    callback group(key: string);
+    callback protection(on: bool);
+}
+
+// Two tabs as one connected pill: the highlight slides under the chosen tab, which also shows a check.
+component Tab inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    callback clicked();
+    private property <color> ink: self.on ? Ink.text : Ink.dim;
+    animate ink {
+        duration: Motion.fast-effects;
+        easing: spring(0);
+    }
+    border-radius: 20px;
+    forward-focus: tap;
+    tap := Tappable {
+        border-radius: root.border-radius;
+        accessible-role: tab;
+        accessible-label: root.text;
+        accessible-item-selectable: true;
+        accessible-item-selected: root.on;
+        accessible-action-default => {
+            if !root.on {
+                root.clicked();
+            }
+        }
+        clicked => {
+            if !root.on {
+                root.clicked();
+            }
+        }
+    }
+    HorizontalLayout {
+        alignment: center;
+        cross-axis-alignment: center;
+        // The check grows in beside the chosen tab's name.
+        Rectangle {
+            width: root.on ? 24px : 0px;
+            height: 18px;
+            opacity: root.on ? 1 : 0;
+            clip: true;
+            animate width {
+                duration: Motion.fast-spatial;
+                easing: spring(0.4);
+            }
+            animate opacity {
+                duration: Motion.fast-effects;
+                easing: spring(0);
+            }
+            Icon {
+                x: 0;
+                y: 0;
+                icon: Icons.check;
+                size: 18px;
+                tint: root.ink;
+            }
+        }
+        Sub {
+            text: root.text;
+            color: root.ink;
+            accessible-role: none;
+        }
+    }
+}
+
+component Tabs inherits VerticalLayout {
+    in property <bool> mine;
+    in property <color> tint;
+    private property <length> half: (self.width - 2 * Metrics.gutter - 8px) / 2;
+    padding-left: Metrics.gutter;
+    padding-right: Metrics.gutter;
+    padding-top: 12px;
+    padding-bottom: 4px;
+    Rectangle {
+        height: 48px;
+        border-radius: 24px;
+        border-width: 1px;
+        border-color: Ink.line;
+        accessible-role: tab-list;
+        Rectangle {
+            x: 4px + (root.mine ? root.half : 0);
+            y: 4px;
+            width: root.half;
+            height: 40px;
+            border-radius: 20px;
+            background: root.tint.with-alpha(0.22);
+            animate x {
+                duration: Motion.spatial;
+                easing: spring(0.2);
+            }
+        }
+        HorizontalLayout {
+            padding: 4px;
+            // Half each, as the highlight is, whatever their names' lengths: both grow from nothing.
+            Tab {
+                min-width: 0;
+                preferred-width: 0;
+                text: "Providers";
+                on: !root.mine;
+                clicked => {
+                    PickerPage.tab(false);
+                }
+            }
+            Tab {
+                min-width: 0;
+                preferred-width: 0;
+                text: "My servers";
+                on: root.mine;
+                clicked => {
+                    PickerPage.tab(true);
+                }
+            }
+        }
+    }
+}
+
+// One choice of a field's menu: its name, what it is for under it, a check when chosen.
+component MenuRow {
+    in property <string> text;
+    in property <string> sub;
+    in property <bool> on;
+    in property <bool> enabled: true;
+    in property <color> tint: Ink.accent;
+    in property <color> color: Ink.text;
+    callback clicked();
+    min-height: max(48px, row.min-height);
+    forward-focus: tap;
+    tap := Tappable {
+        enabled: root.enabled;
+        accessible-role: button;
+        accessible-label: root.text;
+        accessible-description: root.sub;
+        accessible-enabled: root.enabled;
+        accessible-checkable: root.on;
+        accessible-checked: root.on;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+    row := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        cross-axis-alignment: center;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Body {
+                text: root.text;
+                color: root.enabled ? root.color : Ink.faint;
+                accessible-role: none;
+            }
+            if root.sub != "": Caption {
+                text: root.sub;
+                accessible-role: none;
+            }
+        }
+        if root.on: Icon {
+            icon: Icons.check;
+            size: 20px;
+            tint: root.tint;
+        }
+    }
+}
+
+// A labelled field that opens a menu of choices under itself; read-only when there is nothing to choose.
+component Dropdown inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <[Choice]> choices;
+    in property <bool> enabled: true;
+    // The menu ends with Add a provider.
+    in property <bool> add;
+    in property <color> tint;
+    callback chose(key: string);
+    callback added();
+    horizontal-stretch: 1;
+    min-height: max(56px, content.min-height);
+    border-radius: 18px;
+    background: Ink.surface-high;
+    forward-focus: tap;
+    tap := Tappable {
+        enabled: root.enabled;
+        border-radius: root.border-radius;
+        accessible-role: combobox;
+        accessible-label: root.label + ": " + root.value;
+        accessible-enabled: root.enabled;
+        accessible-action-default => {
+            menu.show();
+        }
+        clicked => {
+            menu.show();
+        }
+    }
+    content := HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 12px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        cross-axis-alignment: center;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Overline {
+                text: root.label.to-uppercase();
+                font-size: 10px;
+                accessible-role: none;
+            }
+            Body {
+                text: root.value;
+                overflow: elide;
+                accessible-role: none;
+            }
+        }
+        if root.enabled: Icon {
+            icon: Icons.drop-down;
+            tint: Ink.dim;
+        }
+    }
+    menu := PopupWindow {
+        x: 0;
+        y: root.height;
+        Rectangle {
+            min-width: 112px;
+            max-width: 280px;
+            border-radius: 18px;
+            background: Ink.surface-top;
+            VerticalLayout {
+                padding-top: 8px;
+                padding-bottom: 8px;
+                for c in root.choices: MenuRow {
+                    text: c.label;
+                    sub: c.sub;
+                    on: c.on;
+                    enabled: c.enabled;
+                    tint: root.tint;
+                    clicked => {
+                        root.chose(c.key);
+                    }
+                }
+                if root.add: MenuRow {
+                    text: "Add a provider";
+                    color: Ink.accent;
+                    clicked => {
+                        root.added();
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The bar at the bottom: what it opens over its value.
+component BarButton inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    callback clicked();
+    min-height: max(56px, content.min-height);
+    border-radius: 20px;
+    background: Ink.surface-high;
+    forward-focus: tap;
+    tap := Tappable {
+        border-radius: root.border-radius;
+        accessible-role: button;
+        accessible-label: root.label;
+        accessible-description: root.value;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+    content := HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 10px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        cross-axis-alignment: center;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Caption {
+                text: root.label;
+                accessible-role: none;
+            }
+            Body {
+                text: root.value;
+                overflow: elide;
+                accessible-role: none;
+            }
+        }
+        Icon {
+            icon: PickerIcons.expand-less;
+            size: 22px;
+            tint: Ink.dim;
+        }
+    }
+}
+
+// A place to pick. In use, it is tinted in the route's colour. What sits at its end (a star, a ⋯) takes its own
+// clicks, and the row stays hovered under them.
+component Place inherits Rectangle {
+    in property <bool> on;
+    in property <color> tint;
+    // A server's row: smaller.
+    in property <bool> small;
+    in property <string> label;
+    in property <string> description;
+    callback clicked();
+    private property <length> radius: self.small ? 16px : 20px;
+    min-height: max(self.small ? 48px : 56px, content.min-height);
+    border-radius: self.radius;
+    background: self.on ? self.tint.with-alpha(0.16) : transparent;
+    forward-focus: focus;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-description: root.description;
+    accessible-item-selectable: true;
+    accessible-item-selected: root.on;
+    accessible-action-default => {
+        root.clicked();
+    }
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+        StateLayer {
+            border-radius: root.radius;
+            hovered: touch.has-hover;
+            pressed: touch.pressed;
+            focused: focus.has-focus;
+        }
+        content := HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 4px;
+            padding-bottom: 4px;
+            spacing: 14px;
+            cross-axis-alignment: center;
+            @children
+        }
+    }
+    focus := FocusScope {
+        x: 0;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == Key.Space {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    if focus.has-focus: FocusRing {
+        radius: root.radius;
+    }
+}
+
+// A place's name on one line, what it is under it.
+component PlaceText inherits VerticalLayout {
+    in property <string> title;
+    in property <string> sub;
+    horizontal-stretch: 1;
+    spacing: 2px;
+    alignment: center;
+    Body {
+        text: root.title;
+        overflow: elide;
+        accessible-role: none;
+    }
+    if root.sub != "": Caption {
+        text: root.sub;
+        wrap: word-wrap;
+        accessible-role: none;
+    }
+}
+
+// The favourite star: it fills and pops (1 → 1.18 → 1) when starred.
+component Star inherits Rectangle {
+    in property <bool> on;
+    callback clicked();
+    private property <bool> popping;
+    private property <float> pop: self.popping ? 1.18 : 1;
+    // Up at once, then springing back.
+    animate pop {
+        duration: root.popping ? 0ms : Motion.fast-spatial;
+        easing: spring(0.4);
+    }
+    changed on => {
+        if root.on {
+            root.popping = true;
+        }
+    }
+    width: 48px;
+    height: 48px;
+    border-radius: 24px;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    forward-focus: tap;
+    Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        icon: root.on ? Icons.star-filled : Icons.star;
+        size: 24px * root.pop;
+        tint: root.on ? Ink.accent : Ink.faint;
+    }
+    Timer {
+        interval: 16ms;
+        running: root.popping;
+        triggered => {
+            root.popping = false;
+        }
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        accessible-role: button;
+        accessible-label: root.on ? "Remove from favorites" : "Add to favorites";
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A server type's chip in Route options: outlined, filled with the route's tint when chosen.
+component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    in property <color> tint;
+    callback clicked();
+    height: 32px;
+    border-radius: 12px;
+    background: self.on ? self.tint.with-alpha(0.2) : transparent;
+    border-width: 1px;
+    border-color: self.on ? self.tint.with-alpha(0.2) : Ink.line;
+    forward-focus: tap;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        Sub {
+            text: root.text;
+            color: Ink.text;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        accessible-role: checkbox;
+        accessible-label: root.text;
+        accessible-checkable: true;
+        accessible-checked: root.on;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// One row of the list or of the panel, as its kind draws it.
+component PickItem inherits VerticalLayout {
+    in property <PickRow> item;
+    in property <color> tint;
+    if root.item.kind == PickKind.place: HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        Place {
+            on: root.item.on;
+            tint: root.tint;
+            small: root.item.small;
+            label: root.item.title;
+            description: root.item.sub;
+            clicked => {
+                if root.item.lead == Lead.direct {
+                    PickerPage.direct();
+                } else {
+                    PickerPage.choose(root.item.key);
+                }
+            }
+            if root.item.lead == Lead.fastest || root.item.lead == Lead.direct: Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 12px;
+                background: Ink.surface-top;
+                Icon {
+                    x: 8px;
+                    y: 8px;
+                    icon: root.item.lead == Lead.fastest ? Icons.bolt : Icons.direct;
+                    size: 20px;
+                    tint: root.item.lead == Lead.fastest ? Ink.accent : Ink.dim;
+                }
+            }
+            if root.item.lead == Lead.code: HorizontalLayout {
+                min-width: 36px;
+                max-width: 36px;
+                alignment: center;
+                cross-axis-alignment: center;
+                CodeChip {
+                    code: root.item.code;
+                    filled: false;
+                }
+            }
+            PlaceText {
+                title: root.item.title;
+                sub: root.item.sub;
+            }
+            if root.item.on: Icon {
+                icon: Icons.check-circle;
+                size: 22px;
+                tint: root.tint;
+            }
+            if root.item.star: Star {
+                on: root.item.starred;
+                clicked => {
+                    PickerPage.star(root.item.key);
+                }
+            }
+            if root.item.more: IconTap {
+                icon: Icons.more;
+                label: "Cities and servers in " + root.item.title;
+                tint: Ink.dim;
+                clicked => {
+                    PickerPage.open-country(root.item.key);
+                }
+            }
+        }
+    }
+    if root.item.kind == PickKind.all: HorizontalLayout {
+        padding: 8px;
+        Place {
+            label: root.item.title;
+            description: root.item.sub;
+            clicked => {
+                PickerPage.toggle-all();
+            }
+            HorizontalLayout {
+                min-width: 36px;
+                max-width: 36px;
+                alignment: center;
+                Code {
+                    text: root.item.code;
+                    color: Ink.dim;
+                    accessible-role: none;
+                }
+            }
+            PlaceText {
+                title: root.item.title;
+                sub: root.item.sub;
+            }
+            Icon {
+                icon: root.item.on ? PickerIcons.expand-less : Icons.expand;
+                size: 20px;
+                tint: Ink.dim;
+            }
+        }
+    }
+    if root.item.kind == PickKind.label: SectionLabel {
+        text: root.item.title;
+        if root.item.action != "": Secondary {
+            text: root.item.action;
+            clicked => {
+                PickerPage.toggle-servers();
+            }
+        }
+    }
+    if root.item.kind == PickKind.title: HorizontalLayout {
+        padding-left: 24px;
+        padding-right: 24px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        Title {
+            text: root.item.title;
+        }
+    }
+    if root.item.kind == PickKind.note: CaptionRow {
+        text: root.item.title;
+        color: root.item.on ? Ink.text : Ink.dim;
+    }
+    if root.item.kind == PickKind.message: VerticalLayout {
+        padding-left: 24px;
+        padding-right: 24px;
+        padding-top: 16px;
+        padding-bottom: 16px;
+        spacing: 8px;
+        Sub {
+            text: root.item.title;
+            wrap: word-wrap;
+        }
+        if root.item.action != "": HorizontalLayout {
+            alignment: start;
+            Secondary {
+                text: root.item.action;
+                // No provider: Add a provider; one whose list couldn't be read: Retry.
+                clicked => {
+                    if PickerPage.provider-id == "" {
+                        PickerPage.add-provider();
+                    } else {
+                        PickerPage.retry(PickerPage.provider-id);
+                    }
+                }
+            }
+        }
+    }
+    if root.item.kind == PickKind.device: GroupRow {
+        i: root.item.i;
+        n: root.item.n;
+        label: root.item.title;
+        sub: root.item.sub;
+        kind: RowKind.button;
+        clicked => {
+            PickerPage.ts-exit(root.item.key, root.item.title);
+        }
+        Rectangle {
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: root.item.online ? Ink.good : Ink.faint;
+        }
+        RowText {
+            title: root.item.title;
+            sub: root.item.sub;
+            title-color: root.item.online ? Ink.text : Ink.dim;
+        }
+        if root.item.on: Icon {
+            icon: Icons.check-circle;
+            size: 22px;
+            tint: root.tint;
+        }
+    }
+    if root.item.kind == PickKind.typed: GroupRow {
+        title: root.item.title;
+        sub: root.item.sub;
+        kind: RowKind.button;
+        clicked => {
+            PickerPage.ts-exit(root.item.key, root.item.key);
+        }
+        Chevron { }
+    }
+    if root.item.kind == PickKind.server: GroupRow {
+        i: root.item.i;
+        n: root.item.n;
+        label: root.item.title;
+        sub: root.item.sub;
+        kind: RowKind.button;
+        clicked => {
+            PickerPage.use-server(root.item.key);
+        }
+        CodeChip {
+            code: root.item.code;
+            filled: false;
+        }
+        RowText {
+            title: root.item.title;
+            sub: root.item.sub;
+        }
+        if root.item.on: Icon {
+            icon: Icons.check-circle;
+            size: 22px;
+            tint: root.tint;
+        }
+    }
+    // Setting servers up happens in Settings; My servers only picks among them.
+    if root.item.kind == PickKind.settings: HorizontalLayout {
+        padding-left: Metrics.gutter;
+        padding-right: Metrics.gutter;
+        padding-top: 16px;
+        Rectangle {
+            border-radius: 20px;
+            border-width: 1px;
+            border-color: Ink.line;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 8px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                spacing: 12px;
+                cross-axis-alignment: center;
+                Caption {
+                    horizontal-stretch: 1;
+                    text: root.item.title;
+                    wrap: word-wrap;
+                }
+                Secondary {
+                    text: root.item.action;
+                    clicked => {
+                        PickerPage.settings();
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Beside the list: the open country's cities and servers, or what to do to see them.
+component Panel inherits Rectangle {
+    in property <color> tint;
+    background: Ink.surface;
+    if PickerPage.country != "": list := Flickable {
+        width: parent.width;
+        height: parent.height;
+        content-height: column.preferred-height;
+        column := VerticalLayout {
+            width: list.width;
+            padding-top: 16px;
+            padding-bottom: 16px;
+            alignment: start;
+            for row in PickerPage.panel: PickItem {
+                item: row;
+                tint: root.tint;
+            }
+        }
+    }
+    if PickerPage.country != "": IconTap {
+        x: parent.width - self.width - 8px;
+        y: 8px;
+        size: 40px;
+        icon: Icons.close;
+        label: "Close " + PickerPage.country;
+        clicked => {
+            PickerPage.close-country();
+        }
+    }
+    if PickerPage.country == "": VerticalLayout {
+        padding: 24px;
+        spacing: 8px;
+        alignment: start;
+        Overline {
+            text: "CITIES AND SERVERS";
+        }
+        Sub {
+            text: PickerPage.hint;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// Route options: Nord's server types, the provider's own blocking for this route, the app's settings.
+component OptionsSheet inherits BottomSheet {
+    in property <color> tint;
+    label: "Route options";
+    close => {
+        PickerPage.close-options();
+    }
+    VerticalLayout {
+        padding-bottom: 16px;
+        HorizontalLayout {
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            Title {
+                text: "Route options";
+            }
+        }
+        if PickerPage.groups.length > 0: VerticalLayout {
+            SectionLabel {
+                text: "Server type";
+            }
+            FlexboxLayout {
+                padding-left: Metrics.gutter;
+                padding-right: Metrics.gutter;
+                spacing: 8px;
+                for g in PickerPage.groups: Chip {
+                    text: g.label;
+                    on: g.on;
+                    tint: root.tint;
+                    clicked => {
+                        PickerPage.group(g.key);
+                    }
+                }
+            }
+            CaptionRow {
+                text: "Lists only the countries that offer it. Pick a location to use it.";
+            }
+            Rectangle {
+                height: 16px;
+            }
+        }
+        if PickerPage.blocking.title != "": VerticalLayout {
+            SectionLabel {
+                text: "Protection";
+            }
+            GroupRow {
+                title: PickerPage.blocking.title;
+                sub: PickerPage.blocking.sub;
+                kind: RowKind.switch;
+                checked: PickerPage.blocking.on;
+                enabled: PickerPage.blocking.enabled;
+                clicked => {
+                    PickerPage.protection(!PickerPage.blocking.on);
+                }
+                Toggle {
+                    on: PickerPage.blocking.on;
+                    enabled: PickerPage.blocking.enabled;
+                    passive: true;
+                }
+            }
+            Rectangle {
+                height: 16px;
+            }
+        }
+        GroupRow {
+            title: "App settings";
+            sub: "DNS, local network, Tailscale, kill switch";
+            kind: RowKind.button;
+            clicked => {
+                PickerPage.settings();
+            }
+            Chevron { }
+        }
+    }
+}
+
+// The picker, filling its dialog. Nothing clips it (the Route options sheet covers the whole window), so what fills the
+// dialog's corners is rounded as the dialog is ([radius]).
+export component PickerScreen inherits Rectangle {
+    in property <length> radius: 28px;
+    private property <color> tint: Ink.route(PickerPage.hue);
+    private property <bool> sheet: PickerPage.options-open;
+    // The sheet takes the keys while open; once it closes, Esc closes the picker again.
+    changed sheet => {
+        if !root.sheet {
+            keys.focus();
+        }
+    }
+    keys := FocusScope {
+        width: 100%;
+        height: 100%;
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                PickerPage.close();
+                return accept;
+            }
+            return reject;
+        }
+        HorizontalLayout {
+            Screen {
+                horizontal-stretch: 1;
+                border-top-left-radius: root.radius;
+                border-bottom-left-radius: root.radius;
+                overline: PickerPage.overline;
+                title: PickerPage.title;
+                sub: PickerPage.sub;
+                navigation-icon: Icons.close;
+                navigation-label: "Close";
+                navigate => {
+                    PickerPage.close();
+                }
+                // Tabs, then for providers the two fields, then search: each tab searches only itself.
+                Tabs {
+                    mine: PickerPage.mine;
+                    tint: root.tint;
+                }
+                if PickerPage.fields: HorizontalLayout {
+                    padding-left: Metrics.gutter;
+                    padding-right: Metrics.gutter;
+                    padding-top: 8px;
+                    padding-bottom: 8px;
+                    spacing: 8px;
+                    // Half each, whatever their values' lengths: both grow from nothing.
+                    Dropdown {
+                        min-width: 0;
+                        preferred-width: 0;
+                        label: "Provider";
+                        value: PickerPage.provider;
+                        choices: PickerPage.providers;
+                        add: true;
+                        tint: root.tint;
+                        chose(key) => {
+                            PickerPage.choose-provider(key);
+                        }
+                        added => {
+                            PickerPage.add-provider();
+                        }
+                    }
+                    Dropdown {
+                        min-width: 0;
+                        preferred-width: 0;
+                        label: "Protocol";
+                        value: PickerPage.protocol;
+                        choices: PickerPage.protocols;
+                        enabled: PickerPage.protocols.length > 0;
+                        tint: root.tint;
+                        chose(key) => {
+                            PickerPage.choose-protocol(key);
+                        }
+                    }
+                }
+                if !PickerPage.mine && PickerPage.provider-id == "": Rectangle {
+                    height: 8px;
+                }
+                SearchField {
+                    value <=> PickerPage.query;
+                    placeholder: PickerPage.placeholder;
+                    changed(text) => {
+                        PickerPage.search(text);
+                    }
+                }
+                Rectangle {
+                    height: 4px;
+                }
+                list := Flickable {
+                    vertical-stretch: 1;
+                    content-height: column.preferred-height;
+                    column := VerticalLayout {
+                        width: list.width;
+                        padding-bottom: 24px;
+                        alignment: start;
+                        for row in PickerPage.rows: PickItem {
+                            item: row;
+                            tint: root.tint;
+                        }
+                    }
+                }
+                if PickerPage.options != "": HorizontalLayout {
+                    padding-left: Metrics.gutter;
+                    padding-right: Metrics.gutter;
+                    padding-top: 8px;
+                    padding-bottom: 8px;
+                    BarButton {
+                        label: "Route options";
+                        value: PickerPage.options;
+                        clicked => {
+                            PickerPage.open-options();
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                width: 1px;
+                background: Ink.surface-high;
+            }
+            Panel {
+                width: 400px;
+                tint: root.tint;
+                border-top-right-radius: root.radius;
+                border-bottom-right-radius: root.radius;
+            }
+        }
+    }
+    // Over the whole window, as a sheet is.
+    if PickerPage.options-open: OptionsSheet {
+        x: -root.absolute-position.x;
+        y: -root.absolute-position.y;
+        width: root.window-width;
+        height: root.window-height;
+        tint: root.tint;
+    }
+    // The window's size, which the sheet covers: this dialog sits centred in it.
+    private property <length> window-width: 2 * root.absolute-position.x + root.width;
+    private property <length> window-height: 2 * root.absolute-position.y + root.height;
+}
+
+// The picker as a dialog over the page it came from: the page dimmed, the dialog as large as the window allows, 1040 by
+// 720 at most. A click beside it closes it, as Esc does. Make it the window's last child.
+export component PickerDialog inherits Modal {
+    dim: Ink.scrim;
+    label: "Choose a location";
+    close => {
+        PickerPage.close();
+    }
+    Rectangle {
+        // The Modal's 24 px margins on each side.
+        width: min(1040px, root.width - 48px);
+        height: min(720px, root.height - 48px);
+        border-radius: 28px;
+        background: Ink.ground;
+        PickerScreen {
+            width: 100%;
+            height: 100%;
+            radius: parent.border-radius;
+        }
+        // The dialog's edge, over what fills it.
+        Rectangle {
+            border-radius: parent.border-radius;
+            border-width: 1px;
+            border-color: Ink.line;
+        }
+    }
+}

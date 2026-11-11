@@ -1,5 +1,6 @@
 //! The Routes page: where each route goes out, the default route and the connection.
 
+use crate::ui::picker::NORD_GROUPS;
 use crate::ui::stats::rate;
 use crate::exit_check::ExitReport;
 use crate::model::{DIRECT, Route, Server, Setup};
@@ -9,9 +10,6 @@ use crate::ui::profiles::{UseBarView, use_bar};
 use crate::vpn::{Ask, Phase, VpnState, vpn_on};
 use indexmap::{IndexMap, IndexSet};
 use std::collections::HashSet;
-
-/// Nord's server groups as a route's place names them; standard servers say nothing.
-const NORD_GROUPS: [(&str, &str); 4] = [("legacy_p2p", "P2P"), ("legacy_dedicated_ip", "Dedicated IP"), ("legacy_double_vpn", "Double VPN"), ("legacy_onion_over_vpn", "Onion")];
 
 /// An installed app as Routes needs it: its key, its name, and the apps that run as one program with it (`group`,
 /// empty when none).
@@ -229,7 +227,8 @@ pub fn place(r: &Route, live: &IndexMap<String, Server>) -> String {
         return "Tailscale exit".into();
     }
     let nord = r.loc.provider == "nord";
-    let group = NORD_GROUPS.iter().find(|(id, _)| nord && r.loc.group.as_deref() == Some(*id)).map(|(_, label)| label.to_string());
+    // Standard servers say nothing.
+    let group = NORD_GROUPS.iter().find(|(id, _)| nord && id.is_some() && r.loc.group.as_deref() == *id).map(|(_, label)| label.to_string());
     let city = r.loc.pinned.as_ref().map(|p| p.name.clone()).or_else(|| r.loc.city.clone()).or_else(|| live.get(&r.id).map(|s| s.city.clone()).filter(|c| !c.trim().is_empty()));
     let tech = match nord.then(|| providers::nord::tech(&r.loc)).as_deref() {
         Some("openvpn_udp") => Some("OpenVPN".to_string()),
