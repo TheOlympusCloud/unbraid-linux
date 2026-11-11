@@ -35,7 +35,7 @@ pub mod sqlite;
 pub mod stats;
 pub mod store;
 pub mod ts_login;
-pub mod viewmodel;
+pub mod ui;
 pub mod vpn;
 pub mod wg_conf;
 
