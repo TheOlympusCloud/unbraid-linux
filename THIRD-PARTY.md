@@ -22,23 +22,22 @@ build.
 
 | Component | Used for | Licence |
 |---|---|---|
-| [Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform), AndroidX, Material 3, Material Symbols | User interface | Apache-2.0 |
-| [Skia](https://skia.org), through [Skiko](https://github.com/JetBrains/skiko) | Drawing the interface | BSD-3-Clause |
-| Kotlin standard library, kotlinx.coroutines, kotlinx.serialization | Language runtime | Apache-2.0 |
-| [gRPC Java](https://github.com/grpc/grpc-java), [gRPC Kotlin](https://github.com/grpc/grpc-kotlin), [Netty](https://netty.io), Guava | The app's line to its engine | Apache-2.0 |
-| [Protocol Buffers](https://github.com/protocolbuffers/protobuf) (lite runtime) | The engine's messages | BSD-3-Clause |
-| [sqlite-jdbc](https://github.com/xerial/sqlite-jdbc), with SQLite | Local statistics | Apache-2.0; SQLite is in the public domain |
-| [ZXing](https://github.com/zxing/zxing) core 3.5.3 | Reads QR codes from a picture at sign-in | Apache-2.0 |
-| ThreeTenBP | Date and time code inside the Kotlin standard library | BSD-3-Clause |
+| [Slint](https://slint.dev) | User interface | GPL-3.0, one of Slint's licence choices |
+| [Material Symbols](https://github.com/google/material-design-icons) | Icons | Apache-2.0 |
+| The [Rust](https://www.rust-lang.org) standard library | Language runtime | Apache-2.0 or MIT |
+| [tokio](https://tokio.rs), [tonic](https://github.com/hyperium/tonic), [prost](https://github.com/tokio-rs/prost) | The app's line to its engine | MIT; prost Apache-2.0 |
+| [rustls](https://github.com/rustls/rustls) with [ring](https://github.com/briansmith/ring), and [reqwest](https://github.com/seanmonstar/reqwest) | TLS, always checking the certificate's name, and the providers' APIs | Apache-2.0, ISC and MIT |
+| [rusqlite](https://github.com/rusqlite/rusqlite), with SQLite | Local statistics | MIT; SQLite is in the public domain |
+| [rqrr](https://github.com/WanzenBug/rqrr) | Reads QR codes from a picture at sign-in | MIT or Apache-2.0, and ISC |
+| [ksni](https://github.com/iovxw/ksni) and [zbus](https://github.com/dbus2/zbus) | The tray icon, and the desktop's portals and notifications | Unlicense; MIT |
+| [resvg](https://github.com/linebender/resvg) | Drawing SVG icons | Apache-2.0 or MIT |
+| About 350 more Rust crates | What the above build on | MIT, Apache-2.0, BSD, ISC, Zlib, Unicode and others, each in the app's full licence texts |
 | [Big Shoulders Display](https://github.com/xotypeco/big_shoulders) | Font | SIL Open Font License 1.1 |
 | [Onest](https://github.com/googlefonts/onest) | Font | SIL Open Font License 1.1 |
 | [Martian Mono](https://github.com/evilmartians/mono) | Font | SIL Open Font License 1.1 |
 | [gluetun](https://github.com/qdm12/gluetun) | ExpressVPN OpenVPN profile and provider notes | MIT |
 | [PIA manual-connections](https://github.com/pia-foss/manual-connections) | Sign-in and region steps for Private Internet Access | MIT |
 | PIA certificate authority (`pia_ca_rsa_4096.crt`) | Pinning TLS to PIA's WireGuard servers | MIT, from PIA manual-connections |
-
-The app runs on your distribution's Java runtime (OpenJDK, GPL-2.0 with the Classpath Exception), which the packages
-depend on rather than include.
 
 ## Downloaded while the app runs
 
@@ -49,9 +48,9 @@ depend on rather than include.
 
 ## Build tools
 
-Gradle, the Kotlin compiler, the Compose Multiplatform Gradle plugin and the Protocol Buffers Gradle plugin are under
-the Apache License 2.0; protoc and its gRPC plugins under BSD-3-Clause and Apache-2.0. The Gradle wrapper checks the
-Gradle distribution it downloads against a pinned SHA-256 checksum. The unit tests use JUnit 4.13.2 (EPL-1.0), Hamcrest
-Core 1.3 (BSD-3-Clause) and Compose's UI test library (Apache-2.0), which are not part of the app.
+Cargo and the Rust compiler are under the Apache License 2.0 or MIT. slint-build (GPL-3.0, as Slint) compiles the
+interface; protox (Apache-2.0 or MIT) and tonic-prost-build (MIT) compile the engine's .proto files, without protoc.
+Cargo checks every crate it downloads against the checksum pinned in Cargo.lock. The tests also use rcgen (Apache-2.0
+or MIT), which is not part of the app.
 
 If you think something is missing or credited wrongly, please open an issue.

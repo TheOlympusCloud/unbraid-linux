@@ -1,5 +1,5 @@
 //! The welcome and the terms in their card in the middle of the window, with the data of the approved screenshots
-//! (app/build/screenshots/1-welcome.png, 2-welcome-routes.png, 3-terms.png), and the tour over a plain page beside the
+//! (1-welcome.png, 2-welcome-routes.png, 3-terms.png), and the tour over a plain page beside the
 //! sidebar, rendered headless to `target/screenshots/welcome-*.png`, `terms-*.png` and `tour-*.png`; and what a still
 //! picture can't show: the clicks, Esc, and the window behind the tour taking none.
 

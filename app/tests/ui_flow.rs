@@ -1,7 +1,7 @@
 //! The screens as a person first meets them, in the app's own window, headless and clicked through: the welcome and
 //! terms, sign-in, then Routes, Apps, Stats, Settings and the location picker of a set-up app; the smallest window; the
 //! tray's profile switch. Each step leaves a shot in `target/screenshots/flow-*.png`, to set beside the approved ones
-//! (`app/build/screenshots/`). The data folder is a temporary one, and there is no engine.
+//! (the earlier app's `UiFlowTest` took them). The data folder is a temporary one, and there is no engine.
 
 mod common;
 

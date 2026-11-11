@@ -4,14 +4,14 @@
 # bubblewrap gives a fake root. The window is shown on the X display $DISPLAY (an Xvfb is fine) and screenshotted into
 # dist/test/. A live tunnel needs a real machine (no TUN device here); everything up to it is checked.
 #
-# Debian 12 must refuse the package: its C++ runtime is older than the app's launcher needs (GLIBCXX_3.4.32).
+# Debian 12 must refuse the package: its C library is older than the app needs (glibc 2.39).
 #
 # usage: packaging/test.sh [debian-12|debian-13|ubuntu-24.04|archlinux]...    (default: all four)
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DIST=$ROOT/dist
 CACHE=${CACHE:-$HOME/.cache/unbraid-rootfs}
-VERSION=$(sed -n 's/^val versionName = "\(.*\)"/\1/p' "$ROOT/app/build.gradle.kts")
+VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/app/Cargo.toml" | head -1)
 OUT=$DIST/test
 mkdir -p "$OUT" "$CACHE"
 : "${DISPLAY:?set DISPLAY to an X server (e.g. Xvfb :99) for the window check}"

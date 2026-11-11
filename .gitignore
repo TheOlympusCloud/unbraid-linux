@@ -1,10 +1,5 @@
-.gradle/
-.kotlin/
-build/
-*/build/
 dist/
 engine/out/
-local.properties
 .idea/
 *.iml
 
@@ -22,10 +17,9 @@ CLAUDE.md
 *.key
 *.conf
 *.ovpn
-!app/src/test/resources/ovpn/*.ovpn
-!app-rs/tests/fixtures/manual/*.ovpn
-!app-rs/tests/fixtures/compiler/*.ovpn
-!app-rs/tests/fixtures/providers/ovpn/*.ovpn
+!app/tests/fixtures/manual/*.ovpn
+!app/tests/fixtures/compiler/*.ovpn
+!app/tests/fixtures/providers/ovpn/*.ovpn
 
 # Rust build output
 target/

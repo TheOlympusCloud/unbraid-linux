@@ -1,27 +1,27 @@
 #!/bin/bash
 # Builds dist/unbraid_<version>-1_amd64.deb (Debian 13+, Ubuntu 24.04+ and their derivatives) and dist/arch/ (a
-# PKGBUILD and the tree it packages, for Arch and its derivatives). The app is one native program (app-rs); the engine is
+# PKGBUILD and the tree it packages, for Arch and its derivatives). The app is one native program (app/); the engine is
 # built by engine/build.sh. Both packages hold the same files.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
-VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' app-rs/Cargo.toml | head -1)
+VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' app/Cargo.toml | head -1)
 DIST=$ROOT/dist
 [ -x engine/out/unbraid-engine ] || engine/build.sh
 command -v cargo >/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
-(cd app-rs && cargo build --release --locked -q)
+(cd app && cargo build --release --locked -q)
 # The files both packages install, under $1.
 stage() {
   local r=$1
   rm -rf "$r" && mkdir -p "$r/usr/lib/unbraid/bin" "$r/usr/bin"
   # The app is one native program; the engine recognises it by this path, so it stays where the launcher was.
-  install -m755 app-rs/target/release/unbraid "$r/usr/lib/unbraid/bin/unbraid"
+  install -m755 "${CARGO_TARGET_DIR:-app/target}/release/unbraid" "$r/usr/lib/unbraid/bin/unbraid"
   install -m755 engine/out/unbraid-engine "$r/usr/lib/unbraid/unbraid-engine"
   ln -s ../lib/unbraid/bin/unbraid "$r/usr/bin/unbraid"
   install -Dm644 packaging/files/unbraid-engine.service "$r/usr/lib/systemd/system/unbraid-engine.service"
   install -Dm644 packaging/files/app.unbraid.engine.policy "$r/usr/share/polkit-1/actions/app.unbraid.engine.policy"
   install -Dm644 packaging/files/unbraid.desktop "$r/usr/share/applications/unbraid.desktop"
-  install -Dm644 app-rs/ui/unbraid.svg "$r/usr/share/icons/hicolor/scalable/apps/unbraid.svg"
+  install -Dm644 app/ui/unbraid.svg "$r/usr/share/icons/hicolor/scalable/apps/unbraid.svg"
 }
 
 rm -rf "$DIST" && mkdir -p "$DIST"

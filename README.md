@@ -150,13 +150,13 @@ Before you log in, while paused and if unbraid stops, apps use your normal conne
 
 ## Build
 
-You need JDK 21 and Go 1.26 (Go fetches the exact toolchain itself through `GOTOOLCHAIN`). The packages need
-`dpkg-deb`, `fakeroot` and Python 3.
+You need Rust 1.99 or later and Go 1.26 (Go fetches the exact toolchain itself through `GOTOOLCHAIN`). The packages
+need `dpkg-deb`, `fakeroot` and Python 3.
 
 ```bash
-engine/build.sh             # builds engine/out/unbraid-engine from sing-box v1.14.4 with the patches in engine/patches/
-./gradlew :app:run          # runs the app from source (with a running engine; see below)
-packaging/build.sh          # writes the .deb and the Arch PKGBUILD to dist/
+engine/build.sh                                   # builds engine/out/unbraid-engine from sing-box v1.14.4 with the patches in engine/patches/
+cargo run --release --manifest-path app/Cargo.toml   # runs the app from source (with a running engine; see below)
+packaging/build.sh                                # writes the .deb and the Arch PKGBUILD to dist/
 ```
 
 `engine/build.sh` keeps its work files in `~/.cache/unbraid-engine`; set `WORK` to use another folder. The patches stop
@@ -167,22 +167,24 @@ installing it, run the engine and point the app at it:
 
 ```bash
 sudo engine/out/unbraid-engine run --working-directory /var/lib/unbraid-engine --socket /run/unbraid-engine/engine.sock
-UNBRAID_ENGINE_BIN=$PWD/engine/out/unbraid-engine ./gradlew :app:run
+UNBRAID_ENGINE_BIN=$PWD/engine/out/unbraid-engine cargo run --release --manifest-path app/Cargo.toml
 ```
 
 ## Test
 
 ```bash
-./gradlew test              # the Android app's unit tests, the Linux ones, and the screens clicked through headless
-engine/build.sh test && ./gradlew engineTest   # the engine's patch tests; the real engine checks every compiled
-                                               # config and routes three programs through their own exits
+(cd app && cargo test)        # the unit tests, every screen and the window's flows drawn headless, and the real engine
+                              #   (once engine/build.sh built it) checking every compiled config and routing three
+                              #   programs through their own exits
+engine/build.sh test          # the engine's patch tests
 DISPLAY=:99 packaging/test.sh   # installs, runs and removes the packages in clean Debian 13, Ubuntu 24.04 and Arch,
                                 #   and checks that Debian 12 refuses the package
 ```
 
-`./gradlew test` saves a screenshot of each screen it visits in `app/build/screenshots`, in a 1280 x 800 window, the
-light theme and the smallest window too; the ones in `docs/screenshots` come from there. `packaging/test.sh` needs
-bubblewrap and an X display (an `Xvfb :99` is fine), and no root.
+`cargo test` saves a screenshot of each screen it visits in `app/target/screenshots`, in a 1280 x 800 window, the
+light theme and the smallest window too; the ones in `docs/screenshots` come from there. It needs no display; the
+tray's test runs on a private session bus when `dbus-run-session` is installed. `packaging/test.sh` needs bubblewrap
+and an X display (an `Xvfb :99` is fine), and no root.
 
 ## Differences from the Android app
 

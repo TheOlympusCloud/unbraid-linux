@@ -1,5 +1,5 @@
 //! What the UI tests share: Slint without a display, a clock the test moves, and shots as PNGs in
-//! `app-rs/target/screenshots/`. `render()` takes any Slint window component: the gallery or a screen.
+//! `app/target/screenshots/`. `render()` takes any Slint window component: the gallery or a screen.
 // Each test crate uses only part of it.
 #![allow(dead_code)]
 
@@ -39,7 +39,7 @@ pub fn headless() {
     let _ = slint::platform::set_platform(Box::new(Headless));
 }
 
-/// Where shots go: `app-rs/target/screenshots/`.
+/// Where shots go: `app/target/screenshots/`.
 pub fn shots_dir() -> PathBuf {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/screenshots");
     std::fs::create_dir_all(&dir).expect("create target/screenshots");

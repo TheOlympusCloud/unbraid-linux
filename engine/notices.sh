@@ -1,5 +1,5 @@
 #!/bin/bash
-# Writes app-rs/notices.txt: every licence the app and its engine must carry. Run after engine/build.sh (it does).
+# Writes app/notices.txt: every licence the app and its engine must carry. Run after engine/build.sh (it does).
 # Go modules are the ones actually linked into the engine, for the same build tags; Rust crates the ones linked into
 # the app (not build tools, proc macros or test crates).
 set -euo pipefail
@@ -8,7 +8,7 @@ SB=${WORK:-$HOME/.cache/unbraid-engine}/sing-box
 TAGS=$(sed -n 's/^TAGS=\(.*\)/\1/p' "$ROOT/engine/build.sh")
 export GOTOOLCHAIN=go1.26.10 GOFLAGS=-mod=mod
 command -v cargo >/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
-OUT="$ROOT/app-rs/notices.txt"
+OUT="$ROOT/app/notices.txt"
 licence() { find "$1" -maxdepth 1 -type f -iregex '.*/\(licen[cs]e\|copying\)[^/]*' -printf '%f\n' | sort | head -1; }
 # A plain Apache-2.0 text is printed once, at the end; a longer file (extra licences appended) is kept whole.
 show() { if grep -q "Version 2.0, January 2004" "$1" && [ "$(wc -c < "$1")" -lt 11800 ]; then echo "Licensed under the Apache License, Version 2.0 (full text at the end)."; else cat "$1"; fi; }
@@ -20,7 +20,7 @@ rust() {
   echo; echo "=== Rust standard library $(rustc --version | cut -d' ' -f2)"
   echo "Copyright The Rust Project Developers. Licensed under the Apache License, Version 2.0 (full text at the end) or the MIT License:"
   cat "$doc/MIT.txt"; echo; echo "--- Its Unicode tables"; cat "$doc/Unicode-3.0.txt"
-  (cd "$ROOT/app-rs" && cargo metadata -q --format-version 1 --locked --offline --filter-platform x86_64-unknown-linux-gnu > "$META" &&
+  (cd "$ROOT/app" && cargo metadata -q --format-version 1 --locked --offline --filter-platform x86_64-unknown-linux-gnu > "$META" &&
     cargo tree -q --locked --offline -e normal,no-proc-macro --target x86_64-unknown-linux-gnu --prefix none -f '{p}' | sed 's/ (.*//' | sort -u > "$CRATES")
   python3 -I - "$META" "$CRATES" <<'PY'
 import json, os, re, sys

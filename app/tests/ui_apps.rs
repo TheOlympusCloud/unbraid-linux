@@ -1,5 +1,5 @@
 //! The Apps page and the two disclosures, rendered headless beside the sidebar as the window shows them, with the data
-//! of the approved screenshots (app/build/screenshots/6-apps*.png), to `target/screenshots/apps-*.png`; and what a
+//! of the approved screenshots (6-apps*.png), to `target/screenshots/apps-*.png`; and what a
 //! still picture can't show: the right-click menu's choices, the keys and the dialogs' buttons.
 
 mod common;
