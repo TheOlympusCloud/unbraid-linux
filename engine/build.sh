@@ -15,8 +15,8 @@ PIN=c005f35300ce76427dc285481ec5695f5b179cd2
 git checkout -q -f $PIN && git clean -qfd
 [ "$(git rev-parse HEAD)" = $PIN ] || { echo "sing-box checkout is not v1.14.4"; exit 1; }
 git apply "$ROOT"/engine/patches/sing-box-*.patch
-# go1.26.10: the toolchain sing-box builds 1.14.4 with upstream (and the Android engine uses).
-export GOTOOLCHAIN=go1.26.10 CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH
+# go1.26.11: upstream builds 1.14.4 with go1.26.10; .11 carries the standard library's fix for GO-2026-6859 (net/http).
+export GOTOOLCHAIN=go1.26.11 CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH
 TAGS=with_gvisor,with_wireguard,with_utls,with_tailscale,ts_omit_logtail,ts_omit_cachenetmap,ts_omit_ssh,ts_omit_drive,ts_omit_taildrop,ts_omit_webclient,ts_omit_doctor,ts_omit_capture,ts_omit_kube,ts_omit_aws,ts_omit_synology,ts_omit_bird,with_openvpn,badlinkname,tfogo_checklinkname0
 if [ "${1:-}" = test ]; then
   go test -tags "$TAGS" -ldflags "-checklinkname=0" ./daemon/ ./protocol/openvpn/ ./protocol/tailscale/ ./experimental/boxdd/ -run 'STUN|Resolver|Fallback|Taildrop|Unbraid|LinuxPeer'

@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SB=${WORK:-$HOME/.cache/unbraid-engine}/sing-box
 TAGS=$(sed -n 's/^TAGS=\(.*\)/\1/p' "$ROOT/engine/build.sh")
-export GOTOOLCHAIN=go1.26.10 GOFLAGS=-mod=mod
+export GOTOOLCHAIN=go1.26.11 GOFLAGS=-mod=mod
 command -v cargo >/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
 OUT="$ROOT/app/notices.txt"
 licence() { find "$1" -maxdepth 1 -type f -iregex '.*/\(licen[cs]e\|copying\)[^/]*' -printf '%f\n' | sort | head -1; }
