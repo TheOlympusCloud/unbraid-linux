@@ -9,7 +9,12 @@ VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' app/Cargo.toml | head -1)
 DIST=$ROOT/dist
 [ -x engine/out/unbraid-engine ] || engine/build.sh
 command -v cargo >/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
-(cd app && cargo build --release --locked -q)
+for t in cargo-audit cargo-auditable; do
+  command -v $t >/dev/null || { echo "needs $t: cargo install --locked cargo-audit@0.23.0 cargo-auditable@0.7.7"; exit 1; }
+done
+# Every crate in Cargo.lock against the RustSec database: an advisory not reviewed in app/.cargo/audit.toml stops the
+# build, as govulncheck does for the engine. The binary then carries its crate list, for audits of what shipped.
+(cd app && cargo audit --deny warnings -q && cargo auditable build --release --locked -q)
 # The files both packages install, under $1.
 stage() {
   local r=$1

@@ -151,7 +151,8 @@ Before you log in, while paused and if unbraid stops, apps use your normal conne
 ## Build
 
 You need Rust 1.99 or later and Go 1.26 (Go fetches the exact toolchain itself through `GOTOOLCHAIN`). The packages
-need `dpkg-deb`, `fakeroot` and Python 3.
+need `dpkg-deb`, `fakeroot`, Python 3, and `cargo install --locked cargo-audit@0.23.0 cargo-auditable@0.7.7`: their build
+stops on a crate with an advisory not reviewed in `app/.cargo/audit.toml`, and the app's binary carries its crate list.
 
 ```bash
 engine/build.sh                                   # builds engine/out/unbraid-engine from sing-box v1.14.4 with the patches in engine/patches/
