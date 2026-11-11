@@ -20,7 +20,8 @@ use crate::instance::{self, Args};
 use crate::model::Setup;
 use crate::ui::{Ui, tour};
 use crate::vpn::{self, VpnState};
-use crate::{APP, VERSION_NAME, app, desktop, paths, stats as recorded, tray};
+use crate::{APP, VERSION_NAME, app, desktop, stats as recorded, tray};
+use slint::winit_030::{WinitWindowAccessor, winit};
 use slint::{CloseRequestResponse, ComponentHandle, Global, LogicalPosition, LogicalSize, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::path::Path;
@@ -49,6 +50,8 @@ pub struct State {
     pub sheet: i32,
     /// A connect waits for the VPN disclosure's Agree.
     pub connect_after: bool,
+    /// Settings' Turn on for statistics, asking first.
+    pub stats_consent: bool,
     pub shortcuts: bool,
     /// The welcome's whole introduction (a new install) or only the terms; read once, when it first shows.
     pub fresh: Option<bool>,
@@ -179,7 +182,6 @@ pub fn open() -> Rc<Win> {
     sign_in::wire(&win.w);
     start::wire(&win.w);
     follow_all(&win.ui);
-    win.place();
     // What was asked before the window opened (a start's connect, a later start's show): done now, redrawn below.
     DIRTY.store(false, Ordering::SeqCst);
     for f in std::mem::take(&mut *locked(&POSTED)) {
@@ -222,16 +224,36 @@ pub fn run(args: &Args, socket: &Path) {
         VISIBLE.store(true, Ordering::SeqCst);
     }
     if args.connect || args.command == "connect" {
-        handle("connect");
+        if ready() {
+            vpn::start();
+        } else {
+            VISIBLE.store(true, Ordering::SeqCst);
+        }
     }
     // The theme before the first frame, so the window doesn't open in the other one.
     *locked(&SYSTEM_DARK) = desktop::system_dark();
     let win = open();
     follow_theme();
-    if VISIBLE.load(Ordering::SeqCst) {
+    // The window's last place, if it is still on a screen, before it shows: the screens are known once the loop runs.
+    let placed = slint::winit_030::invoke_from_active_event_loop(|el| {
+        let screens: Vec<ds::Rect> = el.available_monitors().map(|m| screen(m.position(), m.size(), m.scale_factor())).collect();
+        with(|win| {
+            win.place(&screens);
+            if VISIBLE.load(Ordering::SeqCst) {
+                win.show();
+            }
+        });
+    });
+    if placed.is_err() && VISIBLE.load(Ordering::SeqCst) {
         win.show();
     }
     let _ = slint::run_event_loop_until_quit();
+}
+
+/// A screen's area in the units of [`ds::Placement`] (logical pixels), from what the windowing system says of it.
+fn screen(at: winit::dpi::PhysicalPosition<i32>, size: winit::dpi::PhysicalSize<u32>, scale: f64) -> ds::Rect {
+    let (at, size) = (at.to_logical::<f64>(scale), size.to_logical::<f64>(scale));
+    ds::Rect { x: at.x.round() as i32, y: at.y.round() as i32, width: size.width.round() as i32, height: size.height.round() as i32 }
 }
 
 /// Ends the app: what is still to be saved, then its connection (up to 10 s), off the window's thread and the runtime.
@@ -536,6 +558,14 @@ impl Win {
         let first = !self.w.window().is_visible();
         VISIBLE.store(true, Ordering::SeqCst);
         let _ = self.w.show();
+        if !first {
+            // Already shown, maybe behind other windows or minimised: it comes to the front. On Wayland the compositor
+            // decides; without an activation token it may only flag the window.
+            self.w.window().with_winit_window(|w| {
+                w.set_minimized(false);
+                w.focus_window();
+            });
+        }
         if first {
             // The installed apps can change while unbraid is in the background.
             self.ui.refresh_apps();
@@ -551,9 +581,10 @@ impl Win {
         self.refresh();
     }
 
-    /// The place and size the window had when it last closed, if it is to be remembered.
-    fn place(&self) {
-        let Some(p) = ds::placement() else { return };
+    /// The place and size the window had when it last closed, if it is to be remembered and still on one of `screens`
+    /// (one may have gone since).
+    fn place(&self, screens: &[ds::Rect]) {
+        let Some(p) = ds::placement().filter(|p| ds::on_screen(*p, screens)) else { return };
         let w = self.w.window();
         w.set_position(LogicalPosition::new(p.x as f32, p.y as f32));
         w.set_size(LogicalSize::new(p.width.max(880) as f32, p.height.max(600) as f32));
@@ -637,6 +668,15 @@ impl Win {
                 s.sheet = 0;
                 s.connect_after = false;
                 drop(s);
+                win.refresh();
+            });
+        });
+        w.on_stats_consent_answered(|on| {
+            with(|win| {
+                win.s.borrow_mut().stats_consent = false;
+                if on {
+                    win.ui.set_stats(true);
+                }
                 win.refresh();
             });
         });
@@ -777,10 +817,11 @@ impl Win {
         w.set_touring(stage >= 2 && s.tour.is_some());
         w.set_sheet(s.sheet);
         w.set_shortcuts(s.shortcuts);
+        w.set_stats_consent(s.stats_consent);
         w.set_unsaved(*app::store().unsaved.borrow());
         let (tab, picker_open, touring) = (s.tab, s.picker.is_some(), s.tour.is_some());
         let ts = s.ts.clone();
-        let layer = (stage, tab, picker_open, s.sheet, s.shortcuts, ts.is_some());
+        let layer = (stage, tab, picker_open, s.sheet, s.shortcuts || s.stats_consent, ts.is_some());
         drop(s);
         // What had the focus may be gone with what closed: the window's keys take it back, before what opens takes it.
         if std::mem::replace(&mut self.s.borrow_mut().layer, layer) != layer {
@@ -850,27 +891,6 @@ impl Win {
     }
 }
 
-/// The desktop's file chooser (zenity's, else kdialog's), as a document picker: the file picked, none when cancelled
-/// or when the desktop has neither. Blocks: call it off the window's thread.
-// shortcut: a dialog program, not the XDG portal's FileChooser; move to the portal if neither is common on a supported desktop.
-pub(crate) fn pick_file(title: &str, images: bool) -> Option<std::path::PathBuf> {
-    use std::process::{Command, Stdio};
-    let filter = "Pictures | *.png *.jpg *.jpeg *.gif *.bmp";
-    let mut zenity = vec!["--file-selection", "--title", title];
-    if images {
-        zenity.extend(["--file-filter", filter]);
-    }
-    let home = paths::home().to_string_lossy().into_owned();
-    let kdialog = vec!["--title", title, "--getopenfilename", home.as_str(), if images { "*.png *.jpg *.jpeg *.gif *.bmp" } else { "" }];
-    for (prog, args) in [("zenity", zenity), ("kdialog", kdialog)] {
-        let Ok(out) = Command::new(prog).args(args.iter().filter(|a| !a.is_empty())).stdin(Stdio::null()).stderr(Stdio::null()).output() else { continue };
-        // Cancelled: no other chooser opens.
-        let path = String::from_utf8_lossy(&out.stdout).trim_end_matches('\n').to_string();
-        return (out.status.success() && !path.is_empty()).then(|| path.into());
-    }
-    None
-}
-
 /// Updates `model` to `rows` row by row: a new model builds every row again, and a field typed in loses the focus.
 pub(crate) fn sync<T: Clone + PartialEq + 'static>(model: &VecModel<T>, rows: Vec<T>) {
     use slint::Model;
@@ -906,4 +926,17 @@ pub(crate) fn image(width: u32, height: u32, rgba: impl IntoIterator<Item = u8>)
         *to = from;
     }
     slint::Image::from_rgba8(buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A screen in logical pixels, as a saved place is: a 2× screen right of a 1920 px one is 1280 logical wide.
+    #[test]
+    fn screens_in_the_places_units() {
+        let r = screen(winit::dpi::PhysicalPosition::new(3840, 0), winit::dpi::PhysicalSize::new(2560, 1440), 2.0);
+        assert_eq!(ds::Rect { x: 1920, y: 0, width: 1280, height: 720 }, r);
+        assert!(ds::on_screen(ds::Placement { x: 2000, y: 100, width: 1100, height: 600, maximized: false }, &[r]));
+    }
 }

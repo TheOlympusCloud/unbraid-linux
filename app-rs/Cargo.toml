@@ -8,7 +8,8 @@ description = "Unbraid by TheOlympus: every app its own VPN exit, on Linux"
 publish = false
 
 [dependencies]
-slint = { version = "1.18.1", default-features = false, features = ["std", "compat-1-2", "backend-winit-x11", "backend-winit-wayland", "renderer-software", "accessibility"] }
+# winit access (to raise the window, and to check a saved place against the screens) is unstable API: hence ~1.18.
+slint = { version = "~1.18.1", default-features = false, features = ["std", "compat-1-2", "backend-winit-x11", "backend-winit-wayland", "renderer-software", "accessibility", "unstable-winit-030"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "fs", "io-util", "process", "signal"] }
 tokio-stream = "0.1"
 tonic = { version = "0.14.9", default-features = false, features = ["codegen", "transport"] }

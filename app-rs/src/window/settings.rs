@@ -130,10 +130,9 @@ fn login(on: bool, connect: Option<bool>, minimised: Option<bool>) {
 pub(super) fn import_file(win: &Win, kind: &str, prefix: Option<&str>) {
     win.settings.borrow_mut().import_error = None;
     win.ui.import_draft.send_modify(|d| d.file(kind, prefix));
-    app::runtime().spawn_blocking(|| {
-        let Some(file) = super::pick_file(importer::PICK_TITLE, false) else { return };
-        let read = importer::read_capped(&file);
-        let name = importer::file_name(&file);
+    app::runtime().spawn(async {
+        let Some(file) = desktop::pick_file(importer::PICK_TITLE, false).await else { return };
+        let Ok((read, name)) = tokio::task::spawn_blocking(move || (importer::read_capped(&file), importer::file_name(&file))).await else { return };
         post(move |win| {
             let mut error = None;
             win.ui.import_draft.send_modify(|d| error = d.picked(read.as_deref(), &name));
@@ -164,9 +163,9 @@ pub(super) fn wire(w: &AppWindow) {
     p.on_allow_suffix(|d, on| edit(|s| logic::allow_suffix(s, &d, on)));
     p.on_set_lan(|on| edit(|s| logic::set_lan(s, on)));
     p.on_pick_home_config(|| {
-        app::runtime().spawn_blocking(|| {
-            let Some(file) = super::pick_file(logic::PICK_HOME_CONFIG, false) else { return };
-            let read = importer::read_capped(&file);
+        app::runtime().spawn(async {
+            let Some(file) = desktop::pick_file(logic::PICK_HOME_CONFIG, false).await else { return };
+            let Ok(read) = tokio::task::spawn_blocking(move || importer::read_capped(&file)).await else { return };
             post(move |win| {
                 let error = match read {
                     None => Some(importer::UNREADABLE.to_string()),
@@ -192,11 +191,10 @@ pub(super) fn wire(w: &AppWindow) {
     p.on_set_stats(|on| {
         with(|win| win.ui.set_stats(on));
     });
+    // Turn on asks first, in the Stats page's own sheet.
     p.on_stats_consent(|| {
-        // shortcut: Stats' consent sheet isn't exported from stats.slint; until it is, Settings turns recording on
-        // through the Stats page, which asks first.
         with(|win| {
-            win.set_tab(super::STATS);
+            win.s.borrow_mut().stats_consent = true;
             win.refresh();
         });
     });

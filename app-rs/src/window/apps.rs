@@ -90,7 +90,7 @@ pub(super) fn wire(w: &AppWindow) {
         with(|win| {
             let ui = win.ui.clone();
             app::runtime().spawn(async move {
-                let Some(file) = tokio::task::spawn_blocking(|| super::pick_file("Choose a program", false)).await.ok().flatten() else { return };
+                let Some(file) = desktop::pick_file("Choose a program", false).await else { return };
                 if let Some(key) = ui.add_program(file).await {
                     post(move |win| win.apps.borrow_mut().table.added(&key));
                 }

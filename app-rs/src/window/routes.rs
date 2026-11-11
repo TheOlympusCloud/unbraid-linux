@@ -195,11 +195,13 @@ pub(super) fn wire(w: &AppWindow) {
     });
 }
 
-/// Routes again: out of the profiles page, or (not yet) to the top.
+/// Routes again: out of the profiles page, or back to the top.
 pub(super) fn reselected(win: &Win) {
     let p = ProfilesPage::get(&win.w);
     if p.get_managing() {
         p.set_managing(false);
+    } else {
+        win.w.set_routes_top(win.w.get_routes_top() + 1);
     }
 }
 

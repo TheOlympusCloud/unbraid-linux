@@ -11,7 +11,7 @@ import { ProfilesPage } from "profiles.slint";
 import { LimitSheet, LimitSheetPage } from "limit_sheet.slint";
 import { AppsScreen, AppsPage } from "apps.slint";
 import { VpnDisclosure, AppsDisclosure } from "disclosures.slint";
-import { StatsScreen, StatsPage } from "stats.slint";
+import { StatsScreen, StatsPage, StatsConsent } from "stats.slint";
 import { SettingsScreen, SettingsPage, SettingsDialogs } from "settings.slint";
 import { ImportDialogs, ImporterPage } from "importer.slint";
 import { WelcomeScreen, WelcomePage } from "welcome.slint";
@@ -86,6 +86,10 @@ export component AppWindow inherits Window {
     // Ctrl+F: Apps puts the focus in its search once it shows. Apps or Stats again: back to the top.
     in-out property <bool> search-wanted;
     in property <int> apps-top;
+    in property <int> routes-top;
+    // Settings' Turn on for statistics: asked first, as the Stats page asks.
+    in property <bool> stats-consent;
+    callback stats-consent-answered(on: bool);
     // The window's keys, before anything in it sees them: true for a key it used.
     callback key(text: string, ctrl: bool, shift: bool, alt: bool) -> bool;
     callback page-clicked(index: int);
@@ -190,6 +194,10 @@ export component AppWindow inherits Window {
                         }
                     }
                     if root.stage == 2 && root.tab == 0: RoutesScreen {
+                        property <int> top: root.routes-top;
+                        changed top => {
+                            self.to-top();
+                        }
                         init => {
                             root.power-spot = self.power-spot;
                             root.default-spot = self.default-spot;
@@ -312,6 +320,14 @@ export component AppWindow inherits Window {
             }
         }
         if root.stage >= 2: SettingsDialogs { }
+        if root.stage >= 2 && root.stats-consent: StatsConsent {
+            close => {
+                root.stats-consent-answered(false);
+            }
+            accept => {
+                root.stats-consent-answered(true);
+            }
+        }
         if root.stage >= 1: ImportDialogs { }
         if root.ts-host != "": Prompt {
             title: "Open this sign-in link?";

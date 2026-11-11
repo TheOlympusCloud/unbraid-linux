@@ -1065,6 +1065,8 @@ export component RoutesScreen inherits Rectangle {
     // The route being renamed ("" for none) and its new name.
     private property <string> renaming;
     private property <string> new-name;
+    // Bumped to scroll the list back to its top (Routes clicked again while shown).
+    private property <int> tops;
     // Where the tour's stops point: the power button and the default route's card, in the window.
     out property <{x: length, y: length, width: length, height: length}> power-spot;
     out property <{x: length, y: length, width: length, height: length}> default-spot;
@@ -1099,6 +1101,11 @@ export component RoutesScreen inherits Rectangle {
         root.sheet = card.sheet;
         root.sheet-name = card.name;
         root.sheet-id = card.id;
+    }
+
+    // Back to the list's top.
+    public function to-top() {
+        root.tops += 1;
     }
 
     // A connect the connection hasn't taken up yet counts as on, so a second click offers to stop instead.
@@ -1157,6 +1164,10 @@ export component RoutesScreen inherits Rectangle {
             padding-top: 8px;
             spacing: 18px;
             list := Flickable {
+                property <int> tops: root.tops;
+                changed tops => {
+                    self.content-y = 0;
+                }
                 width: (parent.width - 18px) * 1.55 / 2.55;
                 mouse-drag-pan-enabled: false;
                 content-height: column.preferred-height;

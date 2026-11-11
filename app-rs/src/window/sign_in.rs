@@ -72,9 +72,9 @@ fn view(win: &Win, adding: bool) -> logic::SignInView {
 /// A file picked for field `key` of provider `id`'s form, `picture` for a QR code.
 fn pick_for(win: &Win, id: &str, key: &str, picture: bool) {
     let (ui, id, key) = (win.ui.clone(), id.to_string(), key.to_string());
-    app::runtime().spawn_blocking(move || {
-        let title = if picture { "Choose a picture of the QR code" } else { "Choose a config file" };
-        let file = super::pick_file(title, picture);
+    app::runtime().spawn(async move {
+        let title = if picture { "Choose a picture of the QR code" } else { "Choose the config file" };
+        let file = desktop::pick_file(title, picture).await;
         if picture {
             ui.read_qr(file, form_key(&id, &key), id);
         } else if let Some(f) = file {

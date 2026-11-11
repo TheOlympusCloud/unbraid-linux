@@ -551,4 +551,20 @@ fn d_tray_profile_switch() {
     unbraid::window::TourPage::get(&win.w).invoke_close();
     assert!(!win.w.get_touring());
     assert_eq!(0, win.w.get_tab(), "the tour ends on Routes");
+    // Routes clicked again goes back to its top.
+    let top = win.w.get_routes_top();
+    win.w.invoke_page_clicked(0);
+    assert_eq!(top + 1, win.w.get_routes_top());
+    // Settings' Turn on for statistics asks first, in the Stats page's sheet; Not now changes nothing.
+    edit(|s| s.prefs.stats = false);
+    win.w.invoke_page_clicked(3);
+    SettingsPage::get(&win.w).invoke_stats_consent();
+    assert!(win.w.get_stats_consent());
+    shot(&win, "stats-consent", 1280, 800);
+    win.w.invoke_stats_consent_answered(false);
+    assert!(!win.w.get_stats_consent());
+    assert!(!app::store().current().prefs.stats);
+    SettingsPage::get(&win.w).invoke_stats_consent();
+    win.w.invoke_stats_consent_answered(true);
+    assert!(app::store().current().prefs.stats);
 }

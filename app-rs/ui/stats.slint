@@ -3294,7 +3294,8 @@ component OffPage inherits Screen {
 }
 
 // What turning statistics on means, before anything is recorded.
-component StatsConsent inherits BottomSheet {
+// Asked before statistics start: from the Stats page's Turn on, and from Settings.
+export component StatsConsent inherits BottomSheet {
     callback accept();
     label: "Keep statistics?";
     VerticalLayout {

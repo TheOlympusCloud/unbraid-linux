@@ -2,8 +2,10 @@
 //! What Android gives an app through its Context and intents, from the Linux desktop's own tools.
 
 use crate::paths;
+use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{LazyLock, Mutex};
 use std::thread;
@@ -74,6 +76,97 @@ pub(crate) fn gnome_dark(out: Option<&str>) -> Option<bool> {
     }
 }
 
+/// The pictures a QR code can be read from, as the desktop's file choosers know them.
+const PICTURES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/bmp"];
+const PICTURE_NAMES: [&str; 5] = ["png", "jpg", "jpeg", "gif", "bmp"];
+
+/// The desktop's file chooser, as Android's document picker: the XDG portal's (GNOME's, KDE's, the one a sandbox
+/// allows), else zenity's or kdialog's. `images` offers pictures only. None when cancelled, or when the desktop has
+/// none. On the app's runtime.
+pub async fn pick_file(title: &str, images: bool) -> Option<PathBuf> {
+    match portal_pick(title, images).await {
+        Ok(picked) => return picked,
+        Err(e) => crate::log::i("Unbraid", &format!("file chooser: no portal ({e})")),
+    }
+    for (prog, args) in [("zenity", zenity_args(title, images)), ("kdialog", kdialog_args(title, images, paths::home()))] {
+        // Plain arguments, never a shell: the title is ours, but a path is the user's.
+        let run = tokio::process::Command::new(prog).args(&args).stdin(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true).output();
+        let Ok(out) = run.await else { continue };
+        // Cancelled: no other chooser opens.
+        return chosen(out.status.success(), &out.stdout);
+    }
+    None
+}
+
+/// What the portal's chooser answers on the request it made for `token` (made before it is asked, so the answer can't
+/// come first).
+async fn portal_pick(title: &str, images: bool) -> zbus::Result<Option<PathBuf>> {
+    use tokio_stream::StreamExt;
+    use zbus::{Connection, MatchRule, MessageStream, OwnedObjectPath, OwnedVariant, Variant};
+    const PORTAL: &str = "org.freedesktop.portal.Desktop";
+    // The request's Response, on the handle it answers on.
+    async fn responses(conn: &Connection, handle: &str) -> zbus::Result<MessageStream> {
+        let rule = MatchRule::builder().msg_type(zbus::message::Type::Signal).interface("org.freedesktop.portal.Request").member("Response").path(handle).build()?;
+        MessageStream::for_match_rule(rule, conn, None).await
+    }
+    let conn = Connection::session().await?;
+    let token = format!("unbraid{}", rand::random::<u32>());
+    let sender = conn.unique_name().map(|n| n.as_str().to_string()).unwrap_or_default();
+    let path = request_path(&sender, &token);
+    let mut answers = responses(&conn, &path).await?;
+    let mut options: HashMap<&str, Variant> = HashMap::from([("handle_token", Variant::from(token.as_str())), ("modal", Variant::from(true))]);
+    if images {
+        options.insert("filters", Variant::from(vec![("Pictures", PICTURES.iter().map(|m| (1u32, *m)).collect::<Vec<_>>())]));
+    }
+    let reply = conn.call_method(Some(PORTAL), "/org/freedesktop/portal/desktop", Some("org.freedesktop.portal.FileChooser"), "OpenFile", &("", title, options)).await?;
+    let handle: OwnedObjectPath = reply.body().deserialize()?;
+    // A portal older than handle tokens answers on a path of its own.
+    if handle.as_str() != path {
+        answers = responses(&conn, handle.as_str()).await?;
+    }
+    let Some(answer) = answers.next().await.transpose()? else { return Ok(None) };
+    let (response, mut results): (u32, HashMap<String, OwnedVariant>) = answer.body().deserialize()?;
+    let uris = results.remove("uris").and_then(|v| Vec::<String>::try_from(v).ok()).unwrap_or_default();
+    Ok(portal_file(response, &uris))
+}
+
+/// Where the portal answers a request made with `token` by the bus name `sender` (":1.42").
+fn request_path(sender: &str, token: &str) -> String {
+    format!("/org/freedesktop/portal/desktop/request/{}/{token}", sender.trim_start_matches(':').replace('.', "_"))
+}
+
+/// The file the portal's answer names: 0 picked (a file:// URI), 1 cancelled, 2 ended otherwise.
+fn portal_file(response: u32, uris: &[String]) -> Option<PathBuf> {
+    if response != 0 {
+        return None;
+    }
+    url::Url::parse(uris.first()?).ok().filter(|u| u.scheme() == "file")?.to_file_path().ok()
+}
+
+fn zenity_args(title: &str, images: bool) -> Vec<String> {
+    let mut a = vec!["--file-selection".into(), format!("--title={title}")];
+    if images {
+        let names: Vec<String> = PICTURE_NAMES.iter().flat_map(|e| [format!("*.{e}"), format!("*.{}", e.to_uppercase())]).collect();
+        a.push(format!("--file-filter=Pictures | {}", names.join(" ")));
+    }
+    a
+}
+
+fn kdialog_args(title: &str, images: bool, home: &Path) -> Vec<String> {
+    let mut a = vec!["--title".into(), title.into(), "--getopenfilename".into(), home.to_string_lossy().into_owned()];
+    if images {
+        a.push(PICTURES.join(" "));
+    }
+    a
+}
+
+/// A dialog program's answer: the path it printed, if one was picked.
+fn chosen(picked: bool, out: &[u8]) -> Option<PathBuf> {
+    let path = String::from_utf8_lossy(out);
+    let path = path.trim_end_matches('\n');
+    (picked && !path.is_empty()).then(|| path.into())
+}
+
 /// The clipboard's text, if any.
 pub fn clip_text() -> Option<String> {
     clipboard(|c| c.get_text())
@@ -134,6 +227,26 @@ pub(crate) fn run(cmd: &[&str], input: Option<&str>, timeout: Duration) -> Optio
 mod tests {
     use super::*;
     use crate::desktop_settings::{Theme, dark};
+
+    /// The file choosers: the portal's answer names the file picked, cancelled is none; the dialog programs get the
+    /// title and the pictures' filter as their own arguments.
+    #[test]
+    fn file_chooser() {
+        assert_eq!("/org/freedesktop/portal/desktop/request/1_42/unbraid7", request_path(":1.42", "unbraid7"));
+        assert_eq!(Some(PathBuf::from("/home/u/Home lab.conf")), portal_file(0, &["file:///home/u/Home%20lab.conf".into()]));
+        assert_eq!(None, portal_file(1, &["file:///home/u/a.conf".into()]));
+        assert_eq!(None, portal_file(2, &[]));
+        assert_eq!(None, portal_file(0, &[]));
+        assert_eq!(None, portal_file(0, &["https://example.com/a.conf".into()]));
+        assert_eq!(vec!["--file-selection", "--title=Choose a program"], zenity_args("Choose a program", false));
+        let z = zenity_args("Choose a picture of the QR code", true);
+        assert!(z[2].starts_with("--file-filter=Pictures | *.png *.PNG *.jpg") && z[2].ends_with("*.bmp *.BMP"), "{z:?}");
+        assert_eq!(vec!["--title", "It's \"mine\"; rm -rf ~", "--getopenfilename", "/home/u"], kdialog_args("It's \"mine\"; rm -rf ~", false, Path::new("/home/u")));
+        assert_eq!("image/png image/jpeg image/gif image/bmp", kdialog_args("t", true, Path::new("/h"))[4]);
+        assert_eq!(Some(PathBuf::from("/home/u/a b.conf")), chosen(true, b"/home/u/a b.conf\n"));
+        assert_eq!(None, chosen(false, b""));
+        assert_eq!(None, chosen(true, b"\n"));
+    }
 
     /// The desktop's light or dark: the portal's answer (ReadOne or Read), else GNOME's setting; one that says nothing is none.
     #[test]
