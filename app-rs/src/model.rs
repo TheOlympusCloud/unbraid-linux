@@ -881,3 +881,324 @@ pub fn own_dns(text: &str) -> Option<Dns> {
 pub fn by_name(d: &Dns) -> bool {
     !is_ipv4(&d.ip)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn nl() -> Route {
+        Route::new("nl", Location::country("nord", 153, "NL", "Netherlands"))
+    }
+    fn us() -> Route {
+        Route::new("us", Location::country("nord", 228, "US", "United States"))
+    }
+    fn it() -> Route {
+        Route::new("it", Location::country("nord", 106, "IT", "Italy"))
+    }
+    fn apps(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+    fn strs(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+    fn set(v: &[&str]) -> IndexSet<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+    fn profile(name: &str, default_route: &str, a: &[(&str, &str)], added: &[&str]) -> Profile {
+        Profile { name: name.into(), default_route: default_route.into(), apps: apps(a), added: strs(added) }
+    }
+    fn base() -> Setup {
+        Setup { routes: vec![nl(), us(), it()], default_route: "nl".into(), apps: apps(&[("netflix", "us")]), ..Setup::default() }
+    }
+    fn names(s: &Setup) -> Vec<String> {
+        s.profiles.iter().map(|p| p.name.clone()).collect()
+    }
+
+    /// Saving puts the new profile in use; switching keeps what the old one had, edits included, and loads the other.
+    #[test]
+    fn save_switch_and_follow_edits() {
+        let home = base().save_as("Home");
+        assert_eq!(Some("Home".into()), home.profile);
+        let mut edited = home.clone(); // an edit while Home is in use
+        edited.apps.insert("bank".into(), DIRECT.into());
+        let travel = Setup { default_route: "us".into(), apps: IndexMap::new(), ..edited.save_as("Travel") };
+        let back = travel.use_profile("Home");
+        assert_eq!("nl", back.default_route);
+        assert_eq!(apps(&[("netflix", "us"), ("bank", DIRECT)]), back.apps);
+        assert_eq!(profile("Travel", "us", &[], &["it"]), back.profiles[1]);
+        assert_eq!(back, back.use_profile("Nowhere")); // an unknown name changes nothing
+    }
+
+    /// Deleting the profile in use leaves the routes as they are; renaming it keeps it in use.
+    #[test]
+    fn forget_and_rename() {
+        let s = base().save_as("Home").save_as("Travel");
+        assert_eq!(Some("Trip".into()), s.rename("Travel", "Trip").profile);
+        let gone = s.forget("Travel");
+        assert_eq!(None, gone.profile);
+        assert_eq!(base().apps, gone.apps);
+        assert_eq!(strs(&["Home"]), names(&gone));
+    }
+
+    #[test]
+    fn reorder() {
+        let s = base().save_as("A").save_as("B").save_as("C");
+        assert_eq!(strs(&["C", "A", "B"]), names(&s.move_profile("C", -5)));
+        assert_eq!(strs(&["B", "C", "A"]), names(&s.move_profile("A", 2)));
+    }
+
+    /// Twelve characters people see, trimmed, unique regardless of case; renaming may keep its own name.
+    #[test]
+    fn names_() {
+        let s = base().save_as("Home");
+        assert_eq!(Some("Geschäftlich".into()), s.profile_name(" Geschäftlich ", None));
+        assert_eq!(None, s.profile_name("Thirteen chrs", None));
+        assert_eq!(None, s.profile_name("   ", None));
+        assert_eq!(None, s.profile_name("home", None));
+        assert_eq!(Some("HOME".into()), s.profile_name("HOME", Some("Home")));
+        assert_eq!(12, graphemes("👨‍👩‍👧 Casa al ma"));
+        assert_eq!("ét", take_graphemes("été", 2)); // never splits an accent from its letter
+    }
+
+    /// A removed route: profiles' apps on it follow their default; a removed default becomes the first route.
+    #[test]
+    fn tidy_after_route_removed() {
+        let s = Setup { profiles: vec![profile("Home", "nl", &[("netflix", "us")], &[]), profile("Trip", "us", &[("rai", "it")], &[])], ..base().save_as("Home") };
+        let t = Setup { routes: vec![nl(), it()], ..s.clone() }.tidy();
+        assert_eq!(profile("Home", "nl", &[], &[]), t.profiles[0]);
+        assert_eq!(profile("Trip", "nl", &[("rai", "it")], &[]), t.profiles[1]);
+        assert_eq!(s, s.tidy()); // nothing to mend: the same setup
+    }
+
+    /// A refused switch goes back to what the engine still runs, even if that profile was renamed or a route removed meanwhile.
+    #[test]
+    fn back_to_what_runs() {
+        let ran = base().save_as("Home"); // the engine runs Home: netflix on us
+        let trip = Setup { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), ..ran.save_as("Trip") };
+        let back = trip.back(&ran);
+        assert_eq!(Some("Home".into()), back.profile);
+        assert_eq!("nl", back.default_route);
+        assert_eq!(apps(&[("netflix", "us")]), back.apps);
+        assert_eq!(profile("Trip", "it", &[("rai", DIRECT)], &["it"]), back.profiles[1]); // the refused one keeps what it had
+        let renamed = Setup { routes: vec![nl(), it()], ..trip.rename("Home", "House") };
+        let b2 = renamed.back(&ran);
+        assert_eq!(None, b2.profile); // its profile is gone by that name: none selected, the routes still as they ran
+        assert_eq!(IndexMap::<String, String>::new(), b2.apps); // netflix's route was removed meanwhile
+    }
+
+    #[test]
+    fn readiness_and_switching_empty_profiles() {
+        assert!(!Profile::new("Empty", "").ready());
+        assert!(Profile::new("Direct", DIRECT).ready());
+        assert!(Profile::new("Home", "nl").ready());
+        let s = Setup { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), ..base().save_as("Home").add("Empty", true).add("Trip", false) };
+        assert_eq!(s, s.use_profile("Empty"));
+        let trip = s.use_profile("Trip");
+        assert_eq!(Some("Trip".into()), trip.profile);
+        assert_eq!("nl", trip.default_route);
+        assert_eq!(base().apps, trip.apps);
+        assert_eq!(profile("Home", "it", &[("rai", DIRECT)], &["it"]), trip.profiles[0]);
+    }
+
+    #[test]
+    fn add_copies_live_state_or_creates_empty_without_switching() {
+        let live = Setup { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), ..base().save_as("Home") };
+        let copied = live.add("Copy", false);
+        assert_eq!(Some("Home".into()), copied.profile);
+        assert_eq!("it", copied.default_route);
+        assert_eq!(live.apps, copied.apps);
+        assert_eq!(Profile { name: "Home".into(), default_route: "it".into(), apps: live.apps.clone(), added: strs(&["it"]) }, copied.profiles[0]);
+        assert_eq!(Profile { name: "Copy".into(), default_route: "it".into(), apps: live.apps.clone(), added: strs(&["it"]) }, copied.profiles[1]);
+        let empty = live.add("Empty", true);
+        assert_eq!(Some("Home".into()), empty.profile);
+        assert_eq!("it", empty.default_route);
+        assert_eq!(live.apps, empty.apps);
+        assert_eq!(Profile { name: "Home".into(), default_route: "it".into(), apps: live.apps.clone(), added: strs(&["it"]) }, empty.profiles[0]);
+        assert_eq!(Profile::new("Empty", ""), empty.profiles[1]);
+    }
+
+    #[test]
+    fn view_draft_and_fallback_to_live_setup() {
+        let s = Setup {
+            default_route: "us".into(),
+            apps: apps(&[("bank", DIRECT)]),
+            ..base().save_as("Home").add("Trip", true).editing(Some("Trip"), |p| Profile { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), ..p })
+        };
+        assert_eq!(Setup { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), added: vec![], ..s.clone() }, s.view_as(Some("Trip")));
+        assert_eq!(s, s.view_as(None));
+        assert_eq!(s, s.view_as(Some("Home")));
+        assert_eq!(s, s.view_as(Some("Missing")));
+        assert_eq!("", s.add("Empty", true).view_as(Some("Empty")).default_route);
+    }
+
+    #[test]
+    fn edit_draft_then_use_it() {
+        let s = Setup { default_route: "us".into(), apps: apps(&[("bank", DIRECT)]), ..base().save_as("Home").add("Trip", true) };
+        let draft = s.editing(Some("Trip"), |p| Profile { default_route: "it".into(), apps: apps(&[("rai", "nl")]), ..p });
+        assert_eq!(s.default_route, draft.default_route);
+        assert_eq!(s.apps, draft.apps);
+        assert_eq!(s.profiles[0], draft.profiles[0]);
+        assert_eq!(profile("Trip", "it", &[("rai", "nl")], &[]), draft.profiles[1]);
+        let switched = draft.use_profile("Trip");
+        assert_eq!(Some("Trip".into()), switched.profile);
+        assert_eq!("it", switched.default_route);
+        assert_eq!(apps(&[("rai", "nl")]), switched.apps);
+        assert_eq!(Profile { name: "Home".into(), default_route: "us".into(), apps: s.apps.clone(), added: strs(&["it"]) }, switched.profiles[0]);
+    }
+
+    #[test]
+    fn edit_live_for_null_current_and_unknown_names() {
+        let s = base().save_as("Home").add("Trip", true);
+        for name in [None, Some("Home"), Some("Missing")] {
+            let edited = s.editing(name, |p| Profile { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), ..p });
+            assert_eq!(Some("Home".into()), edited.profile);
+            assert_eq!("it", edited.default_route);
+            assert_eq!(apps(&[("rai", DIRECT)]), edited.apps);
+            assert_eq!(s.profiles, edited.profiles);
+            assert_eq!(Profile { name: "Home".into(), default_route: "it".into(), apps: edited.apps.clone(), added: strs(&["it"]) }, edited.saved()[0]);
+        }
+    }
+
+    #[test]
+    fn tidy_preserves_empty_and_mends_removed_routes() {
+        let s = Setup {
+            routes: vec![nl(), it()],
+            profiles: vec![Profile::new("Empty", ""), profile("Draft", "", &[("lost", "us"), ("kept", "it")], &[]), profile("Trip", "us", &[("lost", "us"), ("kept", "it")], &[])],
+            ..base()
+        };
+        let tidy = s.tidy();
+        assert_eq!(Profile::new("Empty", ""), tidy.profiles[0]);
+        assert_eq!(profile("Draft", "", &[("kept", "it")], &[]), tidy.profiles[1]);
+        assert_eq!(profile("Trip", "nl", &[("kept", "it")], &[]), tidy.profiles[2]);
+        assert_eq!(tidy, tidy.tidy());
+    }
+
+    #[test]
+    fn back_restores_running_profile_with_empty_draft_present() {
+        let ran = base().save_as("Home").add("Empty", true);
+        let refused = Setup { default_route: "it".into(), apps: apps(&[("rai", DIRECT)]), ..ran.add("Trip", false).use_profile("Trip") };
+        let back = refused.back(&ran);
+        assert_eq!(Some("Home".into()), back.profile);
+        assert_eq!("nl", back.default_route);
+        assert_eq!(base().apps, back.apps);
+        assert_eq!(Profile::new("Empty", ""), back.profiles[1]);
+        assert_eq!(profile("Trip", "it", &[("rai", DIRECT)], &["it"]), back.profiles[2]);
+    }
+
+    /// A refused switch keeps edits made meanwhile to the profile it goes back to: the routes run as before, unprofiled.
+    #[test]
+    fn back_keeps_edits_made_meanwhile() {
+        let ran = base().save_as("Home").save_as("Trip"); // the engine runs Trip
+        let edited = ran.use_profile("Home").editing(Some("Trip"), |p| Profile { apps: apps(&[("rai", "it")]), ..p }); // Trip edited while switching to Home
+        let back = edited.back(&ran);
+        assert_eq!(None, back.profile);
+        assert_eq!(ran.apps, back.apps);
+        assert_eq!(apps(&[("rai", "it")]), back.profiles.iter().find(|p| p.name == "Trip").unwrap().apps);
+    }
+
+    /// Names can't hide control or direction-override characters (they show in tiles and shortcuts).
+    #[test]
+    fn names_refuse_controls() {
+        let s = base();
+        assert_eq!(None, s.profile_name("Ho\u{202E}me", None));
+        assert_eq!(None, s.profile_name("Ho\nme", None));
+        assert_eq!(None, s.profile_name("Ho\u{0000}me", None));
+        assert_eq!(Some("👨‍👩‍👧 Casa".into()), s.profile_name("👨‍👩‍👧 Casa", None)); // a joined emoji (zero-width joiners) stays allowed
+    }
+
+    /// Each profile shows only its own routes; without profiles all routes show.
+    #[test]
+    fn hidden_routes() {
+        let spare = Route::new("spare", Location::country("nord", 81, "DE", "Germany"));
+        let s = Setup { added: strs(&["spare"]), ..Setup { routes: vec![nl(), us(), it(), spare], ..base() }.save_as("Home") }
+            .add("Trip", true)
+            .editing(Some("Trip"), |p| Profile { default_route: "it".into(), added: strs(&["us"]), ..p });
+        assert_eq!(set(&["it"]), s.hidden_routes(None));
+        assert_eq!(set(&["it"]), s.hidden_routes(Some("Home")));
+        assert_eq!(set(&["nl", "spare"]), s.hidden_routes(Some("Trip")));
+        assert_eq!(set(&[]), base().hidden_routes(None));
+        assert_eq!(set(&["it"]), s.forget("Home").hidden_routes(None)); // live setup remains without a profile
+    }
+
+    #[test]
+    fn added_on_save_copy_and_empty() {
+        let first = base().save_as("Home");
+        assert_eq!(strs(&["it"]), first.added);
+        assert_eq!(strs(&["it"]), first.profiles[0].added);
+        assert_eq!(set(&[]), first.hidden_routes(None));
+        let live = Setup { added: strs(&["us"]), ..first };
+        let later = live.save_as("Later");
+        assert_eq!(strs(&["us"]), later.added);
+        assert_eq!(strs(&["us"]), later.profiles.last().unwrap().added);
+        assert_eq!(strs(&["us"]), live.add("Copy", false).profiles.last().unwrap().added);
+        assert_eq!(Vec::<String>::new(), live.add("Empty", true).profiles.last().unwrap().added);
+    }
+
+    #[test]
+    fn first_save_keeps_previously_added_orphan() {
+        let first = Setup { added: strs(&["it"]), ..base() }.save_as("Home");
+        assert_eq!(set(&[]), first.hidden_routes(None));
+    }
+
+    #[test]
+    fn added_follows_switches_and_draft_edits() {
+        let home = Setup { added: strs(&["it"]), ..base().save_as("Home") };
+        let s = home.add("Trip", true).editing(Some("Trip"), |p| Profile { default_route: "us".into(), added: strs(&["nl"]), ..p });
+        assert_eq!(strs(&["nl"]), s.view_as(Some("Trip")).added);
+        assert_eq!(strs(&["it"]), s.added);
+        let trip = s.use_profile("Trip");
+        assert_eq!(strs(&["nl"]), trip.added);
+        assert_eq!(strs(&["it"]), trip.profiles[0].added);
+        let edited = trip.editing(None, |p| Profile { added: strs(&["us"]), ..p });
+        let back = edited.use_profile("Home");
+        assert_eq!(strs(&["it"]), back.added);
+        assert_eq!(strs(&["us"]), back.profiles.last().unwrap().added);
+    }
+
+    #[test]
+    fn use_current_profile_keeps_live_added() {
+        let s = Setup { added: strs(&["us"]), ..base().save_as("Home") };
+        assert_eq!(strs(&["us"]), s.use_profile("Home").added);
+    }
+
+    #[test]
+    fn tidy_removes_added_from_live_and_saved_profiles() {
+        let s = Setup { added: strs(&["us", "it"]), ..base().save_as("Home") }.add("Trip", true).editing(Some("Trip"), |p| Profile { added: strs(&["us", "nl"]), ..p });
+        let t = Setup { routes: vec![nl(), it()], ..s }.tidy();
+        assert_eq!(strs(&["it"]), t.added);
+        assert_eq!(strs(&["it"]), t.profiles[0].added);
+        assert_eq!(strs(&["nl"]), t.profiles.last().unwrap().added);
+    }
+
+    #[test]
+    fn back_restores_added_and_saves_refused_added() {
+        let ran = Setup { added: strs(&["it"]), ..base().save_as("Home") };
+        let refused = Setup { added: strs(&["us"]), ..ran.add("Trip", false).use_profile("Trip") };
+        let back = refused.back(&ran);
+        assert_eq!(Some("Home".into()), back.profile);
+        assert_eq!(strs(&["it"]), back.added);
+        assert_eq!(strs(&["us"]), back.profiles.last().unwrap().added);
+    }
+
+    #[test]
+    fn back_keeps_added_edits_made_meanwhile() {
+        let ran = base().save_as("Home").save_as("Trip");
+        let edited = ran.use_profile("Home").editing(Some("Trip"), |p| Profile { added: strs(&["us"]), ..p });
+        let back = edited.back(&ran);
+        assert_eq!(None, back.profile);
+        assert_eq!(strs(&["us"]), back.saved().last().unwrap().added);
+    }
+
+    /// The saved JSON is the earlier app's: defaults left out, unknown keys ignored, and an empty setup reads as the default.
+    #[test]
+    fn json_is_the_earlier_apps() {
+        let s: Setup = serde_json::from_str("{}").unwrap();
+        assert_eq!(Setup::default(), s);
+        let r: Route = serde_json::from_str(r#"{"id":"x","loc":{"countryId":153,"countryCode":"NL","country":"Netherlands"},"future":1}"#).unwrap();
+        assert_eq!(Route::new("x", Location::country("nord", 153, "NL", "Netherlands")), r);
+        assert_eq!(r#"{"id":"x","loc":{"countryId":153,"countryCode":"NL","country":"Netherlands"}}"#, serde_json::to_string(&r).unwrap());
+        let link: Link = serde_json::from_str(r#"{"type":"app.unbraid.data.TsLink","server":{"name":"n","host":"h","ip":"1.2.3.4","publicKey":"","load":0}}"#).unwrap();
+        assert_eq!("n", link.server().name);
+        assert_eq!(1_239_587_473, stable_id("se-got")); // Java's "se-got".hashCode() is -907896175
+    }
+}

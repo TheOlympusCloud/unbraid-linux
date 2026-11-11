@@ -1,0 +1,74 @@
+// Design tokens; change here, never inline. Dark, the app's own look, or light, as Settings › Desktop and the desktop's
+// own setting choose (Ink.light). Every colour follows a switch at once.
+
+import "./fonts/bigshoulders_black.ttf";
+import "./fonts/onest_regular.ttf";
+import "./fonts/onest_medium.ttf";
+import "./fonts/onest_semibold.ttf";
+import "./fonts/martian_regular.ttf";
+import "./fonts/martian_medium.ttf";
+
+export global Ink {
+    in-out property <bool> light: false;
+    out property <color> ground: light ? #F5F2EE : #0F1214;
+    out property <color> surface: light ? #FFFFFF : #171B1E;
+    out property <color> surface-high: light ? #EEE9E3 : #1E2428;
+    out property <color> surface-top: light ? #E5DFD7 : #232A2E;
+    out property <color> bar: light ? #EDE8E2 : #13171A;
+    out property <color> line: light ? #D6CFC6 : #343C42;
+    out property <color> text: light ? #16191B : #ECEFF1;
+    out property <color> dim: light ? #56626A : #9AA5AD;
+    out property <color> faint: light ? #65707A : #7D8890;
+    out property <color> accent: light ? #B85A1A : #FFA66B;
+    out property <color> on-accent: light ? #FFFFFF : #2A1A0F;
+    out property <color> accent-container: light ? #FBE2D0 : #3A2A1F;
+    out property <color> good: light ? #1C7E45 : #8EE0A8;
+    out property <color> bad: light ? #C7362B : #FF8A80;
+    out property <color> direct: light ? #65707A : #7D8890;
+    // The home network row: a green-tinted surface, set apart from internet exits.
+    out property <color> home-surface: light ? #E4F2EA : #13201A;
+    // Behind a dialog or the tour: the page, dimmed.
+    out property <color> scrim: light ? #7A2A2420 : #8C060809;
+    // One colour per route, equal lightness so none shouts. The same hues a shade deeper on a light ground, so text and
+    // marks keep their contrast (WCAG AA for the body's ink).
+    out property <[color]> routes: light
+        ? [#C25418, #2A74B5, #7E57C8, #1F7F53, #8C6A00, #B83D67, #0F7F78]
+        : [#FFA66B, #7CC4FF, #C9A7FF, #8EE0A8, #FFD36B, #FF9EBB, #6BE3DC];
+
+    public pure function route(hue: int) -> color {
+        return routes[Math.mod(hue, routes.length)];
+    }
+}
+
+export global Type {
+    out property <string> display: "Big Shoulders Display";
+    out property <string> sans: "Onest";
+    out property <string> mono: "Martian Mono";
+}
+
+// The type scale: headline (display, 44), overline and code and small (mono, 12), title and body (sans, 16), sub (14),
+// caption (13).
+export component Headline inherits Text {
+    font-family: Type.display; font-weight: 900; font-size: 44px; color: Ink.text;
+}
+export component Overline inherits Text {
+    font-family: Type.mono; font-size: 12px; letter-spacing: 1.2px; color: Ink.dim;
+}
+export component Code inherits Text {
+    font-family: Type.mono; font-weight: 500; font-size: 12px; color: Ink.text;
+}
+export component Small inherits Text {
+    font-family: Type.mono; font-size: 12px; color: Ink.dim;
+}
+export component Title inherits Text {
+    font-family: Type.sans; font-weight: 600; font-size: 16px; color: Ink.text;
+}
+export component Body inherits Text {
+    font-family: Type.sans; font-weight: 500; font-size: 16px; color: Ink.text;
+}
+export component Sub inherits Text {
+    font-family: Type.sans; font-size: 14px; color: Ink.dim;
+}
+export component Caption inherits Text {
+    font-family: Type.sans; font-size: 13px; color: Ink.dim;
+}

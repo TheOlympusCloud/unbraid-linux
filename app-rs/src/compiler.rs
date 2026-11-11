@@ -27,3 +27,20 @@ pub fn ipv4(cidr: &str) -> Option<(u64, u32)> {
     }
     Some((octets.iter().fold(0u64, |a, v| (a << 8) | v), len))
 }
+
+/// The fake-IP pool (198.18.0.0/15) in eight blocks: each new domain table takes the next one and refuses the other
+/// seven, so an address an app kept from an old table names nothing until eight tables later. Each holds 16,381 addresses.
+pub fn fake_ranges() -> Vec<String> {
+    (0..8).map(|i| format!("198.{}.{}.0/18", 18 + i / 4, i % 4 * 64)).collect()
+}
+
+/// The block a new table takes after `last`; a reload of the `open` table keeps its own.
+pub fn next_block(last: i32, open: bool) -> i32 {
+    (if open { last } else { last + 1 }).rem_euclid(8)
+}
+
+/// Older versions alternated two /16 halves: count the last one as its final block, so the next table starts in the
+/// other half and nothing an app kept from it is handed out again.
+pub fn block_after_half(half: Option<i32>) -> i32 {
+    if half == Some(1) { 8 - 1 } else { 8 / 2 - 1 }
+}
