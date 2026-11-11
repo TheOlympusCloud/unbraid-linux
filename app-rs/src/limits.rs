@@ -120,6 +120,22 @@ mod tests {
         assert_eq!(Some(7), effective(&limit("connection", true, None), Some("7")));
     }
 
+    /// What each provider declares: known figures only where documented or reported, how unbraid counts its own use.
+    #[test]
+    fn providers() {
+        use crate::providers::Provider;
+        use crate::providers::{ivpn::Ivpn, mullvad::Mullvad, nord::Nord, pia::Pia, proton::PROTON, proton::PROTON_FREE};
+        assert_eq!(limit("connection", true, Some(10)), Nord.limit(""));
+        assert_eq!(limit("connection", true, Some(1)), PROTON_FREE.limit(""));
+        assert_eq!(limit("connection", true, Some(10)), PROTON.limit(""));
+        assert_eq!(limit("device", false, Some(5)), Mullvad.limit(""));
+        assert_eq!(limit("connection", true, None), Pia.limit(""));
+        let ivpn = r#"{"accountId":"i-AAAA-BBBB-CCCC","sessionToken":"t","privateKey":"k","ipAddress":"10.0.0.2","device":"Tidy Falcon","limit":5}"#;
+        assert_eq!(limit("device", false, Some(5)), Ivpn.limit(ivpn));
+        assert_eq!(limit("device", false, None), Ivpn.limit(r#"{"accountId":"a","sessionToken":"t","privateKey":"k","ipAddress":"10.0.0.2"}"#));
+        assert_eq!(limit("device", false, None), Ivpn.limit("not json"));
+    }
+
     fn no() -> Server {
         Server { name: "NO-FREE#6".into(), host: "node-no-12.protonvpn.net".into(), ip: "1.2.3.4".into(), public_key: "k".into(), load: -1, ..Default::default() }
     }

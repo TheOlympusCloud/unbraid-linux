@@ -24,6 +24,8 @@ CLAUDE.md
 *.ovpn
 !app/src/test/resources/ovpn/*.ovpn
 !app-rs/tests/fixtures/manual/*.ovpn
+!app-rs/tests/fixtures/compiler/*.ovpn
+!app-rs/tests/fixtures/providers/ovpn/*.ovpn
 
 # Rust build output
 target/

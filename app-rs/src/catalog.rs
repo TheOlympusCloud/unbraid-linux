@@ -161,6 +161,11 @@ fn norm(name: &str) -> String {
     n.strip_prefix("the ").unwrap_or(n).trim().to_string()
 }
 
+/// The English name of the country with ISO code `code`.
+pub fn name(code: &str) -> Option<&'static str> {
+    COUNTRIES.iter().find(|(c, _)| *c == code).map(|(_, name)| *name)
+}
+
 static CODES: LazyLock<HashMap<String, &str>> = LazyLock::new(|| COUNTRIES.iter().map(|(code, name)| (norm(name), *code)).collect());
 
 #[rustfmt::skip]
