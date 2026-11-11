@@ -63,6 +63,12 @@ pub fn missing(e: &Status) -> bool {
     e.code() == Code::Unavailable
 }
 
+/// A stop's outcome: an engine that isn't there, or isn't this user's (it has no owner, or another user's), runs nothing
+/// of theirs, which counts as stopped.
+fn stopped(r: Result<(), Status>) -> Result<(), Status> {
+    r.or_else(|e| if missing(&e) || e.code() == Code::PermissionDenied { Ok(()) } else { Err(e) })
+}
+
 pub fn running(s: &ServiceStatus) -> bool {
     s.status == service_status::Type::Started as i32 || s.status == service_status::Type::Starting as i32
 }
@@ -148,8 +154,9 @@ impl Engine {
         .await
     }
 
+    /// Stops this user's service; an error means it may still run.
     pub async fn stop(&self) -> Result<(), Status> {
-        deadline(30, self.managed().stop_service(timed((), 30))).await.map(|_| ())
+        stopped(deadline(30, self.managed().stop_service(timed((), 30))).await.map(|_| ()))
     }
 
     pub async fn set_tailscale_exit_node(&self, tag: &str, stable_id: &str) -> Result<(), Status> {
@@ -294,6 +301,18 @@ mod tests {
         assert_eq!((vec!["start", "start"], None), run(&[Some(aborted), None], false).await);
         assert_eq!((vec!["start", "start"], Some(aborted)), run(&[Some(aborted), Some(aborted)], false).await);
         assert_eq!((vec!["start"], Some(Code::Unavailable)), run(&[Some(Code::Unavailable)], false).await);
+    }
+
+    /// Only an engine that may still run this user's service fails a stop: one that is gone, has no owner or is another
+    /// user's has nothing of theirs left.
+    #[test]
+    fn what_counts_as_stopped() {
+        assert!(stopped(Ok(())).is_ok());
+        assert!(stopped(Err(Status::unavailable("no socket"))).is_ok());
+        assert!(stopped(Err(Status::permission_denied("the service is owned by another user"))).is_ok());
+        for code in [Code::DeadlineExceeded, Code::Unknown, Code::Internal] {
+            assert_eq!(Some(code), stopped(Err(Status::new(code, ""))).err().map(|e| e.code()));
+        }
     }
 
     /// The engine's worker must say READY in time; one that hangs fails the config check instead of blocking it.

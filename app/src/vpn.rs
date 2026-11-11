@@ -1289,8 +1289,18 @@ impl Session {
         self.teardown(Some(why)).await;
     }
 
-    /// Stops the engine and the tunnel; the connection's task stays.
-    async fn stop_engine(&mut self) {
+    /// Stops the engine and the tunnel; the connection's task stays. When the engine may still run them (its stop
+    /// failed) while on, `keep` leaves the connection as it is, says why and returns false: a disconnect or a pause
+    /// never shows off or paused while traffic may still go through the tunnel.
+    async fn stop_engine(&mut self, keep: bool) -> bool {
+        if let Err(e) = self.engine.stop().await {
+            log::e(TAG, &format!("stop: {}", redact::log(&e)));
+            if keep && self.phase() == Phase::On {
+                self.live.state.send_modify(|v| v.error = Some(NOT_STOPPED.into()));
+                alert(&format!("{APP} is still on"), NOT_STOPPED);
+                return false;
+            }
+        }
         cancel(&mut self.watch);
         cancel(&mut self.health);
         self.generation += 1;
@@ -1305,7 +1315,6 @@ impl Session {
         cancel(&mut self.ts);
         cancel(&mut self.engine_watch);
         self.ts_login_pending = false;
-        let _ = self.engine.stop().await;
         self.table_open = false;
         self.net.stop();
         self.applied = None;
@@ -1318,25 +1327,29 @@ impl Session {
         *self.live.running.write().unwrap() = None;
         self.live.tags.write().unwrap().clear();
         self.live.tunnel_dns.write().unwrap().clear();
+        true
     }
 
+    /// Ends the connection, with `error` if it failed. A disconnect or a quit (no error) keeps a connection the engine
+    /// didn't stop ([`Session::stop_engine`]); one that failed or was lost ends all the same.
     async fn teardown(&mut self, error: Option<String>) {
+        if !self.stop_engine(error.is_none()).await {
+            return;
+        }
         cancel(&mut self.resume);
-        self.stop_engine().await;
         self.live.state.send_replace(VpnState { error: error.clone(), ..VpnState::default() });
         self.live.summary.send_replace(String::new());
         // A failure in the background (a resume after a pause, a revoked account) must not pass unnoticed.
         if let Some(e) = error {
-            alert(&e);
+            alert(&format!("{APP} is off"), &e);
         }
     }
 
     /// Traffic leaves without the VPN until resumed, by hand or after `minutes`.
     async fn pause_now(&mut self, minutes: i32) {
-        if self.phase() != Phase::On {
+        if self.phase() != Phase::On || !self.stop_engine(true).await {
             return;
         }
-        self.stop_engine().await;
         self.pauses += 1;
         let pause = self.pauses;
         let ms = i64::from(minutes) * 60_000;
@@ -1625,12 +1638,15 @@ fn paused_text(until: i64) -> String {
     format!("Paused until {at}")
 }
 
-fn alert(text: &str) {
+fn alert(title: &str, text: &str) {
     // Unit tests end connections on purpose: they never reach the desktop.
     if !cfg!(test) {
-        desktop::notify(&format!("{APP} is off"), text);
+        desktop::notify(title, text);
     }
 }
+
+/// What a disconnect or a pause says when the engine didn't stop.
+const NOT_STOPPED: &str = "The unbraid engine didn't stop, so the connection is still on. Try again, or restart the engine: sudo systemctl restart unbraid-engine";
 
 /// Statistics take up the engine's connections again: it numbers them afresh, against the tunnels it runs now.
 fn retime() {
@@ -1886,6 +1902,25 @@ mod tests {
         s.handle(Cmd::Pause(5, 0)).await;
         s.handle(Cmd::Start(6)).await;
         assert_eq!((Phase::Off, Some(REJECTED.into())), (s.phase(), s.live.state().error));
+    }
+
+    /// A disconnect or a pause whose engine didn't stop (here one that takes the call and never answers) leaves the
+    /// connection on and says so, rather than showing off or paused while traffic may still go through the tunnel. A
+    /// connection that failed or was lost ends all the same.
+    #[tokio::test(start_paused = true)]
+    async fn a_stop_the_engine_fails_keeps_the_connection() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = session(dir.path());
+        connected(&mut s, &base());
+        let _deaf = std::os::unix::net::UnixListener::bind(dir.path().join("engine.sock")).unwrap();
+        s.handle(Cmd::Pause(1, 15)).await;
+        assert_eq!((Phase::On, Some(NOT_STOPPED)), (s.phase(), s.live.state().error.as_deref()));
+        assert!(s.resume.is_none() && s.live.running().is_some());
+        s.handle(Cmd::Stop(2)).await;
+        assert_eq!((Phase::On, Some(NOT_STOPPED)), (s.phase(), s.live.state().error.as_deref()));
+        s.teardown(Some("Connection lost".into())).await;
+        assert_eq!((Phase::Off, Some("Connection lost")), (s.phase(), s.live.state().error.as_deref()));
+        assert!(s.live.running().is_none());
     }
 
     /// What the tray and the command line say of the connection, and what Routes says of blocked routes.
