@@ -1,6 +1,7 @@
 //! The Apps page: which apps go out through which route. The installed apps as a table (search, filter by exit, sort
 //! by any column); the selected app's route choices in the panel beside it, and in its menu at a right click.
 
+use crate::ui::stats::bytes_text;
 use std::cmp::Reverse;
 use std::collections::HashMap;
 
@@ -458,18 +459,6 @@ pub fn filter_lookups(p: &Prefs, pkg: &str) -> Prefs {
 /// The initial an app's icon shows without a picture.
 fn letter(label: &str) -> String {
     take_graphemes(label, 1).to_uppercase()
-}
-
-/// Data as the Stats page writes it: "1.2 GB", "16 MB", "980 kB", rounded half up.
-fn bytes_text(b: i64) -> String {
-    let b = b as f64;
-    if b >= 1e9 {
-        format!("{:.1} GB", (b / 1e8).round() / 10.0)
-    } else if b >= 1e6 {
-        format!("{} MB", (b / 1e6).round())
-    } else {
-        format!("{} kB", (b / 1e3).round())
-    }
 }
 
 #[cfg(test)]

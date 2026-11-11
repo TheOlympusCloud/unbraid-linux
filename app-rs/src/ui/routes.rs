@@ -1,5 +1,6 @@
 //! The Routes page: where each route goes out, the default route and the connection.
 
+use crate::ui::stats::rate;
 use crate::exit_check::ExitReport;
 use crate::model::{DIRECT, Route, Server, Setup};
 use crate::providers;
@@ -244,24 +245,6 @@ pub fn apps_label(pkgs: &[&str], labels: &IndexMap<&str, &str>) -> String {
         0 => "No apps assigned".into(),
         1..=3 => pkgs.iter().map(|p| labels.get(p).map_or_else(|| p.rsplit('.').next().unwrap_or_default().to_string(), |l| l.to_string())).collect::<Vec<_>>().join(", "),
         n => count(n),
-    }
-}
-
-/// A live speed: kbps under 1 Mbps, so small transfers don't read as zero.
-// shortcut: the Stats page's speed format, kept here until ui::stats offers it.
-fn rate(bps: i64) -> (String, String) {
-    let half_up = |v: f64, places: i32| {
-        let f = 10f64.powi(places);
-        format!("{:.*}", places as usize, (v * f).round() / f)
-    };
-    if bps >= 1_000_000 {
-        let m = bps as f64 / 1e6;
-        (if m < 100.0 { half_up(m, 1) } else { (m as i64).to_string() }, "Mbps".into())
-    } else if bps >= 100 {
-        let k = half_up(bps as f64 / 1e3, 0);
-        (if k == "0" { "0.1".into() } else { k }, "kbps".into())
-    } else {
-        ("0".into(), "kbps".into())
     }
 }
 
