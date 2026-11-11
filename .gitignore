@@ -23,3 +23,6 @@ CLAUDE.md
 *.conf
 *.ovpn
 !app/src/test/resources/ovpn/*.ovpn
+
+# Rust build output
+target/
