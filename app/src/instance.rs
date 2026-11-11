@@ -5,6 +5,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 pub const USAGE: &str = "Usage: unbraid [command]
 
@@ -76,9 +77,15 @@ pub fn send(path: &Path, line: &str) -> Option<String> {
     Some(answer.trim().to_string())
 }
 
-/// Serves later starts; false if another instance already does.
+/// The longest line a later start sends, and how long it may take to send it.
+const MAX_LINE: u64 = 4096;
+const READ_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Serves later starts; false if another instance already does. The instance holds a lock beside the socket for as
+/// long as it runs: of two starts at once, only one serves.
 pub fn serve(path: &Path, handle: Arc<dyn Fn(&str) -> String + Send + Sync>) -> bool {
-    if send(path, "ping").is_some() {
+    let Ok(lock) = std::fs::File::create(path.with_extension("lock")) else { return false };
+    if lock.try_lock().is_err() {
         return false;
     }
     let _ = std::fs::remove_file(path); // left by one that was killed
@@ -86,10 +93,18 @@ pub fn serve(path: &Path, handle: Arc<dyn Fn(&str) -> String + Send + Sync>) -> 
     std::thread::Builder::new()
         .name("instance".into())
         .spawn(move || {
+            let _lock = lock;
             for ch in server.incoming() {
                 let Ok(mut ch) = ch else { continue };
+                // One at a time: a client that never ends its line, or sends one longer than any command, is turned
+                // away rather than holding up every later one.
+                let _ = ch.set_read_timeout(Some(READ_TIMEOUT));
                 let mut line = String::new();
-                let _ = BufReader::new(&ch).read_line(&mut line);
+                let read = BufReader::new((&ch).take(MAX_LINE)).read_line(&mut line);
+                if !matches!(read, Ok(n) if (n as u64) < MAX_LINE || line.ends_with('\n')) {
+                    let _ = ch.write_all(b"error\n");
+                    continue;
+                }
                 let h = handle.clone();
                 let answer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| h(line.trim_end_matches('\n'))))
                     .unwrap_or_else(|_| "error".into());
@@ -142,6 +157,28 @@ mod tests {
         assert!(!args(&["frobnicate"]).known());
         assert!(args(&["-h"]).help);
         assert!(args(&["--version"]).version);
+    }
+
+    /// Of starts at once, one serves; a client that never ends its line, or sends too long a one, doesn't hold up the
+    /// next.
+    #[test]
+    fn one_serves_and_no_client_holds_it_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = socket(dir.path());
+        let starts: Vec<_> = (0..8)
+            .map(|_| {
+                let path = path.clone();
+                std::thread::spawn(move || serve(&path, Arc::new(|line: &str| format!("got {line}"))))
+            })
+            .collect();
+        assert_eq!(1, starts.into_iter().map(|s| s.join().unwrap()).filter(|served| *served).count());
+        let _silent = UnixStream::connect(&path).unwrap();
+        let start = std::time::Instant::now();
+        assert_eq!(Some("got status".into()), send(&path, "status"));
+        assert!(start.elapsed() < READ_TIMEOUT * 2, "took {:?}", start.elapsed());
+        // Turned away (whether the client still reads the answer depends on what it left unread), never handled.
+        assert!(!send(&path, &"x".repeat(MAX_LINE as usize)).is_some_and(|a| a.starts_with("got")));
+        assert_eq!(Some("got ping".into()), send(&path, "ping"));
     }
 
     /// A later start reaches the running one; a socket left by one that was killed doesn't stop a new one serving.
