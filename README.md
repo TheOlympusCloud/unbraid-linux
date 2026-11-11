@@ -179,7 +179,7 @@ UNBRAID_ENGINE_BIN=$PWD/engine/out/unbraid-engine cargo run --release --manifest
                               #   programs through their own exits
 engine/build.sh test          # the engine's patch tests
 DISPLAY=:99 packaging/test.sh   # installs, runs and removes the packages in clean Debian 13, Ubuntu 24.04 and Arch,
-                                #   and checks that Debian 12 refuses the package
+                                #   checks that Debian 12 refuses the package, and keeps the built Arch package in dist/
 ```
 
 `cargo test` saves a screenshot of each screen it visits in `app/target/screenshots`, in a 1280 x 800 window, the

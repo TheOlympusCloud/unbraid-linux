@@ -2,7 +2,8 @@
 # Installs, runs and removes the packages packaging/build.sh made, in clean Debian 13, Ubuntu 24.04 and Arch root
 # filesystems (official images, packaging/rootfs.py), with each distribution's own tools and repositories. Unprivileged:
 # bubblewrap gives a fake root. The window is shown on the X display $DISPLAY (an Xvfb is fine) and screenshotted into
-# dist/test/. A live tunnel needs a real machine (no TUN device here); everything up to it is checked.
+# dist/test/. A live tunnel needs a real machine (no TUN device here); everything up to it is checked. The Arch package
+# makepkg builds there is kept in dist/.
 #
 # Debian 12 must refuse the package: its C library is older than the app needs (glibc 2.39).
 #
@@ -122,6 +123,7 @@ arch() {
     # makepkg as an ordinary user, then pacman installs the package and pulls its dependencies from the repositories.
     UID_IN=1000 HOME_IN=/build run "$root" "cd /build && makepkg -d --noconfirm >/tmp/makepkg.log 2>&1 || { tail -30 /tmp/makepkg.log; exit 1; }; ls /build/*.pkg.tar.zst" >> "$OUT/$name-install.log" 2>&1 \
         || { cat "$OUT/$name-install.log"; return 1; }
+    cp "$root/build/unbraid-${VERSION}-1-x86_64.pkg.tar.zst" "$DIST/"
     run "$root" "pacman -U --noconfirm /build/unbraid-${VERSION}-1-x86_64.pkg.tar.zst >/tmp/u.log 2>&1 || { tail -30 /tmp/u.log; exit 1; }; grep -A1 -i 'post_install\|unbraid connects' /tmp/u.log | head -3; pacman -Q unbraid" >> "$OUT/$name-install.log" 2>&1 \
         || { cat "$OUT/$name-install.log"; return 1; }
     check "$name"
