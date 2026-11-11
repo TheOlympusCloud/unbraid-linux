@@ -1,0 +1,245 @@
+// Asked before a route change goes over a provider's connection limit, wherever it was made; nothing changes until the
+// user answers. Also what the Routes page's sheets sit on, and its cards' clicks.
+
+import { Ink, Title, Body, Sub, Caption } from "theme.slint";
+import { StateLayer, Tappable, Primary, Secondary } from "components.slint";
+
+// Material's modal bottom sheet: the page dimmed behind it (black 32 %), the sheet at the bottom, as wide as reading
+// wants (640 px at most), its drag handle on top. A click beside it or Esc closes it. It fills its parent: make it the
+// window's last child, or give it the window's place and size.
+export component BottomSheet inherits Rectangle {
+    // The sheet's name, as screen readers announce it when the focus comes in.
+    in property <string> label;
+    callback close();
+    background: #00000052;
+    init => {
+        keys.focus();
+    }
+    TouchArea {
+        clicked => {
+            root.close();
+        }
+    }
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.close();
+                return accept;
+            }
+            return reject;
+        }
+        VerticalLayout {
+            alignment: end;
+            HorizontalLayout {
+                alignment: center;
+                // The sheet itself takes its clicks, so they don't close it.
+                TouchArea {
+                    width: min(640px, root.width);
+                    Rectangle {
+                        background: Ink.surface;
+                        border-top-left-radius: 28px;
+                        border-top-right-radius: 28px;
+                        accessible-role: groupbox;
+                        accessible-label: root.label;
+                        VerticalLayout {
+                            HorizontalLayout {
+                                alignment: center;
+                                padding-top: 22px;
+                                padding-bottom: 22px;
+                                Rectangle {
+                                    width: 32px;
+                                    height: 4px;
+                                    border-radius: 2px;
+                                    background: Ink.dim;
+                                }
+                            }
+                            @children
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// One action of a sheet: a 56 px row, its words in the body face.
+export component SheetAction inherits Rectangle {
+    in property <string> text;
+    in property <color> ink: Ink.text;
+    in property <bool> force-hover;
+    callback clicked();
+    min-height: 56px;
+    forward-focus: tap;
+    HorizontalLayout {
+        padding-left: 24px;
+        padding-right: 24px;
+        Body {
+            text: root.text;
+            color: root.ink;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            accessible-role: none;
+        }
+    }
+    tap := Tappable {
+        force-hover: root.force-hover;
+        accessible-role: button;
+        accessible-label: root.text;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A sheet's note: above its actions in the sub size, under them as a caption.
+export component SheetNote inherits HorizontalLayout {
+    in property <string> text;
+    in property <bool> sub;
+    padding-left: 24px;
+    padding-right: 24px;
+    padding-top: root.sub ? 8px : 0;
+    padding-bottom: root.sub ? 8px : 0;
+    if root.sub: Sub {
+        text: root.text;
+        wrap: word-wrap;
+    }
+    if !root.sub: Caption {
+        text: root.text;
+        wrap: word-wrap;
+    }
+}
+
+// A card's clicks: a click opens it, a right click its menu at the pointer; Enter and Space too, with the focus ring.
+// Give it border-radius, or each corner's radius.
+export component CardTap inherits Rectangle {
+    in property <string> label;
+    out property <bool> hovered: touch.has-hover;
+    out property <bool> pressed: touch.pressed;
+    callback clicked();
+    callback menu(x: length, y: length);
+    border-top-left-radius: self.border-radius;
+    border-top-right-radius: self.border-radius;
+    border-bottom-left-radius: self.border-radius;
+    border-bottom-right-radius: self.border-radius;
+    forward-focus: focus;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => {
+        root.clicked();
+    }
+    StateLayer {
+        border-top-left-radius: root.border-top-left-radius;
+        border-top-right-radius: root.border-top-right-radius;
+        border-bottom-left-radius: root.border-bottom-left-radius;
+        border-bottom-right-radius: root.border-bottom-right-radius;
+        hovered: root.hovered;
+        pressed: root.pressed;
+        focused: focus.has-focus;
+    }
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+        pointer-event(event) => {
+            if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                root.menu(self.mouse-x, self.mouse-y);
+            }
+        }
+    }
+    focus := FocusScope {
+        x: 0;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == Key.Space {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    if focus.has-focus: Rectangle {
+        border-width: 2px;
+        border-color: Ink.accent;
+        border-top-left-radius: root.border-top-left-radius;
+        border-top-right-radius: root.border-top-right-radius;
+        border-bottom-left-radius: root.border-bottom-left-radius;
+        border-bottom-right-radius: root.border-bottom-right-radius;
+    }
+}
+
+// The question, while a change waits on it.
+export global LimitSheetPage {
+    in property <bool> shown;
+    // What the change would do: "NordVPN allows 10 connections. This would make it 11. …"
+    in property <string> text;
+    // "Use nl1256 for both routes", when one of the provider's routes is on a server both can share; else "".
+    in property <string> share;
+    // Both routes on that server, sharing one connection.
+    callback share-server();
+    // Change anyway.
+    callback apply();
+    // Cancel, Esc or a click beside: nothing changes.
+    callback dismiss();
+}
+
+// The window's last child, so it covers everything.
+export component LimitSheet inherits Rectangle {
+    if LimitSheetPage.shown: BottomSheet {
+        label: "Over your plan's limit";
+        close => {
+            LimitSheetPage.dismiss();
+        }
+        VerticalLayout {
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-bottom: 24px;
+            spacing: 12px;
+            Title {
+                text: "Over your plan's limit";
+                wrap: word-wrap;
+            }
+            Sub {
+                text: LimitSheetPage.text;
+                color: Ink.text;
+                wrap: word-wrap;
+            }
+            if LimitSheetPage.share != "": Primary {
+                text: LimitSheetPage.share;
+                clicked => {
+                    LimitSheetPage.share-server();
+                }
+            }
+            if LimitSheetPage.share != "": Caption {
+                text: "Both routes move to this server and share one connection";
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                HorizontalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Secondary {
+                        text: "Cancel";
+                        color: Ink.dim;
+                        clicked => {
+                            LimitSheetPage.dismiss();
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Secondary {
+                        text: "Change anyway";
+                        clicked => {
+                            LimitSheetPage.apply();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

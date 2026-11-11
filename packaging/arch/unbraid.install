@@ -13,5 +13,7 @@ pre_remove() {
 }
 
 post_remove() {
+    # A saved configuration holds VPN keys. unbraid's engine never keeps one; a stock sing-box daemon run on this folder would.
+    rm -f /var/lib/unbraid-engine/users/*/config*.json
     echo ':: The engine kept its per-user folders (the Tailscale node) in /var/lib/unbraid-engine; delete it to forget them.'
 }

@@ -1,0 +1,382 @@
+// Signing in, on the first run or as Add provider: step one picks a provider or another way in, step two is that
+// provider's form.
+
+import { Ink, Sub, Caption } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Metrics, Tappable, Screen, SectionLabel, GroupRow, RowKind, Primary, Secondary } from "components.slint";
+import { Chevron, PillField, CaptionRow } from "inputs.slint";
+
+// A way in without a provider.
+export enum Other { file, shadowsocks, tailscale }
+
+// A provider not signed in yet, and what its form asks for ("Username · Password").
+export struct ProviderRow {
+    id: string,
+    name: string,
+    fields: string,
+}
+
+export struct OtherRow {
+    other: Other,
+    title: string,
+    sub: string,
+}
+
+// One field of a provider's form; [asked] is the provider's question, under its picture.
+export struct FormField {
+    key: string,
+    label: string,
+    value: string,
+    placeholder: string,
+    secret: bool,
+    qr: bool,
+    file: bool,
+    file-note: string,
+    last: bool,
+    asked: bool,
+}
+
+// A provider's form; [id] "" while none is open. [captcha] is the picture of the provider's question.
+export struct FormView {
+    id: string,
+    name: string,
+    fields: [FormField],
+    captcha: image,
+    error: string,
+    question: bool,
+    link: string,
+    link-label: string,
+    help: string,
+    ready: bool,
+    busy: bool,
+    done: bool,
+}
+
+export global SignInPage {
+    in property <string> overline;
+    in property <string> title;
+    in property <string> sub;
+    // Add provider: Close top-leading, and Esc on the list closes it.
+    in property <bool> closable;
+    // What a sign-out couldn't finish; a click puts it away.
+    in property <string> notice;
+    in property <[ProviderRow]> providers;
+    in property <[OtherRow]> others;
+    in property <string> import-error;
+    // Keep one model for form.fields and update its rows: a new one would rebuild the fields, and the one being typed
+    // in would lose the focus.
+    in property <FormView> form;
+    callback close();
+    callback dismiss-notice();
+    callback pick(id: string);
+    callback import-file();
+    callback shadowsocks();
+    callback tailscale-only();
+    // Back, or Esc in the form: the provider's half-filled form is forgotten.
+    callback back(id: string);
+    callback field-changed(id: string, key: string, text: string);
+    callback scan-qr(id: string, key: string);
+    callback choose-file(id: string, key: string);
+    callback open-link(url: string);
+    callback submit(id: string);
+}
+
+// A note in the bad ink, in the page's gutters; a click puts it away.
+component Notice inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+    forward-focus: tap;
+    tap := Tappable {
+        accessible-role: button;
+        accessible-label: root.text;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+    CaptionRow {
+        text: root.text;
+        color: Ink.bad;
+    }
+}
+
+// One field of a provider's form: its name, the field, and where its text can come from instead.
+component FieldBlock inherits VerticalLayout {
+    in property <FormField> field;
+    in property <image> captcha;
+    in property <int> index;
+    // Enter in the field before it: this one takes the focus when [target] is its [index], at each [nudge].
+    in property <int> target;
+    in property <int> nudge;
+    callback edited(text: string);
+    callback entered();
+    callback scan();
+    callback load();
+    spacing: 10px;
+    changed nudge => {
+        if root.target == root.index {
+            input.focus();
+        }
+    }
+    // A file loaded or a code read lands in the field, whatever was typed there.
+    changed field => {
+        input.value = root.field.value;
+    }
+    if root.field.asked && root.captcha.width > 0: HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        Rectangle {
+            height: 96px;
+            background: #ffffff;
+            Image {
+                width: 100%;
+                height: 100%;
+                source: root.captcha;
+                image-fit: contain;
+                accessible-label: "Captcha";
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        Sub {
+            text: root.field.label;
+            font-weight: 500;
+            color: Ink.text;
+        }
+    }
+    input := PillField {
+        value: root.field.value;
+        label: root.field.label;
+        placeholder: root.field.placeholder;
+        secret: root.field.secret;
+        changed(text) => {
+            root.edited(text);
+        }
+        done => {
+            root.entered();
+        }
+    }
+    // The desktop has no camera app to photograph it: a picture or screenshot of the code is read instead.
+    if root.field.qr: HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        cross-axis-alignment: center;
+        Caption {
+            horizontal-stretch: 1;
+            text: "Or scan its QR code: take a photo, or pick a screenshot";
+            wrap: word-wrap;
+        }
+        Secondary {
+            text: "Scan QR code";
+            clicked => {
+                root.scan();
+            }
+        }
+    }
+    // Config files keep their line breaks only when loaded from a file; a pasted .conf in one line can't be parsed.
+    if root.field.file: HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        cross-axis-alignment: center;
+        Caption {
+            horizontal-stretch: 1;
+            text: root.field.file-note;
+            wrap: word-wrap;
+        }
+        Secondary {
+            text: "Choose file";
+            clicked => {
+                root.load();
+            }
+        }
+    }
+}
+
+export component SignInScreen inherits Rectangle {
+    private property <bool> form: SignInPage.form.id != "";
+    private property <int> next-field: -1;
+    private property <int> nudge;
+    background: Ink.ground;
+    init => {
+        keys.focus();
+    }
+    // A step back or on: Esc is the page's again, wherever the focus was.
+    changed form => {
+        keys.focus();
+    }
+    keys := FocusScope {
+        width: 100%;
+        height: 100%;
+        key-pressed(event) => {
+            if event.text == Key.Escape && root.form {
+                SignInPage.back(SignInPage.form.id);
+                return accept;
+            }
+            if event.text == Key.Escape && SignInPage.closable {
+                SignInPage.close();
+                return accept;
+            }
+            return reject;
+        }
+        VerticalLayout {
+        // First run greets with the logo; adding one later is an ordinary page with Close top-leading.
+        if !root.form: Screen {
+            overline: SignInPage.overline;
+            title: SignInPage.title;
+            sub: SignInPage.sub;
+            navigation-icon: SignInPage.closable ? Icons.close : "";
+            navigation-label: "Close";
+            navigate => {
+                SignInPage.close();
+            }
+            list := Flickable {
+                vertical-stretch: 1;
+                content-height: column.preferred-height;
+                column := VerticalLayout {
+                    width: list.width;
+                    padding-bottom: 24px;
+                    alignment: start;
+                    // A sign-out that couldn't finish (a device slot left registered) lands here after the last provider goes.
+                    if SignInPage.notice != "": Notice {
+                        text: SignInPage.notice;
+                        clicked => {
+                            SignInPage.dismiss-notice();
+                        }
+                    }
+                    Rectangle {
+                        height: 8px;
+                    }
+                    for p[i] in SignInPage.providers: GroupRow {
+                        i: i;
+                        n: SignInPage.providers.length;
+                        title: p.name;
+                        sub: p.fields;
+                        kind: RowKind.button;
+                        clicked => {
+                            SignInPage.pick(p.id);
+                        }
+                        Chevron { }
+                    }
+                    SectionLabel {
+                        text: "Other";
+                    }
+                    for o[i] in SignInPage.others: GroupRow {
+                        i: i;
+                        n: SignInPage.others.length;
+                        title: o.title;
+                        sub: o.sub;
+                        kind: RowKind.button;
+                        clicked => {
+                            if o.other == Other.file {
+                                SignInPage.import-file();
+                            } else if o.other == Other.shadowsocks {
+                                SignInPage.shadowsocks();
+                            } else {
+                                SignInPage.tailscale-only();
+                            }
+                        }
+                        Chevron { }
+                    }
+                    if SignInPage.import-error != "": CaptionRow {
+                        text: SignInPage.import-error;
+                        color: Ink.bad;
+                    }
+                }
+            }
+        }
+        if root.form: Screen {
+            overline: "Sign in";
+            title: SignInPage.form.name;
+            sub: "Enter your details";
+            navigation-icon: Icons.back;
+            navigation-label: "Back";
+            navigate => {
+                SignInPage.back(SignInPage.form.id);
+            }
+            flick := Flickable {
+                vertical-stretch: 1;
+                content-height: fields.preferred-height;
+                fields := VerticalLayout {
+                    width: flick.width;
+                    padding-left: Metrics.gutter;
+                    padding-right: Metrics.gutter;
+                    padding-top: 16px;
+                    padding-bottom: 24px;
+                    spacing: 10px;
+                    alignment: start;
+                    for f[i] in SignInPage.form.fields: FieldBlock {
+                        field: f;
+                        captcha: SignInPage.form.captcha;
+                        index: i;
+                        target: root.next-field;
+                        nudge: root.nudge;
+                        edited(text) => {
+                            SignInPage.field-changed(SignInPage.form.id, f.key, text);
+                        }
+                        // Enter moves on to the next field; in the last one it sends the form, once it is filled.
+                        entered => {
+                            if !f.last {
+                                root.next-field = i + 1;
+                                root.nudge += 1;
+                            } else if SignInPage.form.ready && !SignInPage.form.busy {
+                                SignInPage.submit(SignInPage.form.id);
+                            }
+                        }
+                        scan => {
+                            SignInPage.scan-qr(SignInPage.form.id, f.key);
+                        }
+                        load => {
+                            SignInPage.choose-file(SignInPage.form.id, f.key);
+                        }
+                    }
+                    // A question isn't a failure: it reads as an instruction, not in red.
+                    if SignInPage.form.error != "": HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        Caption {
+                            text: SignInPage.form.error;
+                            color: SignInPage.form.question ? Ink.text : Ink.bad;
+                            wrap: word-wrap;
+                        }
+                    }
+                    if SignInPage.form.link != "": HorizontalLayout {
+                        alignment: start;
+                        Secondary {
+                            text: SignInPage.form.link-label;
+                            clicked => {
+                                SignInPage.open-link(SignInPage.form.link);
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        Caption {
+                            text: SignInPage.form.help;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+            HorizontalLayout {
+                padding-left: Metrics.gutter;
+                padding-right: Metrics.gutter;
+                padding-top: 8px;
+                padding-bottom: 16px;
+                Primary {
+                    text: "Continue";
+                    enabled: SignInPage.form.ready;
+                    busy: SignInPage.form.busy;
+                    clicked => {
+                        SignInPage.submit(SignInPage.form.id);
+                    }
+                }
+            }
+        }
+        }
+    }
+}

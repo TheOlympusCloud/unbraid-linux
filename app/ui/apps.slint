@@ -1,0 +1,1056 @@
+// The Apps page: the installed apps as a table (search, filter by exit, sort by any column), the selected app's route
+// choices in the panel on the right, and its routes at once in a menu at a right click.
+
+import { Ink, Overline, Small, Title, Body, Sub, Caption } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { Motion } from "motion.slint";
+import { StateLayer, FocusRing, Tappable, SearchField, RouteMark, GroupRow, RowKind, Toggle, AppIcon, Secondary } from "components.slint";
+import { PageHeader, PillButton, PillKind, ClickMenu, MenuItem, MenuLabel } from "shell.slint";
+
+// An exit filter: a route's chip (a dot in its colour, hue), "Not set" (hue -1, no dot) or Direct (its glyph).
+export struct ExitChip {
+    id: string,
+    label: string,
+    hue: int,
+    direct: bool,
+    on: bool,
+}
+
+// A column head: its words with the order's arrow, what a click on it does, and whether the table sorts by it.
+export struct ColumnHead {
+    text: string,
+    label: string,
+    on: bool,
+}
+
+// A row of the table. [icon] is the app's picture, empty for its initial ([letter]); [unset] shows in place of the
+// route's mark while the app has no exit; hue -1 is Direct's colour.
+export struct AppRow {
+    key: string,
+    label: string,
+    letter: string,
+    icon: image,
+    kind: string,
+    unset: string,
+    code: string,
+    hue: int,
+    filled: bool,
+    direct: bool,
+    note: string,
+    today: string,
+}
+
+// A route the selected app can take: a tile in the panel, a row of its menu.
+export struct RouteChoice {
+    id: string,
+    name: string,
+    sub: string,
+    menu: string,
+    code: string,
+    hue: int,
+    direct: bool,
+    on: bool,
+}
+
+// An app that runs as the selected one, and so takes its route.
+export struct AlsoRow {
+    key: string,
+    label: string,
+    letter: string,
+    icon: image,
+    note: string,
+}
+
+// The selected app ([key] "" for none): the panel and its menu.
+export struct AppDetail {
+    key: string,
+    label: string,
+    letter: string,
+    icon: image,
+    program: string,
+    copy: string,
+    leader: string,
+    leader-note: string,
+    leader-menu: string,
+    show-leader: string,
+    default-only: bool,
+    choices: [RouteChoice],
+    also: [AlsoRow],
+    lookups: bool,
+    lookups-sub: string,
+    lookups-on: bool,
+    own: bool,
+    today: string,
+}
+
+// What the page shows, and what its clicks ask for.
+export global AppsPage {
+    in property <string> counts;
+    in property <bool> disclosed;
+    in property <string> editing;
+    in property <string> editing-hint;
+    in property <string> back-label;
+    in property <string> use-label;
+    // The search, as typed; set it to clear it.
+    in-out property <string> query;
+    in property <bool> all;
+    in property <[ExitChip]> chips;
+    in property <bool> system;
+    in property <[ColumnHead]> heads;
+    in property <bool> stats;
+    in property <[AppRow]> rows;
+    in property <string> selected;
+    in property <int> selected-index: -1;
+    in property <AppDetail> detail;
+    // Show my apps: the installed-apps disclosure first.
+    callback show-apps();
+    callback add-program();
+    // Back to the profile in use, or use the one shown.
+    callback back();
+    callback use-profile();
+    callback search(text: string);
+    // An exit's chip: a route's id, "" for apps without an exit, or "direct".
+    callback filter(id: string);
+    callback filter-all();
+    callback toggle-system();
+    // A column head, by its index: name, kind, route, today.
+    callback sort(column: int);
+    callback select(key: string);
+    // The arrow keys: the row [by] rows on from the selected one, or the first.
+    callback step(by: int);
+    // A route for the app: a route's id, or "direct".
+    callback assign(key: string, route: string);
+    callback use-default(key: string);
+    // A new route for this app: the location picker.
+    callback new-route(key: string);
+    callback copy-path(path: string);
+    callback filter-lookups(key: string);
+}
+
+// A control that also takes a right click, where it was: Tappable's hover, press, keys and focus ring.
+component RowTap inherits Rectangle {
+    out property <bool> hovered: touch.has-hover;
+    out property <bool> pressed: touch.pressed;
+    callback clicked();
+    callback right-clicked(x: length, y: length);
+    forward-focus: focus;
+    StateLayer {
+        border-radius: root.border-radius;
+        hovered: root.hovered;
+        pressed: root.pressed;
+        focused: focus.has-focus;
+    }
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+        pointer-event(event) => {
+            if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                root.right-clicked(self.mouse-x, self.mouse-y);
+            }
+        }
+    }
+    focus := FocusScope {
+        x: 0;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == Key.Space {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    if focus.has-focus: FocusRing {
+        radius: root.border-radius;
+    }
+}
+
+// One exit filter. Exits are one choice among many; System is an on/off filter of its own ([independent]).
+component FilterChip {
+    in property <string> text;
+    // The dot before the words; transparent for none.
+    in property <color> dot: transparent;
+    in property <bool> direct;
+    in property <bool> on;
+    in property <bool> independent;
+    callback clicked();
+    horizontal-stretch: 0;
+    min-height: 48px;
+    // The whole 48 px row takes the click; the pill is 36 px.
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-top: 6px;
+        padding-bottom: 6px;
+        Rectangle {
+            border-radius: 12px;
+            // Selection fades in with the effects spring, like the other selectable pills.
+            background: root.on ? Ink.surface-top : transparent;
+            border-width: 1px;
+            border-color: root.on ? Ink.surface-top : Ink.line;
+            animate background, border-color {
+                duration: Motion.fast-effects;
+                easing: spring(0);
+            }
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 7px;
+                cross-axis-alignment: center;
+                if root.direct: Icon {
+                    icon: Icons.direct;
+                    size: 14px;
+                    tint: Ink.direct;
+                }
+                if !root.direct && root.dot != transparent: Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: root.dot;
+                }
+                Sub {
+                    text: root.text;
+                    font-weight: 500;
+                    color: root.on ? Ink.text : Ink.dim;
+                    accessible-role: none;
+                }
+            }
+            if !root.independent: Tappable {
+                border-radius: 12px;
+                accessible-role: radio-button;
+                accessible-label: root.text;
+                accessible-checkable: true;
+                accessible-checked: root.on;
+                accessible-action-default => {
+                    root.clicked();
+                }
+                clicked => {
+                    root.clicked();
+                }
+            }
+            if root.independent: Tappable {
+                border-radius: 12px;
+                accessible-role: checkbox;
+                accessible-label: root.text;
+                accessible-checkable: true;
+                accessible-checked: root.on;
+                accessible-action-default => {
+                    root.clicked();
+                }
+                clicked => {
+                    root.clicked();
+                }
+            }
+        }
+    }
+}
+
+// A column head that sorts the table, with the order's arrow.
+component Head inherits Rectangle {
+    in property <ColumnHead> head;
+    in property <bool> end;
+    callback clicked();
+    border-radius: 6px;
+    Overline {
+        width: 100%;
+        text: root.head.text;
+        color: root.head.on ? Ink.text : Ink.dim;
+        horizontal-alignment: root.end ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+        accessible-role: none;
+    }
+    Tappable {
+        border-radius: root.border-radius;
+        cursor: MouseCursor.pointer;
+        accessible-role: button;
+        accessible-label: root.head.label;
+        accessible-description: root.head.text;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// An app's row: its icon, name and key, kind, the mark of the route it takes, today's data. Selected it's tinted in
+// the accent; a right click asks for its menu, at the click.
+component TableRow inherits Rectangle {
+    in property <AppRow> app;
+    in property <bool> selected;
+    in property <bool> stats;
+    callback clicked();
+    // Where the right click was, in the window.
+    callback menu(x: length, y: length);
+    height: 52px;
+    border-radius: 12px;
+    background: root.selected ? Ink.accent-container : tap.hovered ? Ink.surface-high : transparent;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 14px;
+        cross-axis-alignment: center;
+        AppIcon {
+            icon: root.app.icon;
+            letter: root.app.letter;
+            size: 32px;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1.7;
+            min-width: 0;
+            preferred-width: 0;
+            alignment: center;
+            Body {
+                text: root.app.label;
+                font-size: 14px;
+                overflow: elide;
+                accessible-role: none;
+            }
+            Small {
+                text: root.app.key;
+                color: Ink.faint;
+                overflow: elide;
+                accessible-role: none;
+            }
+        }
+        Caption {
+            horizontal-stretch: 1;
+            min-width: 0;
+            preferred-width: 0;
+            text: root.app.kind;
+            overflow: elide;
+            accessible-role: none;
+        }
+        HorizontalLayout {
+            horizontal-stretch: 1.25;
+            min-width: 0;
+            preferred-width: 0;
+            spacing: 10px;
+            alignment: start;
+            cross-axis-alignment: center;
+            if root.app.unset != "": Caption {
+                text: root.app.unset;
+                accessible-role: none;
+            }
+            if root.app.unset == "": RouteMark {
+                code: root.app.code;
+                color: root.app.hue < 0 ? Ink.direct : Ink.route(root.app.hue);
+                filled: root.app.filled;
+                direct: root.app.direct;
+                accessible-role: none;
+            }
+            if root.app.note != "": Caption {
+                horizontal-stretch: 1;
+                text: root.app.note;
+                wrap: word-wrap;
+                max-lines: 2;
+                overflow: elide;
+                accessible-role: none;
+            }
+        }
+        if root.stats: Small {
+            width: 76px;
+            text: root.app.today;
+            horizontal-alignment: right;
+            accessible-role: none;
+        }
+    }
+    tap := RowTap {
+        border-radius: root.border-radius;
+        accessible-role: list-item;
+        accessible-label: root.app.label;
+        accessible-description: (root.app.unset != "" ? root.app.unset : root.app.direct ? "Direct" : root.app.code)
+            + (root.app.note != "" ? ", " + root.app.note : "") + (root.app.today != "" ? ", " + root.app.today : "");
+        accessible-item-selectable: true;
+        accessible-item-selected: root.selected;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+        right-clicked(x, y) => {
+            root.menu(self.absolute-position.x + x, self.absolute-position.y + y);
+        }
+    }
+}
+
+// One route to choose for the selected app: its mark and name, filled and outlined in the accent once chosen. [dashed]:
+// New route, which picks a place first.
+component RouteTile inherits Rectangle {
+    in property <string> name;
+    in property <string> sub;
+    in property <string> code;
+    in property <color> mark-color;
+    in property <bool> direct;
+    in property <bool> selected;
+    in property <bool> dashed;
+    callback clicked();
+    border-radius: 16px;
+    background: root.selected ? Ink.accent-container : root.dashed ? transparent : tap.hovered ? Ink.surface-top : Ink.surface-high;
+    border-width: root.selected ? 2px : 1px;
+    border-color: root.selected ? Ink.accent : root.dashed ? Ink.line : transparent;
+    VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+        HorizontalLayout {
+            cross-axis-alignment: center;
+            if root.dashed: Icon {
+                icon: Icons.add;
+                size: 20px;
+                tint: Ink.dim;
+            }
+            if !root.dashed: RouteMark {
+                code: root.code;
+                color: root.mark-color;
+                direct: root.direct;
+                accessible-role: none;
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            if root.selected: Icon {
+                icon: Icons.check;
+                size: 18px;
+                tint: Ink.accent;
+            }
+        }
+        VerticalLayout {
+            Body {
+                text: root.name;
+                font-size: 14px;
+                color: root.dashed ? Ink.dim : Ink.text;
+                overflow: elide;
+                accessible-role: none;
+            }
+            Caption {
+                text: root.sub;
+                overflow: elide;
+                accessible-role: none;
+            }
+        }
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        accessible-role: radio-button;
+        accessible-label: root.name;
+        accessible-description: root.sub;
+        accessible-checkable: true;
+        accessible-checked: root.selected;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// An app that takes the selected one's route: a click shows it.
+component AlsoLink inherits Rectangle {
+    in property <AlsoRow> app;
+    callback clicked();
+    border-radius: 10px;
+    horizontal-stretch: 0;
+    HorizontalLayout {
+        padding-top: 2px;
+        padding-bottom: 2px;
+        spacing: 10px;
+        cross-axis-alignment: center;
+        AppIcon {
+            icon: root.app.icon;
+            letter: root.app.letter;
+            size: 26px;
+        }
+        Sub {
+            text: root.app.label;
+            color: Ink.text;
+            accessible-role: none;
+        }
+        Caption {
+            text: root.app.note;
+            accessible-role: none;
+        }
+    }
+    Tappable {
+        border-radius: root.border-radius;
+        cursor: MouseCursor.pointer;
+        accessible-role: button;
+        accessible-label: "Show " + root.app.label;
+        accessible-description: root.app.note;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A line between a menu's groups.
+component MenuLine inherits Rectangle {
+    height: 9px;
+    Rectangle {
+        y: 4px;
+        height: 1px;
+        background: Ink.line;
+    }
+}
+
+// The page. Its search takes the focus at focus-search() (Ctrl+F); to-top() scrolls the table back up.
+export component AppsScreen inherits Rectangle {
+    // Where the tour's Apps stop points: the list, in the window.
+    out property <{x: length, y: length, width: length, height: length}> list-spot;
+    // Where the menu opens: at the right click, or above it when it wouldn't fit below.
+    private property <length> menu-x;
+    private property <length> menu-y;
+    background: Ink.ground;
+
+    public function focus-search() {
+        if AppsPage.disclosed {
+            search.focus-field();
+        }
+    }
+
+    public function to-top() {
+        scroll.content-y = 0;
+    }
+
+    // Brings the selected row into view, as a desktop list does when the keys move through it.
+    function reveal() {
+        if AppsPage.selected-index < 0 {
+            return;
+        }
+        let top = AppsPage.selected-index * 52px;
+        if top < -scroll.content-y {
+            scroll.content-y = -top;
+        } else if top + 6px + 52px > -scroll.content-y + scroll.height {
+            scroll.content-y = scroll.height - top - 6px - 52px;
+        }
+    }
+
+    // The menu's height, as its rows add up: 38 px a row, 26 the label, 9 a line, 8 above and below.
+    pure function menu-height() -> length {
+        16px + (AppsPage.detail.leader != "" ? 2 * 38px : AppsPage.detail.default-only ? 38px
+            : 26px + AppsPage.detail.choices.length * 38px + 9px + (AppsPage.detail.own ? 2 : 1) * 38px)
+            + (AppsPage.detail.copy != "" ? 9px + 38px : 0px)
+    }
+
+    // A right click on a row, at (x, y) in the window: the row is selected, and its menu opens there. Without room
+    // below, it opens above the row, as the desktop's menus do.
+    function open-menu(key: string, x: length, y: length) {
+        AppsPage.select(key);
+        table.focus();
+        root.menu-x = x - root.absolute-position.x;
+        let at = y - root.absolute-position.y;
+        root.menu-y = at + root.menu-height() <= root.height ? at : max(0px, at - 52px - root.menu-height());
+        menu.show();
+    }
+
+    HorizontalLayout {
+        table-column := VerticalLayout {
+            horizontal-stretch: 1;
+            padding-left: 30px;
+            padding-top: 26px;
+            padding-right: 22px;
+            PageHeader {
+                vertical-stretch: 0;
+                overline: AppsPage.counts;
+                title: "Apps";
+                if AppsPage.disclosed: PillButton {
+                    text: "Add a program";
+                    icon: Icons.add;
+                    clicked => {
+                        AppsPage.add-program();
+                    }
+                }
+            }
+            if AppsPage.editing != "": VerticalLayout {
+                vertical-stretch: 0;
+                padding-bottom: 10px;
+                Caption {
+                    text: AppsPage.editing;
+                    wrap: word-wrap;
+                }
+                if AppsPage.editing-hint != "": VerticalLayout {
+                    padding-top: 4px;
+                    Caption {
+                        text: AppsPage.editing-hint;
+                        wrap: word-wrap;
+                    }
+                }
+                HorizontalLayout {
+                    alignment: start;
+                    Secondary {
+                        text: AppsPage.back-label;
+                        clicked => {
+                            AppsPage.back();
+                        }
+                    }
+                    if AppsPage.use-label != "": Secondary {
+                        text: AppsPage.use-label;
+                        clicked => {
+                            AppsPage.use-profile();
+                        }
+                    }
+                }
+            }
+            // Before the list may be read: why it's needed, and the way to agree.
+            if !AppsPage.disclosed: VerticalLayout {
+                property <{x: length, y: length, width: length, height: length}> spot: { x: self.absolute-position.x, y: self.absolute-position.y, width: self.width, height: self.height };
+                init => {
+                    root.list-spot = self.spot;
+                }
+                changed spot => {
+                    root.list-spot = self.spot;
+                }
+                padding-top: 12px;
+                spacing: 12px;
+                alignment: start;
+                Sub {
+                    text: "unbraid needs the list of installed apps to route each one. It stays on this computer.";
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    alignment: start;
+                    Secondary {
+                        text: "Show my apps";
+                        clicked => {
+                            AppsPage.show-apps();
+                        }
+                    }
+                }
+            }
+            // Hidden until the list may be read, when it only fills the page.
+            Rectangle {
+                visible: AppsPage.disclosed;
+                vertical-stretch: 1;
+                VerticalLayout {
+                // Down in the search goes on into the table.
+                FocusScope {
+                    height: 44px;
+                    focus-on-click: false;
+                    focus-on-tab-navigation: false;
+                    capture-key-pressed(event) => {
+                        if event.text == Key.DownArrow && AppsPage.rows.length > 0 {
+                            AppsPage.step(AppsPage.selected == "" ? 0 : 1);
+                            table.focus();
+                            root.reveal();
+                            return accept;
+                        }
+                        return reject;
+                    }
+                    search := SearchField {
+                        width: 100%;
+                        height: 100%;
+                        compact: true;
+                        placeholder: "Search apps";
+                        keys: "Ctrl+F";
+                        value <=> AppsPage.query;
+                        changed(text) => {
+                            AppsPage.search(text);
+                        }
+                    }
+                }
+                // The exits, then System; they scroll sideways when the window is narrow.
+                Flickable {
+                    height: 60px;
+                    content-width: chips.preferred-width;
+                    chips := HorizontalLayout {
+                        padding-top: 6px;
+                        padding-bottom: 6px;
+                        spacing: 8px;
+                        alignment: start;
+                        FilterChip {
+                            text: "All";
+                            dot: Ink.text;
+                            on: AppsPage.all;
+                            clicked => {
+                                AppsPage.filter-all();
+                            }
+                        }
+                        for chip in AppsPage.chips: FilterChip {
+                            text: chip.label;
+                            dot: chip.hue < 0 ? transparent : Ink.route(chip.hue);
+                            direct: chip.direct;
+                            on: chip.on;
+                            clicked => {
+                                AppsPage.filter(chip.id);
+                            }
+                        }
+                        FilterChip {
+                            text: "System";
+                            on: AppsPage.system;
+                            independent: true;
+                            clicked => {
+                                AppsPage.toggle-system();
+                            }
+                        }
+                    }
+                }
+                // The column heads sort; again, the other way round.
+                HorizontalLayout {
+                    // The arrow's face sets the line a pixel taller than the overline's own.
+                    height: 6px + 15px + 8px;
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    padding-top: 6px;
+                    padding-bottom: 8px;
+                    spacing: 14px;
+                    Rectangle {
+                        width: 32px;
+                    }
+                    // The name, the kind and the route share what the icon, the gaps and Today leave, 1.7 : 1 : 1.25.
+                    Head {
+                        horizontal-stretch: 1.7;
+                        min-width: 0;
+                        preferred-width: 0;
+                        head: AppsPage.heads[0];
+                        clicked => {
+                            AppsPage.sort(0);
+                        }
+                    }
+                    Head {
+                        horizontal-stretch: 1;
+                        min-width: 0;
+                        preferred-width: 0;
+                        head: AppsPage.heads[1];
+                        clicked => {
+                            AppsPage.sort(1);
+                        }
+                    }
+                    Head {
+                        horizontal-stretch: 1.25;
+                        min-width: 0;
+                        preferred-width: 0;
+                        head: AppsPage.heads[2];
+                        clicked => {
+                            AppsPage.sort(2);
+                        }
+                    }
+                    if AppsPage.stats: Head {
+                        width: 76px;
+                        head: AppsPage.heads[3];
+                        end: true;
+                        clicked => {
+                            AppsPage.sort(3);
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 1px;
+                    background: Ink.surface-high;
+                }
+                // The table: the arrow keys walk it.
+                table := FocusScope {
+                    vertical-stretch: 1;
+                    accessible-role: list;
+                    accessible-label: "Apps";
+                    key-pressed(event) => {
+                        if event.text == Key.DownArrow {
+                            AppsPage.step(1);
+                            root.reveal();
+                            return accept;
+                        }
+                        if event.text == Key.UpArrow {
+                            AppsPage.step(-1);
+                            root.reveal();
+                            return accept;
+                        }
+                        return reject;
+                    }
+                    scroll := Flickable {
+                        content-height: body.preferred-height;
+                        // Only up and down: the content is as wide as the page.
+                        content-width: self.width;
+                        body := VerticalLayout {
+                            padding-top: 6px;
+                            padding-bottom: 24px;
+                            if AppsPage.rows.length == 0: HorizontalLayout {
+                                padding: 16px;
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                Sub {
+                                    text: "No apps match";
+                                }
+                            }
+                            Rectangle {
+                                height: AppsPage.rows.length * 52px;
+                                for row[index] in AppsPage.rows: TableRow {
+                                    property <{x: length, y: length, width: length, height: length}> spot: { x: self.absolute-position.x, y: self.absolute-position.y, width: self.width, height: self.height };
+                                    init => {
+                                        if index == 0 {
+                                            root.list-spot = self.spot;
+                                        }
+                                    }
+                                    changed spot => {
+                                        if index == 0 {
+                                            root.list-spot = self.spot;
+                                        }
+                                    }
+                                    y: index * 52px;
+                                    width: parent.width;
+                                    app: row;
+                                    selected: row.key == AppsPage.selected;
+                                    stats: AppsPage.stats;
+                                    clicked => {
+                                        AppsPage.select(row.key);
+                                        table.focus();
+                                    }
+                                    menu(x, y) => {
+                                        root.open-menu(row.key, x, y);
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                padding-top: 14px;
+                                Caption {
+                                    text: "Add a program for one your launcher doesn't list, such as a command-line tool or a game. Scripts, AppImages and Windows programs can only follow the default route.";
+                                    color: Ink.faint;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            }
+        }
+        Rectangle {
+            width: 1px;
+            background: Ink.surface-high;
+        }
+        // The selected app: what it runs as, its route choices, the apps that take its route, today's data.
+        side := Rectangle {
+            width: 340px;
+            background: Ink.surface;
+            Flickable {
+                content-height: panel.preferred-height;
+                // Only up and down: the content is as wide as the page.
+                content-width: self.width;
+                panel := VerticalLayout {
+                    padding-left: 22px;
+                    padding-right: 22px;
+                    padding-top: 26px;
+                    padding-bottom: 26px;
+                    spacing: 14px;
+                    alignment: start;
+                    if AppsPage.detail.key == "": Sub {
+                        text: "Select an app to choose its route.";
+                        wrap: word-wrap;
+                    }
+                    if AppsPage.detail.key == "": Caption {
+                        text: "A right click offers the routes at once; the arrow keys move through the list.";
+                        color: Ink.faint;
+                        wrap: word-wrap;
+                    }
+                    if AppsPage.detail.key != "": HorizontalLayout {
+                        spacing: 12px;
+                        VerticalLayout {
+                            alignment: center;
+                            AppIcon {
+                                icon: AppsPage.detail.icon;
+                                letter: AppsPage.detail.letter;
+                                size: 46px;
+                            }
+                        }
+                        // Slint elides a wrapped text whose lines are set shorter than its face's own a line early:
+                        // the name is clipped at two lines, and the path's lines are as far apart as the approved look's.
+                        VerticalLayout {
+                            alignment: center;
+                            Title {
+                                text: AppsPage.detail.label;
+                                wrap: word-wrap;
+                                max-lines: 2;
+                            }
+                            Small {
+                                text: AppsPage.detail.program;
+                                color: Ink.faint;
+                                line-height-factor: 15.5 / 14.4;
+                                wrap: word-wrap;
+                                max-lines: 2;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                    if AppsPage.detail.leader != "": Sub {
+                        text: AppsPage.detail.leader-note;
+                        wrap: word-wrap;
+                    }
+                    if AppsPage.detail.leader != "": HorizontalLayout {
+                        alignment: start;
+                        PillButton {
+                            text: AppsPage.detail.show-leader;
+                            icon: Icons.back;
+                            kind: PillKind.outline;
+                            clicked => {
+                                AppsPage.select(AppsPage.detail.leader);
+                                root.reveal();
+                            }
+                        }
+                    }
+                    // The engine can't tell a script's or an AppImage's traffic apart, so it can only follow the default.
+                    if AppsPage.detail.default-only: Sub {
+                        text: "Follows the default route: it runs as a script, on Wine or Java, or from an AppImage, and unbraid can't tell its traffic from other programs'.";
+                        wrap: word-wrap;
+                    }
+                    if AppsPage.detail.choices.length > 0: VerticalLayout {
+                        padding-top: 6px;
+                        Overline {
+                            text: "ROUTE";
+                        }
+                    }
+                    // Two tiles a row, the last one New route.
+                    if AppsPage.detail.choices.length > 0: Rectangle {
+                        private property <int> cells: AppsPage.detail.choices.length + 1;
+                        private property <length> tile-width: (self.width - 8px) / 2;
+                        // A tile is 93 px tall, New route 87 (its mark is smaller); rows are 14 px apart.
+                        height: (Math.ceil(self.cells / 2) - 1) * 107px + (Math.mod(self.cells, 2) == 1 ? 87px : 93px);
+                        for choice[index] in AppsPage.detail.choices: RouteTile {
+                            x: Math.mod(index, 2) * (parent.tile-width + 8px);
+                            y: Math.floor(index / 2) * 107px;
+                            width: parent.tile-width;
+                            height: self.preferred-height;
+                            name: choice.name;
+                            sub: choice.sub;
+                            code: choice.code;
+                            mark-color: choice.direct ? Ink.direct : Ink.route(choice.hue);
+                            direct: choice.direct;
+                            selected: choice.on;
+                            clicked => {
+                                AppsPage.assign(AppsPage.detail.key, choice.id);
+                            }
+                        }
+                        RouteTile {
+                            x: Math.mod(AppsPage.detail.choices.length, 2) * (parent.tile-width + 8px);
+                            y: Math.floor(AppsPage.detail.choices.length / 2) * 107px;
+                            width: parent.tile-width;
+                            height: self.preferred-height;
+                            name: "New route";
+                            sub: "Pick a place";
+                            dashed: true;
+                            clicked => {
+                                AppsPage.new-route(AppsPage.detail.key);
+                            }
+                        }
+                    }
+                    if AppsPage.detail.also.length > 0: VerticalLayout {
+                        padding-top: 6px;
+                        Overline {
+                            text: "TAKES THIS ROUTE TOO";
+                        }
+                    }
+                    for app in AppsPage.detail.also: HorizontalLayout {
+                        alignment: start;
+                        AlsoLink {
+                            app: app;
+                            clicked => {
+                                AppsPage.select(app.key);
+                                root.reveal();
+                            }
+                        }
+                    }
+                    // A Direct app's lookups: outside unbraid (the computer's DNS) or through it, with unbraid's filter.
+                    if AppsPage.detail.lookups: GroupRow {
+                        title: "Filter its lookups";
+                        sub: AppsPage.detail.lookups-sub;
+                        kind: RowKind.switch;
+                        checked: AppsPage.detail.lookups-on;
+                        clicked => {
+                            AppsPage.filter-lookups(AppsPage.detail.key);
+                        }
+                        Toggle {
+                            on: AppsPage.detail.lookups-on;
+                            passive: true;
+                        }
+                    }
+                    if AppsPage.detail.own: PillButton {
+                        horizontal-stretch: 1;
+                        text: "Use the default route";
+                        kind: PillKind.outline;
+                        clicked => {
+                            AppsPage.use-default(AppsPage.detail.key);
+                        }
+                    }
+                    if AppsPage.detail.today != "": VerticalLayout {
+                        padding-top: 6px;
+                        Overline {
+                            text: "TODAY";
+                        }
+                    }
+                    if AppsPage.detail.today != "": Sub {
+                        text: AppsPage.detail.today;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+    }
+
+    // The selected app's routes at once: its own choices, or what it follows; then its program to copy.
+    menu := ClickMenu {
+        x: root.menu-x;
+        y: root.menu-y;
+        if AppsPage.detail.leader != "": MenuItem {
+            text: AppsPage.detail.leader-menu;
+            enabled: false;
+        }
+        if AppsPage.detail.leader != "": MenuItem {
+            text: AppsPage.detail.show-leader;
+            icon: Icons.back;
+            clicked => {
+                AppsPage.select(AppsPage.detail.leader);
+                root.reveal();
+            }
+        }
+        if AppsPage.detail.default-only: MenuItem {
+            text: "Follows the default route";
+            enabled: false;
+        }
+        if AppsPage.detail.choices.length > 0: MenuLabel {
+            text: "Route";
+        }
+        for choice in AppsPage.detail.choices: MenuItem {
+            text: choice.menu;
+            checked: choice.on;
+            clicked => {
+                AppsPage.assign(AppsPage.detail.key, choice.id);
+            }
+            RouteMark {
+                code: choice.code;
+                color: choice.direct ? Ink.direct : Ink.route(choice.hue);
+                direct: choice.direct;
+                accessible-role: none;
+            }
+        }
+        if AppsPage.detail.choices.length > 0: MenuLine { }
+        if AppsPage.detail.own: MenuItem {
+            text: "Use the default route";
+            icon: Icons.back;
+            clicked => {
+                AppsPage.use-default(AppsPage.detail.key);
+            }
+        }
+        if AppsPage.detail.choices.length > 0: MenuItem {
+            text: "New route for this app…";
+            icon: Icons.add;
+            clicked => {
+                AppsPage.new-route(AppsPage.detail.key);
+            }
+        }
+        if AppsPage.detail.copy != "": MenuLine { }
+        if AppsPage.detail.copy != "": MenuItem {
+            text: "Copy program path";
+            icon: Icons.file;
+            clicked => {
+                AppsPage.copy-path(AppsPage.detail.copy);
+            }
+        }
+    }
+}

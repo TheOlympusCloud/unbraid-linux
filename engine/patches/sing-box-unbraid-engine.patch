@@ -1,8 +1,16 @@
 diff --git a/experimental/boxdd/authorize_linux.go b/experimental/boxdd/authorize_linux.go
-index 9cdf043..f01d3ef 100644
+index 9cdf043..6f5a4dc 100644
 --- a/experimental/boxdd/authorize_linux.go
 +++ b/experimental/boxdd/authorize_linux.go
-@@ -21,8 +21,8 @@ const (
+@@ -9,6 +9,7 @@ import (
+ 	"math"
+ 	"os"
+ 	"strconv"
++	"strings"
+ 
+ 	E "github.com/sagernet/sing/common/exceptions"
+ 
+@@ -21,8 +22,9 @@ const (
  	policyKitService               = "org.freedesktop.PolicyKit1"
  	policyKitAuthorityPath         = dbus.ObjectPath("/org/freedesktop/PolicyKit1/Authority")
  	policyKitAuthorityInterface    = "org.freedesktop.PolicyKit1.Authority"
@@ -10,9 +18,124 @@ index 9cdf043..f01d3ef 100644
 -	policyKitSetInsecureModeAction = "io.nekohasekai.sfl.set-insecure-mode"
 +	policyKitTakeOverAction        = "app.unbraid.engine.take-over-service"
 +	policyKitSetInsecureModeAction = "app.unbraid.engine.set-insecure-mode"
++	policyKitClaimAction           = "app.unbraid.engine.claim-service"
  	policyKitAllowUserInteraction  = uint32(1)
  )
  
+@@ -41,6 +43,62 @@ func authorizeTakeOver(ctx context.Context, identity peerIdentity) error {
+ 	return checkPolicyKitAuthorization(ctx, identity, policyKitTakeOverAction)
+ }
+ 
++// Unbraid: owning an engine nobody owns routes the whole computer's traffic. It takes polkit's yes, which an active
++// local session gets without a prompt (as NetworkManager does), and never comes from a system account. The engine's own
++// user (root, for the system service) gains nothing by it and isn't asked.
++func authorizeClaim(ctx context.Context, identity peerIdentity) error {
++	if listenAddress != "" {
++		return nil
++	}
++	userID, err := strconv.ParseUint(identity.UserID, 10, 32)
++	if err != nil {
++		return status.Error(codes.Unauthenticated, "daemon peer has an invalid Linux user ID")
++	}
++	if userID == uint64(os.Geteuid()) {
++		return nil
++	}
++	uidMin, uidMax := loginUIDRange()
++	if userID < uidMin || userID > uidMax || userID == overflowUID {
++		return status.Error(codes.PermissionDenied, "system accounts can't use the service")
++	}
++	return checkPolicyKit(ctx, identity, policyKitClaimAction)
++}
++
++// Unbraid: the polkit check claims go through; tests replace it.
++var checkPolicyKit = checkPolicyKitAuthorization
++
++var loginDefsPath = "/etc/login.defs"
++
++// Unbraid: nobody, the kernel's overflow user ID: never a person, even where UID_MAX reaches it.
++const overflowUID = 65534
++
++// Unbraid: the user IDs login.defs gives people (1000 to 60000 unless set). Outside them are system accounts, such as
++// systemd's dynamic users (61184 to 65519).
++func loginUIDRange() (uidMin uint64, uidMax uint64) {
++	uidMin, uidMax = 1000, 60000
++	content, err := os.ReadFile(loginDefsPath)
++	if err != nil {
++		return
++	}
++	for _, line := range strings.Split(string(content), "\n") {
++		fields := strings.Fields(line)
++		if len(fields) < 2 {
++			continue
++		}
++		value, parseErr := strconv.ParseUint(fields[1], 10, 32)
++		if parseErr != nil {
++			continue
++		}
++		switch fields[0] {
++		case "UID_MIN":
++			uidMin = value
++		case "UID_MAX":
++			uidMax = value
++		}
++	}
++	return
++}
++
+ func authorizeSetInsecureMode(ctx context.Context, identity peerIdentity, enabled bool) error {
+ 	if enabled {
+ 		return checkPolicyKitAuthorization(ctx, identity, policyKitSetInsecureModeAction)
+diff --git a/experimental/boxdd/authorize_stub.go b/experimental/boxdd/authorize_stub.go
+index 7c4cf24..90d532d 100644
+--- a/experimental/boxdd/authorize_stub.go
++++ b/experimental/boxdd/authorize_stub.go
+@@ -13,6 +13,10 @@ func authorizeTakeOver(ctx context.Context, identity peerIdentity) error {
+ 	return nil
+ }
+ 
++func authorizeClaim(ctx context.Context, identity peerIdentity) error {
++	return nil
++}
++
+ func authorizeSetInsecureMode(ctx context.Context, identity peerIdentity, enabled bool) error {
+ 	if enabled {
+ 		return status.Error(codes.PermissionDenied, "enabling insecure mode requires an elevated service command")
+diff --git a/experimental/boxdd/cmd_run_linux.go b/experimental/boxdd/cmd_run_linux.go
+index 96b8ceb..5062e06 100644
+--- a/experimental/boxdd/cmd_run_linux.go
++++ b/experimental/boxdd/cmd_run_linux.go
+@@ -1,6 +1,8 @@
+ package main
+ 
+ import (
++	"net"
++	"net/netip"
+ 	"os"
+ 
+ 	E "github.com/sagernet/sing/common/exceptions"
+@@ -10,9 +12,22 @@ func runService() (bool, error) {
+ 	if os.Getenv("INVOCATION_ID") != "" && listenAddress != "" {
+ 		return true, E.New("--listen is not allowed in service mode")
+ 	}
++	// Unbraid: --listen turns every check off, so never as root, and only on this computer.
++	if listenAddress != "" && (os.Geteuid() == 0 || !loopbackAddress(listenAddress)) {
++		return true, E.New("--listen is only allowed on a loopback address, and never as root")
++	}
+ 	return false, nil
+ }
+ 
++func loopbackAddress(address string) bool {
++	host, _, err := net.SplitHostPort(address)
++	if err != nil {
++		return false
++	}
++	ip, err := netip.ParseAddr(host)
++	return err == nil && ip.IsLoopback()
++}
++
+ func preparePlatformWorkingDirectory() error {
+ 	return os.MkdirAll(workingDirectory, 0o700)
+ }
 diff --git a/experimental/boxdd/cmd_service_linux.go b/experimental/boxdd/cmd_service_linux.go
 index d9f4d7c..a157a14 100644
 --- a/experimental/boxdd/cmd_service_linux.go
@@ -27,7 +150,7 @@ index d9f4d7c..a157a14 100644
  )
  
 diff --git a/experimental/boxdd/desktop_service.go b/experimental/boxdd/desktop_service.go
-index 1942f9f..a5c3d07 100644
+index 1942f9f..ee4d7dd 100644
 --- a/experimental/boxdd/desktop_service.go
 +++ b/experimental/boxdd/desktop_service.go
 @@ -9,7 +9,6 @@ import (
@@ -38,7 +161,28 @@ index 1942f9f..a5c3d07 100644
  
  	"google.golang.org/grpc/codes"
  	"google.golang.org/grpc/status"
-@@ -94,7 +93,11 @@ func (s *desktopService) StartService(ctx context.Context, request *StartService
+@@ -57,6 +56,10 @@ func (s *desktopService) StartService(ctx context.Context, request *StartService
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	claimed, err := claimUnowned(ctx, identity)
++	if err != nil {
++		return nil, err
++	}
+ 	s.daemon.lifecycleAccess.Lock()
+ 	defer s.daemon.lifecycleAccess.Unlock()
+ 	if s.daemon.closed {
+@@ -69,6 +72,9 @@ func (s *desktopService) StartService(ctx context.Context, request *StartService
+ 	if ownerUserID != "" && ownerUserID != identity.UserID {
+ 		return nil, status.Error(codes.PermissionDenied, "the service is owned by another user")
+ 	}
++	if ownerUserID == "" && !claimed {
++		return nil, errOwnerLeft
++	}
+ 	err = s.daemon.preparePlatformOwnerLocked(identity)
+ 	if err != nil {
+ 		return nil, err
+@@ -94,7 +100,11 @@ func (s *desktopService) StartService(ctx context.Context, request *StartService
  		return nil, s.daemon.cleanFailedStartLocked(identity.UserID, mergedOptions, err)
  	}
  	directory := userWorkingDirectory(identity.UserID)
@@ -51,6 +195,72 @@ index 1942f9f..a5c3d07 100644
  	optionsError := saveStartOptions(identity.UserID, mergedOptions)
  	if configError != nil || optionsError != nil {
  		return nil, s.daemon.cleanFailedStartLocked(identity.UserID, mergedOptions, E.Errors(configError, optionsError))
+@@ -107,6 +117,10 @@ func (s *desktopService) ClaimService(ctx context.Context, empty *emptypb.Empty)
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	claimed, err := claimUnowned(ctx, identity)
++	if err != nil {
++		return nil, err
++	}
+ 	s.daemon.lifecycleAccess.Lock()
+ 	defer s.daemon.lifecycleAccess.Unlock()
+ 	if s.daemon.closed {
+@@ -130,6 +144,9 @@ func (s *desktopService) ClaimService(ctx context.Context, empty *emptypb.Empty)
+ 	if ownerUserID != "" {
+ 		return nil, status.Error(codes.Aborted, "the service was claimed by another user")
+ 	}
++	if !claimed {
++		return nil, errOwnerLeft
++	}
+ 	err = s.daemon.configureWorkingDirectoryLocked(userWorkingDirectory(identity.UserID))
+ 	if err != nil {
+ 		return nil, err
+@@ -150,6 +167,10 @@ func (s *desktopService) TakeOverService(ctx context.Context, empty *emptypb.Emp
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	claimed, err := claimUnowned(ctx, identity)
++	if err != nil {
++		return nil, err
++	}
+ 	s.daemon.lifecycleAccess.Lock()
+ 	if s.daemon.closed {
+ 		s.daemon.lifecycleAccess.Unlock()
+@@ -160,6 +181,10 @@ func (s *desktopService) TakeOverService(ctx context.Context, empty *emptypb.Emp
+ 		s.daemon.lifecycleAccess.Unlock()
+ 		return nil, err
+ 	}
++	if ownerUserID == "" && !claimed {
++		s.daemon.lifecycleAccess.Unlock()
++		return nil, errOwnerLeft
++	}
+ 	if ownerUserID == "" || ownerUserID == identity.UserID {
+ 		err = s.takeOverServiceLocked(identity, ownerUserID)
+ 		s.daemon.lifecycleAccess.Unlock()
+@@ -189,6 +214,22 @@ func (s *desktopService) TakeOverService(ctx context.Context, empty *emptypb.Emp
+ 	return &emptypb.Empty{}, nil
+ }
+ 
++// Unbraid: an engine nobody owns is claimed only with authorizeClaim, asked before the lock is taken (it can prompt).
++// claimed reports that it was given; an engine that lost its owner in between is errOwnerLeft, to be tried again.
++func claimUnowned(ctx context.Context, identity peerIdentity) (claimed bool, err error) {
++	ownerUserID, err := loadOwner()
++	if err != nil && !os.IsNotExist(err) {
++		return false, err
++	}
++	if ownerUserID != "" {
++		return false, nil
++	}
++	err = authorizeClaim(ctx, identity)
++	return err == nil, err
++}
++
++var errOwnerLeft = status.Error(codes.Aborted, "the service lost its owner meanwhile, try again")
++
+ func (s *desktopService) takeOverServiceLocked(identity peerIdentity, ownerUserID string) error {
+ 	if ownerUserID == identity.UserID {
+ 		err := s.daemon.preparePlatformOwnerLocked(identity)
 diff --git a/experimental/boxdd/main.go b/experimental/boxdd/main.go
 index 40df83a..8878ed5 100644
 --- a/experimental/boxdd/main.go
@@ -88,3 +298,213 @@ index ad9df8a..a6f2585 100644
  	libbox.ReloadSetupOptions(&libbox.SetupOptions{
  		OomKillerEnabled:   options.OOMKillerEnabled,
  		OomKillerDisabled:  options.OOMKillerDisabled,
+diff --git a/experimental/boxdd/unbraid_test.go b/experimental/boxdd/unbraid_test.go
+new file mode 100644
+index 0000000..431ad08
+--- /dev/null
++++ b/experimental/boxdd/unbraid_test.go
+@@ -0,0 +1,204 @@
++//go:build linux
++
++package main
++
++import (
++	"bytes"
++	"context"
++	"encoding/base64"
++	"io/fs"
++	"os"
++	"path/filepath"
++	"strconv"
++	"testing"
++
++	"google.golang.org/grpc/codes"
++	"google.golang.org/grpc/peer"
++	"google.golang.org/grpc/status"
++)
++
++// Unbraid's checks on who may own the engine, and what a started service leaves on disk.
++
++// A daemon in its own working directory, with polkit answering polkit and the number of times it was asked.
++func unbraidDaemon(t *testing.T, polkit error) (*desktopService, *int) {
++	t.Helper()
++	previousDirectory, previousDefs, previousCheck := workingDirectory, loginDefsPath, checkPolicyKit
++	cwd, err := os.Getwd()
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() {
++		workingDirectory, loginDefsPath, checkPolicyKit = previousDirectory, previousDefs, previousCheck
++		_ = os.Chdir(cwd)
++	})
++	workingDirectory = t.TempDir()
++	loginDefsPath = filepath.Join(t.TempDir(), "login.defs")
++	err = os.WriteFile(loginDefsPath, []byte("#UID_MIN 500\nUID_MIN\t\t 1000\nUID_MAX\t\t60000\n"), 0o644)
++	if err != nil {
++		t.Fatal(err)
++	}
++	asked := 0
++	checkPolicyKit = func(ctx context.Context, identity peerIdentity, action string) error {
++		asked++
++		if action != policyKitClaimAction {
++			t.Errorf("polkit asked for %s", action)
++		}
++		return polkit
++	}
++	d, err := newDaemon()
++	if err != nil {
++		t.Fatal(err)
++	}
++	d.platform = nil // owners' sessions and system proxies belong to a desktop, not to the test
++	return &desktopService{daemon: d}, &asked
++}
++
++func asUser(uid string) context.Context {
++	return peer.NewContext(context.Background(), &peer.Peer{AuthInfo: &peerAuthInfo{identity: peerIdentity{UserID: uid, ProcessID: 4242, ProcessStartTime: 1}}})
++}
++
++func assertNoOwner(t *testing.T) {
++	t.Helper()
++	if owner, err := loadOwner(); !os.IsNotExist(err) {
++		t.Fatalf("an owner was saved: %q, %v", owner, err)
++	}
++}
++
++func TestUnbraidUnownedServiceNeedsPolkit(t *testing.T) {
++	s, asked := unbraidDaemon(t, status.Error(codes.PermissionDenied, "authorization was denied"))
++	_, err := s.StartService(asUser("1001"), &StartServiceRequest{ConfigContent: "{}"})
++	if status.Code(err) != codes.PermissionDenied {
++		t.Fatalf("start: %v", err)
++	}
++	_, err = s.ClaimService(asUser("1001"), nil)
++	if status.Code(err) != codes.PermissionDenied {
++		t.Fatalf("claim: %v", err)
++	}
++	_, err = s.TakeOverService(asUser("1001"), nil)
++	if status.Code(err) != codes.PermissionDenied {
++		t.Fatalf("take over: %v", err)
++	}
++	if *asked != 3 {
++		t.Fatalf("polkit was asked %d times", *asked)
++	}
++	assertNoOwner(t)
++}
++
++func TestUnbraidSystemAccountsCantClaim(t *testing.T) {
++	s, asked := unbraidDaemon(t, nil)
++	// www-data, the last system ID below UID_MIN, the first above UID_MAX, a systemd dynamic user, nobody.
++	for _, uid := range []string{"33", "999", "60001", "61184", "65534"} {
++		_, err := s.ClaimService(asUser(uid), nil)
++		if status.Code(err) != codes.PermissionDenied {
++			t.Fatalf("%s: %v", uid, err)
++		}
++	}
++	// Where UID_MAX reaches past it, nobody still never is a person.
++	err := os.WriteFile(loginDefsPath, []byte("UID_MIN 1000\nUID_MAX 70000\n"), 0o644)
++	if err != nil {
++		t.Fatal(err)
++	}
++	_, err = s.ClaimService(asUser("65534"), nil)
++	if status.Code(err) != codes.PermissionDenied {
++		t.Fatalf("nobody: %v", err)
++	}
++	if *asked != 0 {
++		t.Fatal("polkit was asked for a system account")
++	}
++	assertNoOwner(t)
++	// The last ID a person can have there is let through to polkit.
++	_, err = s.ClaimService(asUser("70000"), nil)
++	if err != nil || *asked != 1 {
++		t.Fatalf("70000: %v, polkit asked %d times", err, *asked)
++	}
++}
++
++func TestUnbraidOwnUserNeedsNoPolkit(t *testing.T) {
++	s, asked := unbraidDaemon(t, status.Error(codes.PermissionDenied, "authorization was denied"))
++	_, err := s.ClaimService(asUser(strconv.Itoa(os.Geteuid())), nil)
++	if err != nil || *asked != 0 {
++		t.Fatalf("claim: %v, polkit asked %d times", err, *asked)
++	}
++}
++
++func TestUnbraidClaimWithPolkitsYes(t *testing.T) {
++	s, asked := unbraidDaemon(t, nil)
++	_, err := s.ClaimService(asUser("1001"), nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	owner, err := loadOwner()
++	if err != nil || owner != "1001" {
++		t.Fatalf("owner %q: %v", owner, err)
++	}
++	// Owned now: the owner's own calls need no new yes, and another user's claim is turned away.
++	_, err = s.ClaimService(asUser("1001"), nil)
++	if err != nil || *asked != 1 {
++		t.Fatalf("again: %v, polkit asked %d times", err, *asked)
++	}
++	_, err = s.ClaimService(asUser("1002"), nil)
++	if status.Code(err) != codes.Aborted {
++		t.Fatalf("another user: %v", err)
++	}
++}
++
++// WireGuard's documentation keys.
++const (
++	testPrivateKey = "yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk="
++	testPublicKey  = "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg="
++)
++
++func TestUnbraidStartedServiceKeepsNoConfig(t *testing.T) {
++	s, _ := unbraidDaemon(t, nil)
++	config := `{"log":{"level":"error"},"endpoints":[{"type":"wireguard","tag":"wg","address":["10.66.0.2/32"],"private_key":"` + testPrivateKey +
++		`","peers":[{"address":"127.0.0.1","port":9,"public_key":"` + testPublicKey + `","allowed_ips":["0.0.0.0/0"]}]}],"outbounds":[{"type":"direct","tag":"direct"}]}`
++	_, err := s.StartService(asUser("1001"), &StartServiceRequest{ConfigContent: config})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s.daemon.startedService.CloseService()
++	raw, err := base64.StdEncoding.DecodeString(testPrivateKey)
++	if err != nil {
++		t.Fatal(err)
++	}
++	files := 0
++	err = filepath.WalkDir(workingDirectory, func(path string, entry fs.DirEntry, err error) error {
++		if err != nil || entry.IsDir() {
++			return err
++		}
++		files++
++		content, err := os.ReadFile(path)
++		if err != nil {
++			return err
++		}
++		if bytes.Contains(content, []byte(testPrivateKey)) || bytes.Contains(content, raw) {
++			t.Errorf("%s holds the private key", path)
++		}
++		return nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if files == 0 {
++		t.Fatal("the service saved nothing at all: the walk looked in the wrong place")
++	}
++}
++
++func TestUnbraidListenOnlyOnLoopback(t *testing.T) {
++	if os.Geteuid() == 0 {
++		t.Skip("as root --listen is always refused")
++	}
++	t.Setenv("INVOCATION_ID", "")
++	previous := listenAddress
++	t.Cleanup(func() { listenAddress = previous })
++	for address, allowed := range map[string]bool{
++		"127.0.0.1:7000": true, "[::1]:7000": true,
++		"0.0.0.0:7000": false, ":7000": false, "192.168.1.2:7000": false, "localhost:7000": false,
++	} {
++		listenAddress = address
++		handled, err := runService()
++		if (err == nil) != allowed || handled == allowed {
++			t.Errorf("%s: handled %v, %v", address, handled, err)
++		}
++	}
++}

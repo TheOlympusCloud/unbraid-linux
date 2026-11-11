@@ -1,0 +1,898 @@
+// Settings: its subjects on the left, the page of the one picked beside them, and the dialogs and sheets its rows open.
+// Every row comes from the page's groups: its words, what ends it and what its click does.
+
+import { Ink, Type, Overline, Small, Title, Body, Sub, Caption } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { Metrics, Tappable, IconTap, SectionLabel, GroupRow, RowKind, RowText, Toggle, RouteMark, Keys, Secondary, Primary } from "components.slint";
+import { Chevron, CaptionRow, Prompt, DialogField } from "inputs.slint";
+import { PageHeader, Desk } from "shell.slint";
+import { BottomSheet } from "limit_sheet.slint";
+import { ImporterPage } from "importer.slint";
+
+// What a row, or a dialog's button, does when clicked; the row's [arg] says what it acts on.
+export enum SettingsAct {
+    none, open, pick, url, dialog, advanced, tailscale, ts-login, suffix, lan, home-config, opt, filter, filter-routes,
+    filter-direct, outside, through, stats, login, connect, minimised, close-to-tray, remember-window, theme, tour,
+    add-provider, import-file, shadowsocks, save-filter, sign-out-tailscale, ts-server, subnets, delete-stats, limit,
+    sign-out, rename-server, remove-server
+}
+
+// What ends a row.
+export enum SettingsEnd { none, chevron, dot, toggle, radio, external, delete, mark, keys, remove, expand }
+
+// A row's leading icon, in its squircle.
+export enum SettingsGlyph { none, vpn-key, hub, home, tunnel, shield, layers, stats, bolt, info, file, phone, dns, lan, router, power, routes, sliders }
+
+// A provider's status, as its dot's colour.
+export enum SettingsTone { good, warn, bad, idle }
+
+// One row. [checked]: a switch's state or the choice picked; [cta] the accent's title, [danger] the bad ink's; [value] a
+// route mark's code, key caps, the Remove button's text or a choice's value; [hue] a route mark's colour; [wordmark]:
+// the title follows the logo.
+export struct SettingsRow {
+    act: SettingsAct,
+    arg: string,
+    title: string,
+    sub: string,
+    icon: SettingsGlyph,
+    end: SettingsEnd,
+    checked: bool,
+    cta: bool,
+    danger: bool,
+    tone: SettingsTone,
+    value: string,
+    hue: int,
+    wordmark: bool,
+}
+
+// Rows under a section's name ("" for a gap), then the page's main action ([button]), an error and a caption.
+// [advanced]: the collapsible Advanced settings, its first row the head, which says [open-sub] while open.
+export struct SettingsGroup {
+    label: string,
+    rows: [SettingsRow],
+    advanced: bool,
+    open-sub: string,
+    button: string,
+    error: string,
+    caption: string,
+}
+
+// A subject on the left: its page, its name and icon, and the name of the group it starts ("" none).
+export struct SettingsSubject {
+    key: string,
+    title: string,
+    icon: SettingsGlyph,
+    group: string,
+}
+
+export struct SettingsLicence {
+    title: string,
+    text: string,
+}
+
+// A dialog's text field.
+export struct SettingsInput {
+    label: string,
+    placeholder: string,
+    value: string,
+    secret: bool,
+}
+
+// A dialog, by [key]: a prompt, or a bottom sheet ([sheet]) of rows. [confirm] is its confirm (a sheet's primary)
+// button and [other] a second one, their titles the text ("" none). Under the fields, [hint] while what's typed is
+// valid, [error] while it isn't. [stays]: a sheet that stays open after its buttons.
+export struct SettingsDialog {
+    key: string,
+    sheet: bool,
+    title: string,
+    text: string,
+    inputs: [SettingsInput],
+    hint: string,
+    error: string,
+    rows: [SettingsRow],
+    confirm: SettingsRow,
+    other: SettingsRow,
+    stays: bool,
+}
+
+export global SettingsPage {
+    // "Version 2.8.2".
+    in property <string> version;
+    in property <[SettingsSubject]> subjects;
+    // The subject picked on the left, and the page shown: its key, the line above its title, its title, and Back.
+    in property <string> subject: "providers";
+    in property <string> page: "providers";
+    in property <string> over: "Settings";
+    in property <string> title;
+    in property <bool> back;
+    // The provider whose page this is, for its settings.
+    in property <string> provider;
+    // A failed action's message, with Dismiss; "" none.
+    in property <string> notice;
+    in property <[SettingsGroup]> groups;
+    in property <[SettingsLicence]> licences;
+    in property <[SettingsDialog]> dialogs;
+    // The dialog open, by key ("" none); [fresh]: just opened, its fields not yet filled.
+    in-out property <string> dialog;
+    in-out property <bool> fresh;
+    // Whether dialog [key] can save [text], typed in its first field; and what the field keeps of [text].
+    pure callback valid(key: string, text: string) -> bool;
+    pure callback clean(key: string, text: string) -> string;
+    // A subject on the left; a row that leads to page [page]; Back.
+    callback pick(subject: string);
+    callback open(page: string);
+    callback go-back();
+    callback open-url(url: string);
+    callback dismiss-notice();
+    callback set-tailscale(on: bool);
+    callback ts-login(url: string);
+    // The tailnet's DNS may answer every lookup under [suffix], or not.
+    callback allow-suffix(suffix: string, on: bool);
+    callback set-lan(on: bool);
+    // The home tunnel: its config file, from the desktop's file chooser; Remove.
+    callback pick-home-config();
+    callback remove-home-wg();
+    callback set-opt(provider: string, key: string, value: string);
+    // unbraid's filter: [id] one of the public filters, "" none; NextDNS and the user's own from their dialogs.
+    callback set-filter(id: string);
+    callback save-filter(id: string, value: string);
+    callback set-filter-routes(on: bool);
+    callback set-filter-direct(on: bool);
+    callback set-filter-direct-apps(on: bool);
+    // Recording off; on asks first, in the Stats screen's consent sheet.
+    callback set-stats(on: bool);
+    callback stats-consent();
+    callback delete-stats();
+    callback set-login(on: bool);
+    callback set-connect(on: bool);
+    callback set-minimised(on: bool);
+    callback set-close-to-tray(on: bool);
+    callback set-remember-window(on: bool);
+    // "System", "Dark" or "Light".
+    callback set-theme(theme: string);
+    callback tour();
+    // Add connection opened: the importer's last error goes.
+    callback adding();
+    callback add-provider();
+    // A config file to import: [kind] "wg", "ovpn" or "any"; [prefix] names it "<prefix> · <file>".
+    callback import-file(kind: string, prefix: string);
+    callback import-shadowsocks();
+    callback sign-out-tailscale();
+    callback set-tailscale-server(url: string, key: string);
+    callback set-subnets(text: string);
+    // The user's own limit for [provider], as typed ("" for the provider's).
+    callback set-limit(provider: string, text: string);
+    callback sign-out(provider: string);
+    callback rename-server(id: string, name: string);
+    callback remove-server(id: string);
+
+    public pure function glyph(g: SettingsGlyph) -> string {
+        return g == SettingsGlyph.vpn-key ? Icons.vpn-key : g == SettingsGlyph.hub ? Icons.hub : g == SettingsGlyph.home ? Icons.home
+            : g == SettingsGlyph.tunnel ? Icons.tunnel : g == SettingsGlyph.shield ? Icons.shield : g == SettingsGlyph.layers ? Icons.layers
+            : g == SettingsGlyph.stats ? Icons.stats : g == SettingsGlyph.bolt ? Icons.bolt : g == SettingsGlyph.info ? Icons.info
+            : g == SettingsGlyph.file ? Icons.file : g == SettingsGlyph.phone ? Icons.phone : g == SettingsGlyph.dns ? Icons.dns
+            : g == SettingsGlyph.lan ? Icons.lan : g == SettingsGlyph.router ? Icons.router : g == SettingsGlyph.power ? Icons.power
+            : g == SettingsGlyph.routes ? Icons.routes : g == SettingsGlyph.sliders ? Icons.sliders : "";
+    }
+
+    // What a click on [r] does; [a] and [b] are what's typed in its dialog's fields.
+    public function run(r: SettingsRow, a: string, b: string) {
+        if r.act == SettingsAct.open {
+            self.open(r.arg);
+        } else if r.act == SettingsAct.pick {
+            self.pick(r.arg);
+        } else if r.act == SettingsAct.url {
+            self.open-url(r.arg);
+        } else if r.act == SettingsAct.dialog {
+            self.fresh = true;
+            self.dialog = r.arg;
+        } else if r.act == SettingsAct.tailscale {
+            self.set-tailscale(!r.checked);
+        } else if r.act == SettingsAct.ts-login {
+            self.ts-login(r.arg);
+        } else if r.act == SettingsAct.suffix {
+            self.allow-suffix(r.arg, !r.checked);
+        } else if r.act == SettingsAct.lan {
+            self.set-lan(!r.checked);
+        } else if r.act == SettingsAct.home-config {
+            self.pick-home-config();
+        } else if r.act == SettingsAct.opt {
+            self.set-opt(self.provider, r.arg, r.end == SettingsEnd.toggle ? (r.checked ? "off" : "on") : r.value);
+        } else if r.act == SettingsAct.filter {
+            self.set-filter(r.arg);
+        } else if r.act == SettingsAct.filter-routes {
+            self.set-filter-routes(!r.checked);
+        } else if r.act == SettingsAct.filter-direct {
+            self.set-filter-direct(!r.checked);
+        } else if r.act == SettingsAct.outside {
+            self.set-filter-direct-apps(false);
+        } else if r.act == SettingsAct.through {
+            self.set-filter-direct-apps(true);
+        } else if r.act == SettingsAct.stats {
+            if r.checked {
+                self.set-stats(false);
+            } else {
+                self.stats-consent();
+            }
+        } else if r.act == SettingsAct.login {
+            self.set-login(!r.checked);
+        } else if r.act == SettingsAct.connect {
+            self.set-connect(!r.checked);
+        } else if r.act == SettingsAct.minimised {
+            self.set-minimised(!r.checked);
+        } else if r.act == SettingsAct.close-to-tray {
+            self.set-close-to-tray(!r.checked);
+        } else if r.act == SettingsAct.remember-window {
+            self.set-remember-window(!r.checked);
+        } else if r.act == SettingsAct.theme {
+            self.set-theme(r.arg);
+        } else if r.act == SettingsAct.tour {
+            self.tour();
+        } else if r.act == SettingsAct.add-provider {
+            self.add-provider();
+        } else if r.act == SettingsAct.import-file {
+            self.import-file(r.arg, r.value);
+        } else if r.act == SettingsAct.shadowsocks {
+            self.import-shadowsocks();
+        } else if r.act == SettingsAct.save-filter {
+            self.save-filter(r.arg, a);
+        } else if r.act == SettingsAct.sign-out-tailscale {
+            self.sign-out-tailscale();
+        } else if r.act == SettingsAct.ts-server {
+            self.set-tailscale-server(a, b);
+        } else if r.act == SettingsAct.subnets {
+            self.set-subnets(a);
+        } else if r.act == SettingsAct.delete-stats {
+            self.delete-stats();
+        } else if r.act == SettingsAct.limit {
+            self.set-limit(r.arg, a);
+        } else if r.act == SettingsAct.sign-out {
+            self.sign-out(r.arg);
+        } else if r.act == SettingsAct.rename-server {
+            self.rename-server(r.arg, a);
+        } else if r.act == SettingsAct.remove-server {
+            self.remove-server(r.arg);
+        }
+    }
+}
+
+// The Advanced settings' arrow while open: Material's expand_less, the expand arrow mirrored.
+global Arrows {
+    out property <string> expand-less: "M480-598q-8 0-15 2.5t-13 8.5L268-403q-11 11-11 28t11 28q11 11 28 11t28-11l156-156 156 156q11 11 28 11t28-11q11-11 11-28t-11-28L508-587q-6-6-13-8.5t-15-2.5Z";
+}
+
+// A radio mark for one of a choice; the row itself is the target.
+component RadioMark inherits Rectangle {
+    in property <bool> on;
+    width: 24px;
+    height: 24px;
+    border-radius: 12px;
+    border-width: root.on ? 7px : 2px;
+    border-color: root.on ? Ink.accent : Ink.dim;
+}
+
+// A subject on the left: its icon and name, the one shown in the accent's container.
+component SubjectItem inherits Rectangle {
+    in property <SettingsSubject> subject;
+    in property <bool> on;
+    in property <bool> force-hover;
+    callback clicked();
+    private property <bool> hovered: tap.hovered;
+    height: 42px;
+    border-radius: 14px;
+    background: root.on ? Ink.accent-container : root.hovered ? Ink.surface-high : transparent;
+    forward-focus: tap;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        cross-axis-alignment: center;
+        Icon {
+            icon: SettingsPage.glyph(root.subject.icon);
+            size: 20px;
+            tint: root.on ? Ink.accent : Ink.dim;
+        }
+        Body {
+            horizontal-stretch: 1;
+            text: root.subject.title;
+            font-size: 14px;
+            color: root.on || root.hovered ? Ink.text : Ink.dim;
+            overflow: elide;
+            accessible-role: none;
+        }
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        cursor: MouseCursor.pointer;
+        force-hover: root.force-hover;
+        accessible-role: tab;
+        accessible-label: root.subject.title;
+        accessible-item-selectable: true;
+        accessible-item-selected: root.on;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// One row of a group: its icon, its words, and what ends it. A switch or a choice row is the target as a whole.
+component Item inherits GroupRow {
+    in property <SettingsRow> item;
+    // The Advanced settings' head, open.
+    in property <bool> open;
+    callback remove();
+    private property <bool> live: self.item.act != SettingsAct.none;
+    private property <color> ink: self.item.danger ? Ink.bad : self.item.cta ? Ink.accent : Ink.text;
+    sub: self.item.sub;
+    kind: self.item.end == SettingsEnd.toggle ? RowKind.switch : self.item.end == SettingsEnd.radio ? RowKind.choice
+        : self.live ? RowKind.button : RowKind.plain;
+    checked: self.item.checked;
+    enabled: self.live;
+    label: self.item.wordmark ? "unbraid" + self.item.title
+        : self.item.end == SettingsEnd.expand ? self.item.title + (self.open ? ", expanded" : ", collapsed") : self.item.title;
+    if root.item.icon != SettingsGlyph.none: Rectangle {
+        width: 40px;
+        height: 40px;
+        border-radius: 14px;
+        background: Ink.surface-top;
+        Icon {
+            icon: SettingsPage.glyph(root.item.icon);
+            size: 22px;
+            tint: Ink.text;
+        }
+    }
+    if !root.item.wordmark: RowText {
+        title: root.item.title;
+        sub: root.sub;
+        title-color: root.ink;
+    }
+    // The logo in the title, its slash in the accent.
+    if root.item.wordmark: VerticalLayout {
+        horizontal-stretch: 1;
+        spacing: 2px;
+        alignment: center;
+        HorizontalLayout {
+            Body {
+                text: "un";
+                accessible-role: none;
+            }
+            Body {
+                text: "/";
+                color: Ink.accent;
+                accessible-role: none;
+            }
+            Body {
+                text: "braid";
+                accessible-role: none;
+            }
+            Body {
+                horizontal-stretch: 1;
+                text: root.item.title;
+                color: root.ink;
+                accessible-role: none;
+            }
+        }
+        Caption {
+            text: root.sub;
+            wrap: word-wrap;
+            max-lines: 2;
+            overflow: elide;
+            accessible-role: none;
+        }
+    }
+    if root.item.end == SettingsEnd.chevron: Chevron { }
+    if root.item.end == SettingsEnd.dot: HorizontalLayout {
+        spacing: 8px;
+        cross-axis-alignment: center;
+        Rectangle {
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+            background: root.item.tone == SettingsTone.good ? Ink.good : root.item.tone == SettingsTone.warn ? Ink.accent
+                : root.item.tone == SettingsTone.bad ? Ink.bad : Ink.faint;
+        }
+        Chevron { }
+    }
+    if root.item.end == SettingsEnd.toggle: Toggle {
+        on: root.item.checked;
+        enabled: root.live;
+        passive: true;
+    }
+    if root.item.end == SettingsEnd.radio: RadioMark {
+        on: root.item.checked;
+    }
+    if root.item.end == SettingsEnd.external: Icon {
+        icon: Icons.external;
+        size: 20px;
+        tint: Ink.dim;
+    }
+    if root.item.end == SettingsEnd.delete: Icon {
+        icon: Icons.delete-forever;
+        size: 24px;
+        tint: Ink.bad;
+    }
+    if root.item.end == SettingsEnd.mark: RouteMark {
+        code: root.item.value;
+        color: Ink.route(root.item.hue);
+        accessible-role: none;
+    }
+    if root.item.end == SettingsEnd.keys: Keys {
+        keys: root.item.value;
+    }
+    if root.item.end == SettingsEnd.remove: Secondary {
+        text: root.item.value;
+        color: Ink.bad;
+        clicked => {
+            root.remove();
+        }
+    }
+    if root.item.end == SettingsEnd.expand: Icon {
+        icon: root.open ? Arrows.expand-less : Icons.expand;
+        size: 24px;
+        tint: Ink.dim;
+    }
+}
+
+// The tonal button for a page's main action (Add connection).
+component Tonal inherits Rectangle {
+    in property <string> text;
+    in property <bool> force-hover;
+    callback clicked();
+    height: 56px;
+    border-radius: 28px;
+    background: Ink.accent-container;
+    forward-focus: tap;
+    HorizontalLayout {
+        alignment: center;
+        cross-axis-alignment: center;
+        Icon {
+            icon: Icons.add;
+            size: 22px;
+            tint: Ink.accent;
+        }
+        Body {
+            text: "  " + root.text;
+            accessible-role: none;
+        }
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        force-hover: root.force-hover;
+        cursor: MouseCursor.pointer;
+        accessible-role: button;
+        accessible-label: root.text;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A group of the page: its label or a gap, its rows (the Advanced settings' only while open), then its button, error
+// and caption.
+component Group inherits VerticalLayout {
+    in property <SettingsGroup> group;
+    in property <bool> open;
+    callback run(r: SettingsRow);
+    callback button();
+    private property <bool> shut: self.group.advanced && !self.open;
+    if root.group.label != "": SectionLabel {
+        text: root.group.label;
+    }
+    if root.group.label == "" && root.group.rows.length > 0: Rectangle {
+        height: 16px;
+    }
+    for r[i] in root.group.rows: VerticalLayout {
+        if i == 0 || !root.shut: Item {
+            item: r;
+            i: i;
+            n: root.shut ? 1 : root.group.rows.length;
+            sub: root.group.advanced && i == 0 && root.open ? root.group.open-sub : r.sub;
+            open: root.open;
+            clicked => {
+                root.run(r);
+            }
+            remove => {
+                SettingsPage.remove-home-wg();
+            }
+        }
+    }
+    if root.group.button != "": HorizontalLayout {
+        padding-left: Metrics.gutter;
+        padding-right: Metrics.gutter;
+        padding-top: 16px;
+        padding-bottom: 16px;
+        Tonal {
+            text: root.group.button;
+            clicked => {
+                root.button();
+            }
+        }
+    }
+    // The importer's error goes under the page's main action.
+    if root.group.button != "" && ImporterPage.error != "": HorizontalLayout {
+        padding-left: 24px;
+        padding-right: Metrics.gutter;
+        Caption {
+            text: ImporterPage.error;
+            color: Ink.bad;
+            wrap: word-wrap;
+        }
+    }
+    if root.group.error != "": CaptionRow {
+        text: root.group.error;
+        color: Ink.bad;
+    }
+    if root.group.caption != "": VerticalLayout {
+        padding-top: 4px;
+        CaptionRow {
+            text: root.group.caption;
+        }
+    }
+}
+
+// A list that lays out only the rows in view, for the licences' long texts (the compiler does that for a "ListView").
+component ListView inherits Flickable {
+    out property <length> visible-height: self.height;
+    out property <length> visible-width: self.width;
+    content-width: self.width;
+    mouse-drag-pan-enabled: false;
+    @children
+}
+
+// The screen: the subjects, then the page shown. Put SettingsDialogs at the window's end, so they cover everything.
+export component SettingsScreen inherits Rectangle {
+    // Where the tour's Settings stops point: three subjects, in the window.
+    out property <{x: length, y: length, width: length, height: length}> providers-spot;
+    out property <{x: length, y: length, width: length, height: length}> local-spot;
+    out property <{x: length, y: length, width: length, height: length}> about-spot;
+    // The page whose Advanced settings are open; each page's start closed.
+    private property <string> advanced;
+    background: Ink.ground;
+    forward-focus: keys;
+
+    function run(r: SettingsRow) {
+        if r.act == SettingsAct.advanced {
+            root.advanced = root.advanced == SettingsPage.page ? "" : SettingsPage.page;
+        } else {
+            if r.act == SettingsAct.open || r.act == SettingsAct.pick {
+                root.advanced = "";
+            }
+            SettingsPage.run(r, "", "");
+        }
+    }
+
+    keys := FocusScope {
+        // Esc, inside a page that has Back, goes back, as Back does.
+        key-pressed(event) => {
+            if event.text == Key.Escape && SettingsPage.back {
+                root.advanced = "";
+                SettingsPage.go-back();
+                return accept;
+            }
+            return reject;
+        }
+        HorizontalLayout {
+            // Settings' subjects, on the left of the page shown.
+            Rectangle {
+                width: 290px;
+                subjects := Flickable {
+                    mouse-drag-pan-enabled: false;
+                    content-height: list.preferred-height;
+                    list := VerticalLayout {
+                        width: subjects.width;
+                        padding-left: 30px;
+                        padding-top: 26px;
+                        padding-right: 14px;
+                        padding-bottom: 24px;
+                        alignment: start;
+                        accessible-role: tab-list;
+                        accessible-label: "Settings";
+                        PageHeader {
+                            overline: SettingsPage.version;
+                            title: "Settings";
+                        }
+                        for s in SettingsPage.subjects: VerticalLayout {
+                            if s.group != "": HorizontalLayout {
+                                padding-left: 12px;
+                                padding-top: 12px;
+                                padding-bottom: 6px;
+                                Overline {
+                                    text: s.group.to-uppercase();
+                                    color: Ink.dim;
+                                }
+                            }
+                            SubjectItem {
+                                property <{x: length, y: length, width: length, height: length}> spot: { x: self.absolute-position.x, y: self.absolute-position.y, width: self.width, height: self.height };
+                                init => {
+                                    if s.key == "providers" {
+                                        root.providers-spot = self.spot;
+                                    } else if s.key == "local" {
+                                        root.local-spot = self.spot;
+                                    } else if s.key == "about" {
+                                        root.about-spot = self.spot;
+                                    }
+                                }
+                                changed spot => {
+                                    if s.key == "providers" {
+                                        root.providers-spot = self.spot;
+                                    } else if s.key == "local" {
+                                        root.local-spot = self.spot;
+                                    } else if s.key == "about" {
+                                        root.about-spot = self.spot;
+                                    }
+                                }
+                                subject: s;
+                                on: s.key == SettingsPage.subject;
+                                clicked => {
+                                    root.advanced = "";
+                                    SettingsPage.pick(s.key);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                width: 1px;
+                background: Ink.surface-high;
+            }
+            // The page: Back, the parent's name above the title, then its rows.
+            VerticalLayout {
+                horizontal-stretch: 1;
+                padding-top: 26px;
+                HorizontalLayout {
+                    max-width: 760px;
+                    padding-left: 8px;
+                    padding-right: 16px;
+                    padding-bottom: 6px;
+                    alignment: start;
+                    cross-axis-alignment: center;
+                    if SettingsPage.back: IconTap {
+                        icon: Icons.back;
+                        label: "Back";
+                        clicked => {
+                            root.advanced = "";
+                            SettingsPage.go-back();
+                        }
+                    }
+                    VerticalLayout {
+                        padding-left: SettingsPage.back ? 4px : 16px;
+                        Overline {
+                            text: SettingsPage.over.to-uppercase();
+                            color: Ink.dim;
+                        }
+                        Title {
+                            text: SettingsPage.title;
+                            font-size: 26px;
+                        }
+                    }
+                }
+                if SettingsPage.page != "notices": page := Flickable {
+                    vertical-stretch: 1;
+                    mouse-drag-pan-enabled: false;
+                    content-height: rows.preferred-height;
+                    rows := VerticalLayout {
+                        width: min(page.width, 760px);
+                        padding-bottom: 24px;
+                        alignment: start;
+                        if SettingsPage.notice != "": HorizontalLayout {
+                            padding-left: 24px;
+                            padding-right: Metrics.gutter;
+                            padding-top: 8px;
+                            cross-axis-alignment: center;
+                            Caption {
+                                horizontal-stretch: 1;
+                                text: SettingsPage.notice;
+                                color: Ink.bad;
+                                wrap: word-wrap;
+                            }
+                            Secondary {
+                                text: "Dismiss";
+                                color: Ink.dim;
+                                clicked => {
+                                    SettingsPage.dismiss-notice();
+                                }
+                            }
+                        }
+                        for g in SettingsPage.groups: Group {
+                            group: g;
+                            open: root.advanced == SettingsPage.page;
+                            run(r) => {
+                                root.run(r);
+                            }
+                            button => {
+                                SettingsPage.adding();
+                                SettingsPage.fresh = true;
+                                SettingsPage.dialog = "add";
+                            }
+                        }
+                        // The window's own shortcuts.
+                        if SettingsPage.page == "shortcuts": VerticalLayout {
+                            Rectangle {
+                                height: 16px;
+                            }
+                            for s[i] in Desk.shortcuts: GroupRow {
+                                i: i;
+                                n: Desk.shortcuts.length;
+                                title: s.what;
+                                Keys {
+                                    keys: s.keys;
+                                }
+                            }
+                        }
+                    }
+                }
+                if SettingsPage.page == "notices": licences := ListView {
+                    vertical-stretch: 1;
+                    max-width: 760px;
+                    for l in SettingsPage.licences: VerticalLayout {
+                        if l.title != "": SectionLabel {
+                            text: l.title;
+                        }
+                        if l.text != "": HorizontalLayout {
+                            padding-left: 24px;
+                            padding-right: 24px;
+                            padding-bottom: 17px;
+                            Caption {
+                                // Wrapped to the page, which also sets the height the list gives it; a long address
+                                // or hash wraps where it can, and is cut at the page's edge.
+                                width: licences.visible-width - 48px;
+                                text: l.text;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The dialog or sheet open, over the whole window: make it the window's last child.
+export component SettingsDialogs inherits Rectangle {
+    // What's typed in the open dialog's fields.
+    private property <string> a;
+    private property <string> b;
+
+    // A button or row of dialog [d]: it closes, unless it opens another or the sheet stays.
+    function act(d: SettingsDialog, r: SettingsRow) {
+        if r.act != SettingsAct.dialog && !d.stays {
+            SettingsPage.dialog = "";
+        }
+        SettingsPage.run(r, root.a, root.b);
+    }
+
+    for d in SettingsPage.dialogs: Rectangle {
+        if d.key == SettingsPage.dialog && !d.sheet: Prompt {
+            title: d.title;
+            confirm: d.confirm.title;
+            danger: d.confirm.danger;
+            enabled: SettingsPage.valid(d.key, root.a);
+            init => {
+                if SettingsPage.fresh {
+                    root.a = d.inputs.length > 0 ? d.inputs[0].value : "";
+                    root.b = d.inputs.length > 1 ? d.inputs[1].value : "";
+                    SettingsPage.fresh = false;
+                }
+            }
+            confirmed => {
+                root.act(d, d.confirm);
+            }
+            dismissed => {
+                SettingsPage.dialog = "";
+            }
+            if d.text != "": Sub {
+                text: d.text;
+                wrap: word-wrap;
+            }
+            if d.inputs.length > 0: DialogField {
+                label: d.inputs[0].label;
+                placeholder: d.inputs[0].placeholder;
+                secret: d.inputs[0].secret;
+                value <=> root.a;
+                changed(text) => {
+                    root.a = SettingsPage.clean(d.key, text);
+                }
+            }
+            if d.inputs.length > 1: DialogField {
+                label: d.inputs[1].label;
+                placeholder: d.inputs[1].placeholder;
+                secret: d.inputs[1].secret;
+                value <=> root.b;
+            }
+            if d.hint != "" && SettingsPage.valid(d.key, root.a): Caption {
+                text: d.hint;
+                wrap: word-wrap;
+            }
+            if d.error != "" && !SettingsPage.valid(d.key, root.a): Caption {
+                text: d.error;
+                color: Ink.bad;
+                wrap: word-wrap;
+            }
+            if d.other.title != "": HorizontalLayout {
+                alignment: start;
+                Secondary {
+                    text: d.other.title;
+                    color: d.other.danger ? Ink.bad : Ink.accent;
+                    clicked => {
+                        root.act(d, d.other);
+                    }
+                }
+            }
+        }
+        if d.key == SettingsPage.dialog && d.sheet: BottomSheet {
+            label: d.title;
+            close => {
+                SettingsPage.dialog = "";
+            }
+            VerticalLayout {
+                padding-bottom: 16px;
+                spacing: d.rows.length > 0 ? 0 : 8px;
+                HorizontalLayout {
+                    padding-left: 24px;
+                    padding-right: 24px;
+                    padding-top: d.rows.length > 0 ? 8px : 0;
+                    padding-bottom: d.rows.length > 0 ? 8px : 0;
+                    Title {
+                        text: d.title;
+                        wrap: word-wrap;
+                    }
+                }
+                if d.text != "": HorizontalLayout {
+                    padding-left: 24px;
+                    padding-right: 24px;
+                    padding-bottom: d.rows.length > 0 ? 8px : 0;
+                    Sub {
+                        text: d.text;
+                        wrap: word-wrap;
+                    }
+                }
+                for r[i] in d.rows: Item {
+                    item: r;
+                    i: i;
+                    n: d.rows.length;
+                    clicked => {
+                        root.act(d, r);
+                    }
+                }
+                if d.confirm.title != "": HorizontalLayout {
+                    padding-left: Metrics.gutter;
+                    padding-right: Metrics.gutter;
+                    Primary {
+                        text: d.confirm.title;
+                        clicked => {
+                            root.act(d, d.confirm);
+                        }
+                    }
+                }
+                if d.other.title != "": HorizontalLayout {
+                    padding-left: Metrics.gutter;
+                    padding-right: Metrics.gutter;
+                    alignment: center;
+                    Secondary {
+                        text: d.other.title;
+                        color: d.other.danger ? Ink.bad : Ink.accent;
+                        clicked => {
+                            root.act(d, d.other);
+                        }
+                    }
+                }
+                if d.stays && ImporterPage.error != "": HorizontalLayout {
+                    padding-left: 24px;
+                    padding-right: 24px;
+                    Caption {
+                        text: ImporterPage.error;
+                        color: Ink.bad;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+    }
+}

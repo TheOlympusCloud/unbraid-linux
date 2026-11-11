@@ -1,0 +1,111 @@
+// Importing a server of your own: the prompts that name a WireGuard file, take an OpenVPN file's login, or take a
+// Shadowsocks link. They stay open on a bad input and say why, keeping what was typed.
+
+import { Ink, Sub, Caption } from "theme.slint";
+import { Prompt, DialogField } from "inputs.slint";
+
+// The prompt open: [kind] "wg", "ovpn" or "ss", "" none; [name] what the name starts as.
+export struct ImportPrompt {
+    kind: string,
+    title: string,
+    text: string,
+    confirm: string,
+    danger: bool,
+    ready: bool,
+    name: string,
+    warning: string,
+    error: string,
+}
+
+export global ImporterPage {
+    in property <ImportPrompt> prompt;
+    // Why the last file picked couldn't be imported: under Add connection, and in a provider's guide.
+    in property <string> error;
+    callback import();
+    // Cancel, Esc or a click beside: the prompt closes, and what was typed is forgotten.
+    callback cancel();
+    // A field was edited: everything typed so far.
+    callback edited(name: string, user: string, pass: string, link: string);
+}
+
+// The window's last child, so the prompt covers everything.
+export component ImportDialogs inherits Rectangle {
+    private property <string> name;
+    private property <string> user;
+    private property <string> pass;
+    private property <string> link;
+    private property <string> kind: ImporterPage.prompt.kind;
+
+    function edited() {
+        ImporterPage.edited(self.name, self.user, self.pass, self.link);
+    }
+
+    if root.kind != "": Prompt {
+        title: ImporterPage.prompt.title;
+        confirm: ImporterPage.prompt.confirm;
+        danger: ImporterPage.prompt.danger;
+        enabled: ImporterPage.prompt.ready;
+        init => {
+            root.name = ImporterPage.prompt.name;
+            root.user = "";
+            root.pass = "";
+            root.link = "";
+        }
+        confirmed => {
+            ImporterPage.import();
+        }
+        dismissed => {
+            ImporterPage.cancel();
+        }
+        if ImporterPage.prompt.text != "": Sub {
+            text: ImporterPage.prompt.text;
+            wrap: word-wrap;
+        }
+        if root.kind == "ss": DialogField {
+            label: "Link";
+            placeholder: "ss://…";
+            secret: true;
+            value <=> root.link;
+            changed => {
+                root.edited();
+            }
+        }
+        DialogField {
+            label: root.kind == "ss" ? "Name (optional)" : "Name";
+            placeholder: root.kind == "wg" ? "e.g. Home VPS" : root.kind == "ovpn" ? "e.g. Office" : "e.g. Outline";
+            value <=> root.name;
+            changed => {
+                root.edited();
+            }
+        }
+        if root.kind == "ovpn": Sub {
+            text: "Leave the login empty if the config has its own.";
+            wrap: word-wrap;
+        }
+        if root.kind == "ovpn": DialogField {
+            label: "Username";
+            value <=> root.user;
+            changed => {
+                root.edited();
+            }
+        }
+        if root.kind == "ovpn": DialogField {
+            label: "Password";
+            secret: true;
+            value <=> root.pass;
+            changed => {
+                root.edited();
+            }
+        }
+        if ImporterPage.prompt.warning != "": Caption {
+            text: ImporterPage.prompt.warning;
+            color: Ink.bad;
+            wrap: word-wrap;
+        }
+        if ImporterPage.prompt.error != "": Caption {
+            text: ImporterPage.prompt.error;
+            color: Ink.bad;
+            wrap: word-wrap;
+        }
+    }
+}

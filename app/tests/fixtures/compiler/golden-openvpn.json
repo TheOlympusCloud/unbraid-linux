@@ -1,0 +1,381 @@
+{
+    "log": {
+        "level": "warn",
+        "timestamp": false
+    },
+    "dns": {
+        "servers": [
+            {
+                "type": "fakeip",
+                "tag": "fake",
+                "inet4_range": "198.18.0.0/18"
+            },
+            {
+                "type": "local",
+                "tag": "local"
+            },
+            {
+                "type": "udp",
+                "tag": "dns-r-nlo",
+                "server": "103.86.96.100",
+                "detour": "r-nlo"
+            },
+            {
+                "type": "openvpn",
+                "tag": "dns-ovpn-r-im",
+                "endpoint": "r-im",
+                "accept_default_resolvers": true,
+                "fallback_server": "9.9.9.9"
+            }
+        ],
+        "rules": [
+            {
+                "domain_suffix": [
+                    "local",
+                    "lan",
+                    "home.arpa",
+                    "fritz.box"
+                ],
+                "server": "local"
+            },
+            {
+                "query_type": [
+                    "A",
+                    "AAAA"
+                ],
+                "server": "fake",
+                "rewrite_ttl": 1
+            },
+            {
+                "type": "logical",
+                "mode": "or",
+                "rules": [
+                    {
+                        "process_path_regex": [
+                            "^/opt/firefox/"
+                        ]
+                    },
+                    {
+                        "process_name": [
+                            "firefox"
+                        ]
+                    }
+                ],
+                "server": "dns-r-nlo"
+            }
+        ],
+        "final": "dns-ovpn-r-im",
+        "strategy": "ipv4_only",
+        "optimistic": {
+            "enabled": true,
+            "timeout": "1h"
+        },
+        "timeout": "5s",
+        "cache_capacity": 4096
+    },
+    "inbounds": [
+        {
+            "type": "tun",
+            "tag": "tun",
+            "address": [
+                "172.19.0.1/30"
+            ],
+            "mtu": 9000,
+            "auto_route": true,
+            "strict_route": true,
+            "stack": "gvisor",
+            "udp_timeout": "30m"
+        },
+        {
+            "type": "mixed",
+            "tag": "probe",
+            "listen": "127.0.0.1",
+            "listen_port": 40000,
+            "users": [
+                {
+                    "username": "r-im",
+                    "password": "golden-pw"
+                },
+                {
+                    "username": "r-nlo",
+                    "password": "golden-pw"
+                }
+            ]
+        }
+    ],
+    "endpoints": [
+        {
+            "type": "openvpn-client",
+            "tag": "r-im",
+            "server": "usa-new-york-1-ca-version-2.expressnetw.com",
+            "server_port": 1195,
+            "network": "udp",
+            "username": "user",
+            "password": "pass",
+            "tls": {
+                "server_name": "Server",
+                "server_name_type": "name-prefix",
+                "certificate": "-----BEGIN CERTIFICATE-----\nMIIDETCCAfmgAwIBAgIUWpsBcGDsE2RdKoKr0jySTkaTPHUwDQYJKoZIhvcNAQEL\nBQAwGDEWMBQGA1UEAwwNRHVtbXkgVGVzdCBDQTAeFw0yNjEwMTgwMDI5NDdaFw0z\nNjEwMTUwMDI5NDdaMBgxFjAUBgNVBAMMDUR1bW15IFRlc3QgQ0EwggEiMA0GCSqG\nSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCLMQMxyWhrLmFyER3fl1r+LMzWKbnkWPWw\ncjukkyhSY2q+BHpLlOkywOha7RhlkgaDaqiynKE42nE4o0tX9K0hCagLr4PC0+LC\nE3ul9Y8Wr94TqXWKjquNQsiEJMSIFzW6KTA4fBVGEg4IrGRKzpPzP52F1xtdX1gN\nFkNw7grm9+mHO3El6W0dN7v/rpIbPuhYEbC3ZGPAqqNg6bVYJ+lyV9RPaXqLvvs/\nhielyObsnfLtkxhtCFKUAXqfSs55tRwwGSDKcl/BBS25W7mJ4vUOw8ImbU+ZEh0B\nMQQGwzM0y5fHn9WEgMeYCSH4OXgxenIuVEe6cHtqNEckthObVtKNAgMBAAGjUzBR\nMB0GA1UdDgQWBBRdaJ/6ddIYOuFYCO7g7I8UEhplnTAfBgNVHSMEGDAWgBRdaJ/6\nddIYOuFYCO7g7I8UEhplnTAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUA\nA4IBAQAWR/mQLwqMW6L1sWIPxdL6Z4o6ChWWq99c2cstYbtq9RWQfIpgZCMEhXty\nupqUluowwc52Dtv3oGggQZKDUinHeTvIgntDJ1Ed2uZnEKQhb6ayS9vhBFoIfPfs\ni5HK1vg7iUZWUyw56BpNP01JbEnMsGZ9A0Ia1sWMJZNAvyHTFz71+lhMdkLxxvyQ\nZUt92UvEaLFJRumv4T2FJopLP/8eF2fHxiESF3nOGa/Z8uuDTrfUwCOZ/XzGDjxq\nW+zeIFrmUloNpGO4F0XPAX8vwCvnDnyUBA+95hJYjsXVbKbZ4b9ndE2TiqyM5/QE\nX+ttmjqx6BPJSrr3Tj1Hx8sqvPWx\n-----END CERTIFICATE-----",
+                "ns_certificate_type": "server",
+                "control_wrap": {
+                    "type": "tls_auth",
+                    "key": "-----BEGIN OpenVPN Static key V1-----\n00000000000000000000000000000000\n01010101010101010101010101010101\n02020202020202020202020202020202\n03030303030303030303030303030303\n04040404040404040404040404040404\n05050505050505050505050505050505\n06060606060606060606060606060606\n07070707070707070707070707070707\n08080808080808080808080808080808\n09090909090909090909090909090909\n0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a\n0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b\n0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c\n0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d\n0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e\n0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f\n-----END OpenVPN Static key V1-----",
+                    "direction": "client"
+                }
+            },
+            "auth": "SHA512",
+            "compression_lzo": "no",
+            "mss_fix": 1200,
+            "fragment": 1300,
+            "mtu": 1500,
+            "pull_filters": [
+                {
+                    "action": "ignore",
+                    "text": "route "
+                },
+                {
+                    "action": "ignore",
+                    "text": "route-ipv6 "
+                },
+                {
+                    "action": "ignore",
+                    "text": "route-metric"
+                },
+                {
+                    "action": "ignore",
+                    "text": "redirect-gateway"
+                },
+                {
+                    "action": "ignore",
+                    "text": "redirect-private"
+                },
+                {
+                    "action": "ignore",
+                    "text": "block-ipv6"
+                },
+                {
+                    "action": "ignore",
+                    "text": "block-outside-dns"
+                }
+            ]
+        },
+        {
+            "type": "openvpn-client",
+            "tag": "r-nlo",
+            "servers": [
+                {
+                    "server": "89.238.150.123",
+                    "server_port": 1231,
+                    "network": "udp"
+                },
+                {
+                    "server": "89.238.150.123",
+                    "server_port": 1232,
+                    "network": "udp"
+                },
+                {
+                    "server": "89.238.150.123",
+                    "server_port": 1233,
+                    "network": "udp"
+                },
+                {
+                    "server": "89.238.150.123",
+                    "server_port": 1234,
+                    "network": "udp"
+                }
+            ],
+            "remote_random": true,
+            "username": "svc",
+            "password": "svcpw",
+            "tls": {
+                "server_name": "CN=uk-nl19.nordvpn.com",
+                "server_name_type": "subject",
+                "certificate": "-----BEGIN CERTIFICATE-----\nMIIFCjCCAvKgAwIBAgIBATANBgkqhkiG9w0BAQ0FADA5MQswCQYDVQQGEwJQQTEQ\nMA4GA1UEChMHTm9yZFZQTjEYMBYGA1UEAxMPTm9yZFZQTiBSb290IENBMB4XDTE2\nMDEwMTAwMDAwMFoXDTM1MTIzMTIzNTk1OVowOTELMAkGA1UEBhMCUEExEDAOBgNV\nBAoTB05vcmRWUE4xGDAWBgNVBAMTD05vcmRWUE4gUm9vdCBDQTCCAiIwDQYJKoZI\nhvcNAQEBBQADggIPADCCAgoCggIBAMkr/BYhyo0F2upsIMXwC6QvkZps3NN2/eQF\nkfQIS1gql0aejsKsEnmY0Kaon8uZCTXPsRH1gQNgg5D2gixdd1mJUvV3dE3y9FJr\nXMoDkXdCGBodvKJyU6lcfEVF6/UxHcbBguZK9UtRHS9eJYm3rpL/5huQMCppX7kU\neQ8dpCwd3iKITqwd1ZudDqsWaU0vqzC2H55IyaZ/5/TnCk31Q1UP6BksbbuRcwOV\nskEDsm6YoWDnn/IIzGOYnFJRzQH5jTz3j1QBvRIuQuBuvUkfhx1FEwhwZigrcxXu\nMP+QgM54kezgziJUaZcOM2zF3lvrwMvXDMfNeIoJABv9ljw969xQ8czQCU5lMVmA\n37ltv5Ec9U5hZuwk/9QO1Z+d/r6Jx0mlurS8gnCAKJgwa3kyZw6e4FZ8mYL4vpRR\nhPdvRTWCMJkeB4yBHyhxUmTRgJHm6YR3D6hcFAc9cQcTEl/I60tMdz33G6m0O42s\nQt/+AR3YCY/RusWVBJB/qNS94EtNtj8iaebCQW1jHAhvGmFILVR9lzD0EzWKHkvy\nWEjmUVRgCDd6Ne3eFRNS73gdv/C3l5boYySeu4exkEYVxVRn8DhCxs0MnkMHWFK6\nMyzXCCn+JnWFDYPfDKHvpff/kLDobtPBf+Lbch5wQy9quY27xaj0XwLyjOltpiST\nLWae/Q4vAgMBAAGjHTAbMAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQDAgEGMA0GCSqG\nSIb3DQEBDQUAA4ICAQC9fUL2sZPxIN2mD32VeNySTgZlCEdVmlq471o/bDMP4B8g\nnQesFRtXY2ZCjs50Jm73B2LViL9qlREmI6vE5IC8IsRBJSV4ce1WYxyXro5rmVg/\nk6a10rlsbK/eg//GHoJxDdXDOokLUSnxt7gk3QKpX6eCdh67p0PuWm/7WUJQxH2S\nDxsT9vB/iZriTIEe/ILoOQF0Aqp7AgNCcLcLAmbxXQkXYCCSB35Vp06u+eTWjG0/\npyS5V14stGtw+fA0DJp5ZJV4eqJ5LqxMlYvEZ/qKTEdoCeaXv2QEmN6dVqjDoTAo\nk0t5u4YRXzEVCfXAC3ocplNdtCA72wjFJcSbfif4BSC8bDACTXtnPC7nD0VndZLp\n+RiNLeiENhk0oTC+UVdSc+n2nJOzkCK0vYu0Ads4JGIB7g8IB3z2t9ICmsWrgnhd\nNdcOe15BincrGA8avQ1cWXsfIKEjbrnEuEk9b5jel6NfHtPKoHc9mDpRdNPISeVa\nwDBM1mJChneHt59Nh8Gah74+TM1jBsw4fhJPvoc7Atcg740JErb904mZfkIEmojC\nVPhBHVQ9LHBAdM8qFI2kRK0IynOmAZhexlP/aT/kpEsEPyaZQlnBn3An1CRz8h0S\nPApL8PytggYKeQmRhl499+6jLxcZ2IegLfqq41dzIjwHwTMplg+1pKIOVojpWA==\n-----END CERTIFICATE-----",
+                "remote_certificate_tls": "server",
+                "control_wrap": {
+                    "type": "tls_auth",
+                    "key": "-----BEGIN OpenVPN Static key V1-----\n00000000000000000000000000000000\n01010101010101010101010101010101\n02020202020202020202020202020202\n03030303030303030303030303030303\n04040404040404040404040404040404\n05050505050505050505050505050505\n06060606060606060606060606060606\n07070707070707070707070707070707\n08080808080808080808080808080808\n09090909090909090909090909090909\n0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a\n0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b\n0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c\n0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d\n0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e\n0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f\n-----END OpenVPN Static key V1-----",
+                    "direction": "client"
+                }
+            },
+            "auth": "SHA512",
+            "compression_lzo": "no",
+            "mss_fix": 1450,
+            "mtu": 1500,
+            "renegotiate_disabled": true,
+            "ping_interval": "15s",
+            "ping_restart_disabled": true,
+            "route_no_pull": true
+        }
+    ],
+    "outbounds": [
+        {
+            "type": "direct",
+            "tag": "direct"
+        }
+    ],
+    "route": {
+        "rules": [
+            {
+                "inbound": [
+                    "r-im",
+                    "r-nlo"
+                ],
+                "action": "reject"
+            },
+            {
+                "inbound": [
+                    "tun"
+                ],
+                "protocol": "dns",
+                "action": "hijack-dns"
+            },
+            {
+                "inbound": [
+                    "tun"
+                ],
+                "port": 53,
+                "network": "udp",
+                "action": "hijack-dns"
+            },
+            {
+                "ip_cidr": [
+                    "198.18.64.0/18",
+                    "198.18.128.0/18",
+                    "198.18.192.0/18",
+                    "198.19.0.0/18",
+                    "198.19.64.0/18",
+                    "198.19.128.0/18",
+                    "198.19.192.0/18"
+                ],
+                "action": "reject",
+                "no_drop": true
+            },
+            {
+                "inbound": [
+                    "tun"
+                ],
+                "process_path": [
+                    "/usr/lib/unbraid/bin/unbraid"
+                ],
+                "action": "resolve",
+                "server": "local"
+            },
+            {
+                "inbound": [
+                    "tun"
+                ],
+                "process_path": [
+                    "/usr/lib/unbraid/bin/unbraid"
+                ],
+                "outbound": "direct"
+            },
+            {
+                "inbound": "probe",
+                "auth_user": [
+                    "r-im"
+                ],
+                "action": "resolve",
+                "server": "dns-ovpn-r-im"
+            },
+            {
+                "inbound": "probe",
+                "auth_user": [
+                    "r-im"
+                ],
+                "outbound": "r-im"
+            },
+            {
+                "inbound": "probe",
+                "auth_user": [
+                    "r-nlo"
+                ],
+                "action": "resolve",
+                "server": "dns-r-nlo"
+            },
+            {
+                "inbound": "probe",
+                "auth_user": [
+                    "r-nlo"
+                ],
+                "outbound": "r-nlo"
+            },
+            {
+                "ip_cidr": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "169.254.0.0/16",
+                    "224.0.0.0/4",
+                    "255.255.255.255/32"
+                ],
+                "outbound": "direct"
+            },
+            {
+                "type": "logical",
+                "mode": "or",
+                "rules": [
+                    {
+                        "process_path_regex": [
+                            "^/opt/firefox/"
+                        ]
+                    },
+                    {
+                        "process_name": [
+                            "firefox"
+                        ]
+                    }
+                ],
+                "action": "resolve",
+                "server": "dns-r-nlo"
+            },
+            {
+                "ip_cidr": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "169.254.0.0/16",
+                    "224.0.0.0/4",
+                    "255.255.255.255/32"
+                ],
+                "outbound": "direct"
+            },
+            {
+                "type": "logical",
+                "mode": "or",
+                "rules": [
+                    {
+                        "process_path_regex": [
+                            "^/opt/firefox/"
+                        ]
+                    },
+                    {
+                        "process_name": [
+                            "firefox"
+                        ]
+                    }
+                ],
+                "outbound": "r-nlo"
+            },
+            {
+                "action": "resolve",
+                "server": "dns-ovpn-r-im"
+            },
+            {
+                "ip_cidr": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "169.254.0.0/16",
+                    "224.0.0.0/4",
+                    "255.255.255.255/32"
+                ],
+                "outbound": "direct"
+            }
+        ],
+        "final": "r-im",
+        "auto_detect_interface": true,
+        "default_domain_resolver": "local",
+        "find_process": true
+    }
+}

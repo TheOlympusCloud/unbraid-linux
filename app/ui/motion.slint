@@ -1,0 +1,61 @@
+// Unbraid's motion vocabulary: Material 3 Expressive springs, spatial ones for geometry, effects ones (no bounce) for
+// colour and opacity. Slint's spring takes a period, 2π/√stiffness, and a bounce, 1 − damping ratio, so these are
+// Material's springs exactly. Nothing waits for an animation, and with the desktop's animations off everything snaps.
+//
+// The bounce must be written where the spring is used:
+//   animate x { duration: Motion.spatial; easing: spring(0.2); }       default spatial (damping 0.8, stiffness 380)
+//   animate x { duration: Motion.fast-spatial; easing: spring(0.4); }  fast spatial (0.6, 800)
+//   animate x { duration: Motion.slow-spatial; easing: spring(0.2); }  slow spatial (0.8, 200)
+//   animate c { duration: Motion.effects; easing: spring(0); }         effects (1.0, 1600); fast 3800, slow 800
+export global Motion {
+    // The desktop's animations are off (reduced motion): every duration is 0, so everything snaps.
+    in-out property <bool> reduced: false;
+    out property <duration> fast-spatial: self.reduced ? 0ms : 222ms;
+    out property <duration> spatial: self.reduced ? 0ms : 322ms;
+    out property <duration> slow-spatial: self.reduced ? 0ms : 444ms;
+    out property <duration> fast-effects: self.reduced ? 0ms : 102ms;
+    out property <duration> effects: self.reduced ? 0ms : 157ms;
+    out property <duration> slow-effects: self.reduced ? 0ms : 222ms;
+}
+
+// First-load reveal: the first four rows rise 12 px and fade in, 60 ms apart. [play] is true the first time this process
+// shows the screen; the caller keeps that, so each row rises once. Rows past the fourth, and every row with the
+// desktop's animations off, show at once.
+export component Rise {
+    in property <int> index;
+    in property <bool> play;
+    private property <float> shown: root.play && !Motion.reduced && root.index <= 3 ? 0 : 1;
+    init => {
+        self.shown = 1;
+    }
+    animate shown {
+        delay: root.index * 60ms;
+        duration: Motion.spatial;
+        easing: spring(0.2);
+    }
+    // With the desktop's animations off, even if they go off mid-rise, the row is simply there.
+    private property <float> at: Motion.reduced ? 1 : self.shown;
+    opacity: clamp(self.at, 0, 1);
+    // The rise moves what's drawn, never the layout: the row keeps its place while it rises into it.
+    min-width: body.min-width;
+    min-height: body.min-height;
+    preferred-width: body.preferred-width;
+    preferred-height: body.preferred-height;
+    body := VerticalLayout {
+        y: (1 - root.at) * 12px;
+        width: root.width;
+        height: root.height;
+        @children
+    }
+}
+
+// Press feedback for cards: a slight squish that springs back. Slint's software renderer draws no transforms, so read
+// [scale] to inset the card's own geometry: x: (1 - s.scale) * self.width / 2, and so on.
+export component Squish {
+    in property <bool> pressed;
+    out property <float> scale: self.pressed ? 0.97 : 1;
+    animate scale {
+        duration: Motion.fast-spatial;
+        easing: spring(0.4);
+    }
+}

@@ -1,0 +1,301 @@
+// The tour: one stop at a time, the window dimmed around the element the stop is about and a note beside it, with
+// the steps, Back and Next. The window behind is looked at, not used: it takes no clicks while the tour shows. Also the
+// step dots and the Next pill, which the welcome uses too.
+
+import { Ink, Type, Overline, Title } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { Motion } from "motion.slint";
+import { Tappable, IconTap } from "components.slint";
+
+// A paragraph in the sans face, its lines [line] apart, set as the approved look sets them: its last line only as tall
+// as the face, so what follows starts right below it.
+export component Para inherits Rectangle {
+    in property <string> text;
+    in property <length> font-size: 14px;
+    in property <int> font-weight: 400;
+    in property <length> line: 20px;
+    in property <color> ink: Ink.dim;
+    height: body.preferred-height - (self.line - ceil(self.font-size * 1.275 / 1px) * 1px);
+    body := Text {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        text: root.text;
+        font-family: Type.sans;
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        color: root.ink;
+        wrap: word-wrap;
+        line-height-factor: (root.line / 1px - 0.01) / (root.font-size / 1px * 1.275);
+    }
+}
+
+// Progress as route stops: passed ones filled, the current one ringed.
+export component Progress {
+    in property <int> n;
+    in property <int> at;
+    accessible-role: text;
+    accessible-label: "Step \{root.at + 1} of \{root.n}";
+    HorizontalLayout {
+        alignment: start;
+        for i in root.n: HorizontalLayout {
+            cross-axis-alignment: center;
+            if i > 0: Rectangle {
+                width: root.n > 4 ? 4px : 12px;
+                height: 2px;
+                background: i <= root.at ? Ink.accent : Ink.line;
+            }
+            Rectangle {
+                width: i <= root.at ? 8px : 6px;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: i < root.at ? Ink.accent : i == root.at ? Ink.ground : transparent;
+                border-width: i < root.at ? 0 : 2px;
+                border-color: i == root.at ? Ink.accent : Ink.line;
+            }
+        }
+    }
+}
+
+// Next, or the step's own action: the accent's pill with its chevron; greyed while it can't be clicked.
+export component NextPill inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> force-hover;
+    callback clicked();
+    private property <color> ink: self.enabled ? Ink.on-accent : Ink.faint;
+    height: 44px;
+    border-radius: 16px;
+    background: self.enabled ? Ink.accent : Ink.surface-top;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    forward-focus: tap;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 12px;
+        cross-axis-alignment: center;
+        Title {
+            text: root.text;
+            font-size: 15px;
+            color: root.ink;
+            accessible-role: none;
+        }
+        Icon {
+            icon: Icons.chevron;
+            size: 22px;
+            tint: root.ink;
+        }
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        enabled: root.enabled;
+        force-hover: root.force-hover;
+        ring: Ink.text;
+        accessible-role: button;
+        accessible-label: root.text;
+        accessible-enabled: root.enabled;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Where the element a stop is about sits, in the window's coordinates. Zero wide when the page shows none: the note
+// then shows centred, over the whole window dimmed.
+export struct Spot {
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+}
+
+// The stop shown (the window keeps which one, and switches to its page).
+export global TourPage {
+    // "ROUTES · 1 / 8".
+    in property <string> overline;
+    in property <string> title;
+    in property <string> body;
+    // Next, or Done at the last stop.
+    in property <string> next-label: "Next";
+    // From the second stop on: Back shows, and Esc goes back; on the first, Esc closes the tour.
+    in property <bool> has-back;
+    // The spot is round: the power button.
+    in property <bool> round;
+    in property <int> step;
+    in property <int> stops: 8;
+    callback back();
+    callback next();
+    callback close();
+}
+
+// One stop over the whole window (make it the window's last child): the window dimmed around [spot], a leader from
+// the spot to the note, and the note. The spot and the note glide from stop to stop.
+export component TourOverlay inherits FocusScope {
+    in property <Spot> spot;
+    // The window behind, dimmed.
+    in property <brush> dim: Ink.scrim;
+    private property <bool> anchored: self.spot.width > 0;
+    private property <length> note-w: min(self.width - 32px, 300px);
+    private property <length> note-h: column.preferred-height;
+    // A spot across most of the window (a list) takes its note to the left, under its start.
+    private property <bool> wide: self.anchored && self.spot.width > self.width * 0.7;
+    private property <length> gap: 22px;
+    private property <bool> below: self.anchored && self.spot.y + self.spot.height + self.gap + self.note-h < self.height - 96px;
+    private property <length> note-x: !self.anchored ? (self.width - self.note-w) / 2
+        : self.wide ? 24px
+        : clamp(self.spot.x + self.spot.width / 2 - self.note-w / 2, 16px, self.width - 16px - self.note-w);
+    private property <length> note-y: !self.anchored ? (self.height - self.note-h) / 2
+        : self.below ? self.spot.y + self.spot.height + 6px + self.gap
+        : max(self.spot.y - 6px - self.gap - self.note-h, 16px);
+    animate note-x, note-y {
+        duration: Motion.spatial;
+        easing: spring(0.2);
+    }
+    // The hole: the spot with 6 px around it.
+    private property <length> hole-x: self.anchored ? self.spot.x - 6px : 0;
+    private property <length> hole-y: self.anchored ? self.spot.y - 6px : 0;
+    private property <length> hole-w: self.anchored ? self.spot.width + 12px : 0;
+    private property <length> hole-h: self.anchored ? self.spot.height + 12px : 0;
+    animate hole-x, hole-y, hole-w, hole-h {
+        duration: Motion.spatial;
+        easing: spring(0.2);
+    }
+    private property <length> r: min(TourPage.round ? 999px : 26px, min(self.hole-w, self.hole-h) / 2);
+    private property <length> leader-x: self.wide ? self.note-x + 44px : clamp(self.hole-x + self.hole-w / 2, self.note-x + 28px, self.note-x + self.note-w - 28px);
+    private property <length> leader-from: self.below ? self.hole-y + self.hole-h : self.hole-y;
+    private property <length> leader-to: self.below ? self.note-y : self.note-y + self.note-h;
+    // The hole's outline, wound the other way round from the window's: the software renderer fills non-zero only.
+    private property <string> hole: "M\{(self.hole-x + self.r) / 1px} \{self.hole-y / 1px}"
+        + " A\{self.r / 1px} \{self.r / 1px} 0 0 0 \{self.hole-x / 1px} \{(self.hole-y + self.r) / 1px}"
+        + " V\{(self.hole-y + self.hole-h - self.r) / 1px}"
+        + " A\{self.r / 1px} \{self.r / 1px} 0 0 0 \{(self.hole-x + self.r) / 1px} \{(self.hole-y + self.hole-h) / 1px}"
+        + " H\{(self.hole-x + self.hole-w - self.r) / 1px}"
+        + " A\{self.r / 1px} \{self.r / 1px} 0 0 0 \{(self.hole-x + self.hole-w) / 1px} \{(self.hole-y + self.hole-h - self.r) / 1px}"
+        + " V\{(self.hole-y + self.r) / 1px}"
+        + " A\{self.r / 1px} \{self.r / 1px} 0 0 0 \{(self.hole-x + self.hole-w - self.r) / 1px} \{self.hole-y / 1px} Z";
+    accessible-role: groupbox;
+    accessible-label: "Tour";
+    init => {
+        self.focus();
+    }
+    key-pressed(event) => {
+        if event.text == Key.Escape {
+            if TourPage.has-back {
+                TourPage.back();
+            } else {
+                TourPage.close();
+            }
+            return accept;
+        }
+        return reject;
+    }
+    // The window behind takes no clicks.
+    TouchArea { }
+    Path {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+        commands: "M0 0 H\{root.width / 1px} V\{root.height / 1px} H0 Z" + (root.anchored ? " " + root.hole : "");
+        fill: root.dim;
+        accessible-role: none;
+    }
+    if root.anchored: Rectangle {
+        x: root.hole-x - 1px;
+        y: root.hole-y - 1px;
+        width: root.hole-w + 2px;
+        height: root.hole-h + 2px;
+        border-radius: root.r + 1px;
+        border-width: 2px;
+        border-color: Ink.accent;
+    }
+    if root.anchored: Rectangle {
+        x: root.leader-x - 1px;
+        y: min(root.leader-from, root.leader-to);
+        width: 2px;
+        height: abs(root.leader-to - root.leader-from);
+        background: Ink.accent;
+    }
+    if root.anchored: Rectangle {
+        x: root.leader-x - 4px;
+        y: root.leader-from - 4px;
+        width: 8px;
+        height: 8px;
+        border-radius: 4px;
+        background: Ink.accent;
+    }
+    Rectangle {
+        x: root.note-x;
+        y: root.note-y;
+        width: root.note-w;
+        height: root.note-h;
+        border-radius: 20px;
+        background: Ink.surface-high;
+        border-width: 1px;
+        border-color: Ink.surface-top;
+        column := VerticalLayout {
+            padding-left: 16px;
+            padding-right: 12px;
+            padding-top: 6px;
+            padding-bottom: 12px;
+            spacing: 4px;
+            HorizontalLayout {
+                cross-axis-alignment: center;
+                Overline {
+                    horizontal-stretch: 1;
+                    text: TourPage.overline;
+                    font-size: 11px;
+                    overflow: elide;
+                }
+                IconTap {
+                    icon: Icons.close;
+                    label: "Close the tour";
+                    size: 44px;
+                    tint: Ink.dim;
+                    clicked => {
+                        TourPage.close();
+                    }
+                }
+            }
+            Title {
+                text: TourPage.title;
+                wrap: word-wrap;
+            }
+            Para {
+                text: TourPage.body;
+            }
+            HorizontalLayout {
+                padding-top: 8px;
+                spacing: 6px;
+                cross-axis-alignment: center;
+                Progress {
+                    horizontal-stretch: 1;
+                    n: TourPage.stops;
+                    at: TourPage.step;
+                }
+                if TourPage.has-back: IconTap {
+                    icon: Icons.back;
+                    label: "Back";
+                    size: 44px;
+                    fill: Ink.surface-top;
+                    clicked => {
+                        TourPage.back();
+                    }
+                }
+                NextPill {
+                    text: TourPage.next-label;
+                    clicked => {
+                        TourPage.next();
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- The tray's pause badge, over the logo without its colour: two bars on the accent, ringed in the app's ink so it
+       stands out on light and dark panels alike. -->
+  <circle cx="352" cy="352" r="144" fill="#FFA66B" stroke="#0F1214" stroke-width="32"/>
+  <rect x="292" y="280" width="44" height="144" rx="10" fill="#0F1214"/>
+  <rect x="368" y="280" width="44" height="144" rx="10" fill="#0F1214"/>
+</svg>

@@ -1,0 +1,658 @@
+// Small charts for Stats. Route colours encode exits and nothing else; every chart carries a spoken summary, and draws
+// in once with the default spatial spring (snapped when animations are off).
+
+import { Ink, Type, Code, Small } from "theme.slint";
+import { Motion } from "motion.slint";
+
+// A value and its colour: a ring's part, a bar's slice.
+export struct ChartPart {
+    value: float,
+    color: color,
+}
+
+// A line of samples, oldest first, and its colour.
+export struct ChartSeries {
+    values: [float],
+    color: color,
+}
+
+// A stretch of a day on a timeline, as fractions of the day: protected, or [paused].
+export struct DaySpan {
+    from: float,
+    to: float,
+    paused: bool,
+}
+
+// A month's name, over the week (a heatmap column) it starts in.
+export struct MonthMark {
+    week: int,
+    name: string,
+}
+
+export global Charts {
+    // The speed dial's ticks, evenly spaced, values between them interpolated (Ookla's non-linear scale).
+    out property <[float]> ticks: [0, 5, 10, 50, 100, 250, 500, 750, 1000];
+    // The dial for several exits added up: the same spacing, reaching 5 Gbps.
+    out property <[float]> combined-ticks: [0, 10, 50, 100, 250, 500, 1000, 2500, 5000];
+
+    // Slint has no loops, so the sums a stacked chart needs are written out, for the 12 parts or series it stacks at
+    // most. shortcut: stacks 12 at most (exits on one chart); add terms here if a chart ever shows more.
+    // The first [n] parts added up (negative ones count as none).
+    public pure function sum-before(parts: [ChartPart], n: int) -> float {
+        return (n > 0 ? max(parts[0].value, 0) : 0) + (n > 1 ? max(parts[1].value, 0) : 0) + (n > 2 ? max(parts[2].value, 0) : 0)
+            + (n > 3 ? max(parts[3].value, 0) : 0) + (n > 4 ? max(parts[4].value, 0) : 0) + (n > 5 ? max(parts[5].value, 0) : 0)
+            + (n > 6 ? max(parts[6].value, 0) : 0) + (n > 7 ? max(parts[7].value, 0) : 0) + (n > 8 ? max(parts[8].value, 0) : 0)
+            + (n > 9 ? max(parts[9].value, 0) : 0) + (n > 10 ? max(parts[10].value, 0) : 0) + (n > 11 ? max(parts[11].value, 0) : 0);
+    }
+
+    // Sample [i] of the first [j] series added up: where series [j] starts.
+    public pure function stack-below(series: [ChartSeries], j: int, i: int) -> float {
+        return (j > 0 ? max(series[0].values[i], 0) : 0) + (j > 1 ? max(series[1].values[i], 0) : 0)
+            + (j > 2 ? max(series[2].values[i], 0) : 0) + (j > 3 ? max(series[3].values[i], 0) : 0)
+            + (j > 4 ? max(series[4].values[i], 0) : 0) + (j > 5 ? max(series[5].values[i], 0) : 0)
+            + (j > 6 ? max(series[6].values[i], 0) : 0) + (j > 7 ? max(series[7].values[i], 0) : 0)
+            + (j > 8 ? max(series[8].values[i], 0) : 0) + (j > 9 ? max(series[9].values[i], 0) : 0)
+            + (j > 10 ? max(series[10].values[i], 0) : 0) + (j > 11 ? max(series[11].values[i], 0) : 0);
+    }
+
+    // Ookla-style non-linear position (0…1) of [mbps] on a dial of nine ticks: ticks evenly spaced, values interpolated
+    // between them.
+    public pure function dial-fraction(m: float, t: [float]) -> float {
+        let last = t.length - 1;
+        return m <= t[1] ? (0 + (m - t[0]) / (t[1] - t[0])) / last
+            : m <= t[2] ? (1 + (m - t[1]) / (t[2] - t[1])) / last
+            : m <= t[3] ? (2 + (m - t[2]) / (t[3] - t[2])) / last
+            : m <= t[4] ? (3 + (m - t[3]) / (t[4] - t[3])) / last
+            : m <= t[5] ? (4 + (m - t[4]) / (t[5] - t[4])) / last
+            : m <= t[6] ? (5 + (m - t[5]) / (t[6] - t[5])) / last
+            : m <= t[7] ? (6 + (m - t[6]) / (t[7] - t[6])) / last
+            : m <= t[8] ? (7 + (m - t[7]) / (t[8] - t[7])) / last
+            : 1;
+    }
+
+    // A scale value as a label: whole numbers plain, others with one decimal (2.5, 0.1).
+    public pure function scale-text(v: float) -> string {
+        return v == Math.round(v) ? "\{Math.round(v)}" : v.to-fixed(1);
+    }
+}
+
+// An arc of the circle of radius [r] round the box's centre, from [from] through [sweep], clockwise from three o'clock,
+// stroked with round ends. Drawn in two halves, so a whole turn still closes.
+component Arc inherits Path {
+    in property <angle> from;
+    in property <angle> sweep;
+    in property <length> r;
+    in property <brush> ink;
+    in property <length> thickness;
+    private property <float> cx: self.width / 2px;
+    private property <float> cy: self.height / 2px;
+    private property <float> rr: self.r / 1px;
+    stroke: self.ink;
+    stroke-width: self.thickness;
+    stroke-line-cap: round;
+    viewbox-width: self.width / 1px;
+    viewbox-height: self.height / 1px;
+    MoveTo {
+        x: root.cx + root.rr * Math.cos(root.from);
+        y: root.cy + root.rr * Math.sin(root.from);
+    }
+    ArcTo {
+        radius-x: root.rr;
+        radius-y: root.rr;
+        sweep: true;
+        x: root.cx + root.rr * Math.cos(root.from + root.sweep / 2);
+        y: root.cy + root.rr * Math.sin(root.from + root.sweep / 2);
+    }
+    ArcTo {
+        radius-x: root.rr;
+        radius-y: root.rr;
+        sweep: true;
+        x: root.cx + root.rr * Math.cos(root.from + root.sweep);
+        y: root.cy + root.rr * Math.sin(root.from + root.sweep);
+    }
+}
+
+// One straight stroke of a chart's line, from (x0, y0) to (x1, y1) in the chart's coordinates. Its box reaches past the
+// ends by half the stroke, which Slint would otherwise clip.
+component Segment inherits Path {
+    in property <length> x0;
+    in property <length> y0;
+    in property <length> x1;
+    in property <length> y1;
+    in property <brush> ink;
+    in property <length> thickness;
+    private property <length> pad: self.thickness;
+    x: min(self.x0, self.x1) - self.pad;
+    y: min(self.y0, self.y1) - self.pad;
+    width: abs(self.x1 - self.x0) + 2 * self.pad;
+    height: abs(self.y1 - self.y0) + 2 * self.pad;
+    stroke: self.ink;
+    stroke-width: self.thickness;
+    stroke-line-cap: round;
+    viewbox-width: self.width / 1px;
+    viewbox-height: self.height / 1px;
+    MoveTo {
+        x: (root.x0 - root.x) / 1px;
+        y: (root.y0 - root.y) / 1px;
+    }
+    LineTo {
+        x: (root.x1 - root.x) / 1px;
+        y: (root.y1 - root.y) / 1px;
+    }
+}
+
+// The area of one stretch of a chart, between x0 and x1 (whole pixels, so neighbours meet without a seam): from the top
+// line (t0 → t1) down to the bottom line (b0 → b1), in the chart's coordinates.
+component Slice inherits Path {
+    in property <length> x0;
+    in property <length> x1;
+    in property <length> t0;
+    in property <length> t1;
+    in property <length> b0;
+    in property <length> b1;
+    in property <brush> ink;
+    x: self.x0;
+    y: 0;
+    width: self.x1 - self.x0;
+    fill: self.ink;
+    viewbox-width: self.width / 1px;
+    viewbox-height: self.height / 1px;
+    MoveTo {
+        x: 0;
+        y: root.t0 / 1px;
+    }
+    LineTo {
+        x: root.width / 1px;
+        y: root.t1 / 1px;
+    }
+    LineTo {
+        x: root.width / 1px;
+        y: root.b1 / 1px;
+    }
+    LineTo {
+        x: 0;
+        y: root.b0 / 1px;
+    }
+    Close { }
+}
+
+// Share by exit as a segmented ring with round ends and gaps.
+export component Ring {
+    in property <[ChartPart]> parts;
+    in property <string> summary;
+    in property <length> size: 120px;
+    in property <length> stroke: 14px;
+    private property <float> total: Charts.sum-before(self.parts, self.parts.length);
+    private property <float> drawn;
+    // Drawn in once; all at once with the desktop's animations off, even if they go off mid-draw.
+    private property <float> p: Motion.reduced ? 1 : self.drawn;
+    init => {
+        self.drawn = 1;
+    }
+    animate drawn {
+        duration: Motion.spatial;
+        easing: spring(0.2);
+    }
+    width: root.size;
+    height: root.size;
+    accessible-role: image;
+    accessible-label: root.summary;
+    for part[j] in root.parts: Arc {
+        // Gaps only between parts: none for a ring of one.
+        property <angle> gap: root.total > max(part.value, 0) ? 14deg : 0deg;
+        property <angle> sweep-all: 360deg * max(part.value, 0) / max(root.total, 0.000001);
+        visible: part.value > 0;
+        width: root.size;
+        height: root.size;
+        r: (root.size - root.stroke) / 2;
+        thickness: root.stroke;
+        ink: part.color;
+        from: -90deg + 360deg * Charts.sum-before(root.parts, j) / max(root.total, 0.000001) + self.gap / 2;
+        sweep: max((self.sweep-all - self.gap) * root.p, 0.1deg);
+    }
+}
+
+// A thin horizontal bar: [frac] of the track filled in [color]. Its height is the bar's thickness, 6 px unless set.
+export component Meter {
+    in property <float> frac;
+    in property <color> color;
+    private property <float> drawn;
+    // Drawn in once; all at once with the desktop's animations off, even if they go off mid-draw.
+    private property <float> p: Motion.reduced ? 1 : self.drawn;
+    init => {
+        self.drawn = 1;
+    }
+    animate drawn {
+        duration: Motion.spatial;
+        easing: spring(0.2);
+    }
+    height: 6px;
+    Rectangle {
+        border-radius: self.height / 2;
+        background: Ink.surface-top;
+    }
+    if root.frac > 0: Rectangle {
+        x: 0;
+        width: max(root.width * clamp(root.frac, 0, 1) * root.p, root.height);
+        height: root.height;
+        border-radius: self.height / 2;
+        background: root.color;
+    }
+}
+
+// Columns of stacked parts (bottom first) with a 0…[max-value] scale in a 48 px gutter; [selected] at full strength.
+export component StackedBars {
+    in property <[[ChartPart]]> columns;
+    in property <[string]> labels;
+    in property <float> max-value;
+    // The top of the scale as its label says it ("2.5 GB").
+    in property <string> scale;
+    in property <string> summary;
+    in property <int> selected: -1;
+    in property <length> plot-height: 120px;
+    private property <length> plot-width: self.width - 48px;
+    private property <length> slot: self.plot-width / max(self.columns.length, 1);
+    private property <length> bar: min(24px, self.slot * 0.6);
+    private property <float> drawn;
+    // Drawn in once; all at once with the desktop's animations off, even if they go off mid-draw.
+    private property <float> p: Motion.reduced ? 1 : self.drawn;
+    init => {
+        self.drawn = 1;
+    }
+    animate drawn {
+        duration: Motion.spatial;
+        easing: spring(0.2);
+    }
+    accessible-role: image;
+    accessible-label: root.summary;
+    VerticalLayout {
+        spacing: 6px;
+        Rectangle {
+            height: root.plot-height;
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: root.plot-width;
+                height: 1px;
+                background: Ink.line;
+            }
+            for column[c] in root.columns: Rectangle {
+                x: root.slot * c + (root.slot - root.bar) / 2;
+                y: 0;
+                width: root.bar;
+                height: parent.height;
+                opacity: root.selected < 0 || c == root.selected ? 1 : 0.55;
+                for part[j] in column: Rectangle {
+                    property <float> below: Charts.sum-before(column, j);
+                    property <float> above: Charts.sum-before(column, column.length) - self.below - max(part.value, 0);
+                    property <length> h: parent.height * max(part.value, 0) / max(root.max-value, 0.000001) * root.p;
+                    property <length> r: min(6px, self.h / 2);
+                    visible: part.value > 0;
+                    x: 0;
+                    width: parent.width;
+                    y: parent.height - parent.height * self.below / max(root.max-value, 0.000001) * root.p - self.h;
+                    height: self.h;
+                    background: part.color;
+                    border-top-left-radius: self.above <= 0 ? self.r : 0;
+                    border-top-right-radius: self.above <= 0 ? self.r : 0;
+                    border-bottom-left-radius: self.below <= 0 ? self.r : 0;
+                    border-bottom-right-radius: self.below <= 0 ? self.r : 0;
+                }
+            }
+            Small {
+                x: parent.width - self.width;
+                y: 0;
+                text: root.scale;
+            }
+            Small {
+                x: parent.width - self.width;
+                y: parent.height - 16px;
+                text: "0";
+            }
+        }
+        HorizontalLayout {
+            padding-right: 48px;
+            for label[c] in root.labels: Code {
+                horizontal-stretch: 1;
+                text: label;
+                color: c == root.selected ? Ink.text : Ink.dim;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}
+
+// Stacked areas of the last samples per exit (oldest left, now right) with an outline of the total and a 0…[cap] scale.
+export component LiveArea {
+    in property <[ChartSeries]> series;
+    in property <float> cap;
+    in property <string> unit;
+    in property <string> summary;
+    private property <int> n: self.series.length > 0 ? self.series[0].values.length : 0;
+    private property <length> plot-width: self.width - 48px;
+    private property <float> drawn;
+    // Drawn in once; all at once with the desktop's animations off, even if they go off mid-draw.
+    private property <float> reveal: Motion.reduced ? 1 : self.drawn;
+    init => {
+        self.drawn = 1;
+    }
+    animate drawn {
+        duration: Motion.spatial;
+        easing: spring(0.2);
+    }
+    pure function px(i: int) -> length {
+        return Math.round(root.plot-width * i / max(root.n - 1, 1) / 1px) * 1px;
+    }
+    pure function py(v: float) -> length {
+        return root.height - root.height * clamp(v / max(root.cap, 0.000001), 0, 1);
+    }
+    height: 120px;
+    accessible-role: image;
+    accessible-label: root.summary;
+    // It sweeps in from the left once, like every chart; new samples then update in place.
+    Rectangle {
+        x: 0;
+        width: root.width * min(root.reveal, 1);
+        clip: true;
+        for s[j] in root.series: Rectangle {
+            for i in max(root.n - 1, 0): Slice {
+                height: root.height;
+                x0: root.px(i);
+                x1: root.px(i + 1);
+                t0: root.py(Charts.stack-below(root.series, j + 1, i));
+                t1: root.py(Charts.stack-below(root.series, j + 1, i + 1));
+                b0: root.py(Charts.stack-below(root.series, j, i));
+                b1: root.py(Charts.stack-below(root.series, j, i + 1));
+                ink: s.color.with-alpha(0.85);
+            }
+        }
+        for i in max(root.n - 1, 0): Segment {
+            x0: root.px(i);
+            y0: root.py(Charts.stack-below(root.series, root.series.length, i));
+            x1: root.px(i + 1);
+            y1: root.py(Charts.stack-below(root.series, root.series.length, i + 1));
+            ink: Ink.text;
+            thickness: 1.5px;
+        }
+        if root.n > 0: Rectangle {
+            x: root.plot-width - 4px;
+            y: root.py(Charts.stack-below(root.series, root.series.length, root.n - 1)) - 4px;
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: Ink.text;
+        }
+        Rectangle {
+            x: 0;
+            y: root.height - 1px;
+            width: root.plot-width;
+            height: 1px;
+            background: Ink.line;
+        }
+        // The unit on the top label, as on the bar charts; a bare 0 at the bottom keeps clear of the now-dot.
+        Small {
+            x: root.width - self.width;
+            y: 0;
+            text: Charts.scale-text(root.cap) + " " + root.unit;
+        }
+        Small {
+            x: root.width - self.width;
+            y: root.height - 16px;
+            text: "0";
+        }
+    }
+}
+
+// A small line of recent values ending in a dot at "now".
+export component Spark {
+    in property <[float]> values;
+    in property <color> color;
+    private property <int> n: self.values.length;
+    // The largest value, measured: a row is as tall as its tallest child, and Slint has no loops to find it otherwise.
+    private property <float> top: max(measure.min-height / 1px, 1) * 1.15;
+    private property <float> drawn;
+    // Drawn in once; all at once with the desktop's animations off, even if they go off mid-draw.
+    private property <float> reveal: Motion.reduced ? 1 : self.drawn;
+    init => {
+        self.drawn = 1;
+    }
+    animate drawn {
+        duration: Motion.spatial;
+        easing: spring(0.2);
+    }
+    pure function px(i: int) -> length {
+        return Math.round(root.width * i / max(root.n - 1, 1) / 1px) * 1px;
+    }
+    pure function py(v: float) -> length {
+        return root.height - root.height * v / root.top;
+    }
+    height: 36px;
+    measure := HorizontalLayout {
+        x: 0;
+        y: 0;
+        width: 0;
+        height: 0;
+        for v in root.values: Rectangle {
+            min-height: max(v, 0) * 1px;
+        }
+    }
+    Rectangle {
+        x: 0;
+        width: root.width * min(root.reveal, 1);
+        clip: true;
+        for i in max(root.n - 1, 0): Slice {
+            height: root.height;
+            x0: root.px(i);
+            x1: root.px(i + 1);
+            t0: root.py(root.values[i]);
+            t1: root.py(root.values[i + 1]);
+            b0: root.height;
+            b1: root.height;
+            ink: root.color.with-alpha(0.10);
+        }
+        for i in max(root.n - 1, 0): Segment {
+            x0: root.px(i);
+            y0: root.py(root.values[i]);
+            x1: root.px(i + 1);
+            y1: root.py(root.values[i + 1]);
+            ink: root.color;
+            thickness: 2px;
+        }
+        if root.n > 0: Rectangle {
+            x: root.width - 3.5px;
+            y: root.py(root.values[root.n - 1]) - 3.5px;
+            width: 7px;
+            height: 7px;
+            border-radius: 3.5px;
+            background: root.color;
+        }
+    }
+}
+
+// One cell per day, oldest first, weeks as columns (Monday on top); negative = not yet, not drawn. [selected] is
+// outlined. Weekday letters on the left, month names above the week they start in.
+export component Heatmap {
+    in property <[float]> hours;
+    in property <int> selected: -1;
+    in property <[string]> weekdays;
+    in property <[MonthMark]> months;
+    in property <string> summary;
+    private property <int> weeks: Math.floor((self.hours.length + 6) / 7);
+    private property <length> gap: 4px;
+    private property <length> left: 20px;
+    private property <length> head: 18px;
+    private property <length> cell: min((self.width - self.left - self.gap * (self.weeks - 1)) / max(self.weeks, 1), (self.height - self.head - self.gap * 6) / 7);
+    height: 176px;
+    accessible-role: image;
+    accessible-label: root.summary;
+    for r in [0, 2, 4, 6]: Small {
+        x: 6px - self.width / 2;
+        y: root.head + r * (root.cell + root.gap) + (root.cell - 16px) / 2;
+        text: root.weekdays[r];
+    }
+    for month in root.months: Small {
+        x: root.left + month.week * (root.cell + root.gap);
+        y: 0;
+        text: month.name;
+    }
+    for h[i] in root.hours: Rectangle {
+        visible: h >= 0;
+        x: root.left + Math.floor(i / 7) * (root.cell + root.gap);
+        y: root.head + Math.mod(i, 7) * (root.cell + root.gap);
+        width: root.cell;
+        height: root.cell;
+        border-radius: root.cell * 0.28;
+        background: h < 0.05 ? Ink.line : Ink.good.with-alpha(0.22 + 0.78 * clamp(h / 12, 0, 1));
+        border-width: i == root.selected ? 2px : 0;
+        border-color: Ink.text;
+    }
+}
+
+// A day as a 24 h track: protected in green, paused in the accent.
+export component Timeline inherits Rectangle {
+    in property <[DaySpan]> spans;
+    in property <string> summary;
+    private property <float> drawn;
+    // Drawn in once; all at once with the desktop's animations off, even if they go off mid-draw.
+    private property <float> p: Motion.reduced ? 1 : self.drawn;
+    init => {
+        self.drawn = 1;
+    }
+    animate drawn {
+        duration: Motion.spatial;
+        easing: spring(0.2);
+    }
+    height: 20px;
+    border-radius: 6px;
+    background: Ink.surface-top;
+    accessible-role: image;
+    accessible-label: root.summary;
+    for span in root.spans: Rectangle {
+        x: parent.width * span.from;
+        y: 0;
+        width: max(parent.width * (span.to - span.from) * root.p, 2px);
+        height: parent.height;
+        border-radius: 6px;
+        background: span.paused ? Ink.accent : Ink.good;
+    }
+}
+
+// The speed-test dial: a 270° arc filled in the exit's colour up to the reading, ticks and a needle. Charts.ticks by
+// default; Charts.combined-ticks for several exits added up.
+export component Dial {
+    in property <float> mbps;
+    in property <color> color;
+    in property <string> label;
+    in property <[float]> ticks: Charts.ticks;
+    private property <length> sw: 22px;
+    private property <length> r: min(self.width, self.height) / 2 - self.sw / 2;
+    private property <float> f: Charts.dial-fraction(self.mbps, self.ticks) * min(self.reveal, 1);
+    private property <angle> needle: 135deg + 270deg * clamp(self.f, 0, 1);
+    private property <float> drawn;
+    // Drawn in once; all at once with the desktop's animations off, even if they go off mid-draw.
+    private property <float> reveal: Motion.reduced ? 1 : self.drawn;
+    init => {
+        self.drawn = 1;
+    }
+    animate drawn {
+        duration: Motion.spatial;
+        easing: spring(0.2);
+    }
+    width: 300px;
+    height: 300px;
+    accessible-role: image;
+    accessible-label: root.label;
+    // The track sweeps in once, like every chart.
+    Arc {
+        width: root.width;
+        height: root.height;
+        r: root.r;
+        thickness: root.sw;
+        ink: Ink.surface-top;
+        from: 135deg;
+        sweep: max(270deg * min(root.reveal, 1), 0.1deg);
+    }
+    if root.f > 0.002: Arc {
+        width: root.width;
+        height: root.height;
+        r: root.r;
+        thickness: root.sw;
+        ink: root.color;
+        from: 135deg;
+        sweep: 270deg * root.f;
+    }
+    for t[i] in root.ticks: Text {
+        property <angle> a: 135deg + 270deg * i / max(root.ticks.length - 1, 1);
+        property <length> rr: root.r - 40px;
+        x: root.width / 2 + self.rr * Math.cos(self.a) - self.width / 2;
+        y: root.height / 2 + self.rr * Math.sin(self.a) - self.height / 2;
+        text: t >= 1000 ? Charts.scale-text(t / 1000) + "k" : Charts.scale-text(t);
+        font-family: Type.mono;
+        font-size: 13px;
+        color: t <= root.mbps ? Ink.text : Ink.dim;
+        opacity: clamp(root.reveal, 0, 1);
+    }
+    Segment {
+        x0: root.width / 2 + 18px * Math.cos(root.needle);
+        y0: root.height / 2 + 18px * Math.sin(root.needle);
+        x1: root.width / 2 + (root.r - 62px) * Math.cos(root.needle);
+        y1: root.height / 2 + (root.r - 62px) * Math.sin(root.needle);
+        ink: Ink.text;
+        thickness: 8px;
+    }
+    Rectangle {
+        x: root.width / 2 - 9px;
+        y: root.height / 2 - 9px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: Ink.text;
+    }
+}
+
+// Seven small columns of hours protected (0–12 h), today strongest; for the hub's Journal tile.
+export component WeekMarks inherits HorizontalLayout {
+    in property <[float]> hours;
+    in property <[string]> labels;
+    in property <int> today;
+    private property <float> drawn;
+    // Drawn in once; all at once with the desktop's animations off, even if they go off mid-draw.
+    private property <float> reveal: Motion.reduced ? 1 : self.drawn;
+    init => {
+        self.drawn = 1;
+    }
+    animate drawn {
+        duration: Motion.spatial;
+        easing: spring(0.2);
+    }
+    spacing: 1px;
+    for h[i] in root.hours: VerticalLayout {
+        horizontal-stretch: 1;
+        spacing: 4px;
+        cross-axis-alignment: center;
+        // Centred in its share of the row, which a 12 px child alone would narrow to its own width.
+        HorizontalLayout {
+            alignment: center;
+            track := Rectangle {
+                property <length> v: self.height * clamp(h / 12, 0, 1) * min(root.reveal, 1);
+                width: 12px;
+                height: 36px;
+                border-radius: 6px;
+                background: Ink.surface-top;
+                if track.v > 0: Rectangle {
+                    x: 0;
+                    y: track.height - track.v;
+                    width: track.width;
+                    height: track.v;
+                    border-radius: 6px;
+                    background: i == root.today ? Ink.good : Ink.text.with-alpha(0.7);
+                }
+            }
+        }
+        Code {
+            text: root.labels[i];
+            color: i == root.today ? Ink.text : Ink.dim;
+            horizontal-alignment: center;
+        }
+    }
+}

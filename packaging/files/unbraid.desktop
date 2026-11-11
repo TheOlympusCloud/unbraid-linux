@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=unbraid
+Name=Unbraid by TheOlympus
 GenericName=Per-app VPN
 Comment=Give every app its own VPN exit
 Exec=unbraid
@@ -8,7 +8,7 @@ Icon=unbraid
 Terminal=false
 Categories=Network;Security;
 Keywords=VPN;WireGuard;OpenVPN;Shadowsocks;Tailscale;split tunneling;
-StartupWMClass=app-unbraid-MainKt
+StartupWMClass=unbraid
 Actions=Connect;Pause;Disconnect;
 
 [Desktop Action Connect]

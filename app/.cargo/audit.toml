@@ -1,0 +1,20 @@
+# cargo audit (packaging/build.sh runs it with --deny warnings): every advisory below was looked at and accepted, for
+# the reason given. Any other advisory on a crate in Cargo.lock stops the package build. All six are "unmaintained"
+# notices, with no known flaw in the code.
+[advisories]
+ignore = [
+    # ttf-parser 0.25.1. In the app through winit's Wayland window frame (sctk-adwaita, ab_glyph), which reads the
+    # desktop's own font for the title bar. It goes when winit moves off it.
+    "RUSTSEC-2026-0192",
+    # zvariant 5.15.1, zbus_names 4.3.5 and zvariant_derive 5.15.1 (a compile-time macro): zbus 5's line. In the app
+    # through zbus 5, which the screen reader bridge (AccessKit's AT-SPI), Slint's winit backend and the tray (ksni)
+    # still use; the app's own D-Bus code is on zbus 6. They go when those move to zbus 6.
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
+    # pin-utils 0.1.1: only at compile time, inside Slint's macros (spin_on); not in the app.
+    "RUSTSEC-2026-0441",
+    # bincode 2.0.1: in Cargo.lock only, for an optional feature of the Slint compiler's typed-index-collections that
+    # this build doesn't turn on; never compiled.
+    "RUSTSEC-2025-0141",
+]

@@ -1,0 +1,977 @@
+// Every shared component in its states (normal, hover, disabled, checked), for screenshots next to the approved look.
+// tests/ui_gallery.rs renders it in both themes.
+
+import { Ink, Overline, Small, Sub } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Rise } from "motion.slint";
+import {
+    Screen, SearchField, CodeChip, RouteMark, Wordmark, SectionLabel, GroupRow, RowText, RowKind, Toggle, IconTap, AppIcon,
+    Primary, Secondary, Gap, Keys,
+} from "components.slint";
+import {
+    Sidebar, Connection, NavItem, TipBubble, ShortcutsDialog, PageHeader, PillButton, PillKind, MenuCard, MenuItem,
+    MenuLabel, Phase,
+} from "shell.slint";
+import { Chevron, PillField, DialogField, Prompt, CaptionRow } from "inputs.slint";
+import { Ring, Meter, StackedBars, LiveArea, Spark, Heatmap, Timeline, Dial, WeekMarks, Charts } from "charts.slint";
+
+// One sample: its name, then the component.
+component Sample inherits VerticalLayout {
+    in property <string> name;
+    spacing: 8px;
+    alignment: start;
+    Small {
+        text: root.name;
+        color: Ink.faint;
+    }
+    @children
+}
+
+// A row of samples, each at its own size.
+component Row inherits HorizontalLayout {
+    spacing: 28px;
+    alignment: start;
+    cross-axis-alignment: start;
+}
+
+// A section's name.
+component Heading inherits Overline {
+    color: Ink.dim;
+}
+
+export component Gallery inherits Window {
+    in-out property <bool> light <=> Ink.light;
+    // The whole gallery's height, for a screenshot of all of it.
+    out property <length> full-height: body.preferred-height;
+    title: "Unbraid by TheOlympus: components";
+    preferred-width: 1600px;
+    preferred-height: 1000px;
+    background: Ink.ground;
+    // Keyboard focus on one control, to show its ring: after the dialogs below have taken it on their init.
+    private property <bool> focused;
+    Timer {
+        interval: 1ms;
+        running: !root.focused;
+        triggered => {
+            root.focused = true;
+            focus-demo.focus();
+        }
+    }
+    Flickable {
+        content-height: body.preferred-height;
+        body := VerticalLayout {
+            padding: 32px;
+            spacing: 28px;
+            alignment: start;
+            HorizontalLayout {
+                spacing: 16px;
+                alignment: start;
+                Wordmark { }
+                VerticalLayout {
+                    alignment: end;
+                    padding-bottom: 7px;
+                    Overline {
+                        text: root.light ? "COMPONENTS · LIGHT" : "COMPONENTS · DARK";
+                        color: Ink.dim;
+                    }
+                }
+            }
+
+            Heading {
+                text: "SHELL";
+            }
+            Row {
+                Sample {
+                    name: "Sidebar · as approved";
+                    HorizontalLayout {
+                        height: 800px;
+                        Sidebar {
+                            current: 0;
+                            phase: Phase.off;
+                            version: "2.8.2";
+                            profiles: [
+                                { name: "Work", in-use: false, shown: false },
+                                { name: "Home", in-use: false, shown: false },
+                            ];
+                        }
+                    }
+                }
+                Sample {
+                    name: "Rail";
+                    HorizontalLayout {
+                        height: 800px;
+                        Sidebar {
+                            wide: false;
+                            current: 2;
+                            phase: Phase.on;
+                            exit: "Netherlands";
+                        }
+                    }
+                }
+                Sample {
+                    name: "Paused · in use, shown";
+                    HorizontalLayout {
+                        height: 800px;
+                        Sidebar {
+                            current: 3;
+                            phase: Phase.paused;
+                            exit: "Netherlands";
+                            summary: "Resumes at 14:30";
+                            version: "2.8.2";
+                            profiles: [
+                                { name: "Work", in-use: true, shown: false },
+                                { name: "Home", in-use: false, shown: true },
+                                { name: "Travel", in-use: false, shown: false },
+                            ];
+                        }
+                    }
+                }
+                Sample {
+                    name: "Connecting · no profile";
+                    HorizontalLayout {
+                        height: 800px;
+                        Sidebar {
+                            current: 1;
+                            phase: Phase.connecting;
+                            exit: "Netherlands";
+                            summary: "Setting up your routes";
+                            version: "2.8.2";
+                        }
+                    }
+                }
+                VerticalLayout {
+                    spacing: 28px;
+                    Sample {
+                        name: "Connection · off, on, hover";
+                        VerticalLayout {
+                            spacing: 8px;
+                            width: 220px;
+                            Connection {
+                                phase: Phase.off;
+                            }
+                            Connection {
+                                phase: Phase.on;
+                                exit: "Netherlands";
+                                summary: "3 exits · 12 apps";
+                            }
+                            Connection {
+                                phase: Phase.paused;
+                                exit: "Netherlands";
+                                summary: "Resumes at 14:30";
+                                force-hover: true;
+                            }
+                        }
+                    }
+                    Sample {
+                        name: "NavItem · normal, hover, selected";
+                        VerticalLayout {
+                            spacing: 3px;
+                            width: 220px;
+                            NavItem {
+                                label: "Apps";
+                                icon: Icons.apps;
+                                keys: "Ctrl+2";
+                            }
+                            NavItem {
+                                label: "Stats";
+                                icon: Icons.stats;
+                                keys: "Ctrl+3";
+                                force-hover: true;
+                            }
+                            NavItem {
+                                label: "Settings";
+                                icon: Icons.sliders;
+                                keys: "Ctrl+,";
+                                selected: true;
+                            }
+                        }
+                    }
+                    Sample {
+                        name: "Rail item · hover, selected";
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            NavItem {
+                                wide: false;
+                                label: "Apps";
+                                icon: Icons.apps;
+                                keys: "Ctrl+2";
+                                force-hover: true;
+                            }
+                            NavItem {
+                                wide: false;
+                                label: "Routes";
+                                icon: Icons.routes;
+                                keys: "Ctrl+1";
+                                selected: true;
+                            }
+                        }
+                    }
+                    Sample {
+                        name: "Tip · Keys";
+                        HorizontalLayout {
+                            spacing: 12px;
+                            alignment: start;
+                            cross-axis-alignment: center;
+                            TipBubble {
+                                text: "Stats  Ctrl+3";
+                            }
+                            Keys {
+                                keys: "Ctrl+Shift+C";
+                            }
+                            Keys {
+                                keys: "Esc";
+                            }
+                        }
+                    }
+                }
+                Sample {
+                    name: "Menu";
+                    MenuCard {
+                        MenuLabel {
+                            text: "Route";
+                        }
+                        MenuItem {
+                            text: "Netherlands (default)";
+                            RouteMark {
+                                code: "NL";
+                                color: Ink.route(0);
+                            }
+                        }
+                        MenuItem {
+                            text: "Italy";
+                            checked: true;
+                            RouteMark {
+                                code: "IT";
+                                color: Ink.route(2);
+                            }
+                        }
+                        MenuItem {
+                            text: "Direct";
+                            RouteMark {
+                                direct: true;
+                                color: Ink.direct;
+                            }
+                        }
+                        MenuItem {
+                            text: "Use the default route";
+                            icon: Icons.back;
+                            force-hover: true;
+                        }
+                        MenuItem {
+                            text: "Pause 15 minutes";
+                            icon: Icons.pause;
+                            keys: "Ctrl+Shift+P";
+                        }
+                        MenuItem {
+                            text: "Copy program path";
+                            icon: Icons.file;
+                            enabled: false;
+                        }
+                        MenuItem {
+                            text: "Delete route";
+                            icon: Icons.delete-forever;
+                            color: Ink.bad;
+                        }
+                    }
+                }
+            }
+
+            Row {
+                VerticalLayout {
+                    width: 620px;
+                    spacing: 28px;
+                    Sample {
+                        name: "PageHeader";
+                        PageHeader {
+                            overline: "Every app, its own exit";
+                            title: "Routes";
+                            PillButton {
+                                text: "Pause 15 min";
+                                icon: Icons.pause;
+                            }
+                            PillButton {
+                                text: "Disconnect";
+                                kind: PillKind.outline;
+                            }
+                            PillButton {
+                                text: "New route";
+                                icon: Icons.add;
+                                kind: PillKind.primary;
+                            }
+                        }
+                    }
+                    Sample {
+                        name: "PageHeader · overline in colour, sub";
+                        PageHeader {
+                            overline: "Recording off · saved statistics";
+                            overline-color: Ink.bad;
+                            title: "Stats";
+                            sub: "Statistics kept so far are still on this computer.";
+                        }
+                    }
+                    Sample {
+                        name: "PillButton · primary, tonal, outline: normal, hover, disabled";
+                        VerticalLayout {
+                            spacing: 12px;
+                            for kind in [PillKind.primary, PillKind.tonal, PillKind.outline]: HorizontalLayout {
+                                spacing: 12px;
+                                alignment: start;
+                                PillButton {
+                                    text: "New route";
+                                    icon: Icons.add;
+                                    kind: kind;
+                                }
+                                PillButton {
+                                    text: "Hovered";
+                                    kind: kind;
+                                    force-hover: true;
+                                }
+                                PillButton {
+                                    text: "Disabled";
+                                    icon: Icons.add;
+                                    kind: kind;
+                                    enabled: false;
+                                }
+                            }
+                        }
+                    }
+                    Sample {
+                        name: "Keyboard focus";
+                        HorizontalLayout {
+                            alignment: start;
+                            focus-demo := PillButton {
+                                text: "Speed test";
+                                icon: Icons.speed;
+                            }
+                        }
+                    }
+                    Sample {
+                        name: "Secondary · accent, dim, bad, hover, disabled";
+                        HorizontalLayout {
+                            spacing: 4px;
+                            alignment: start;
+                            Secondary {
+                                text: "Close";
+                            }
+                            Secondary {
+                                text: "Cancel";
+                                color: Ink.dim;
+                            }
+                            Secondary {
+                                text: "Delete";
+                                color: Ink.bad;
+                            }
+                            Secondary {
+                                text: "Hovered";
+                                force-hover: true;
+                            }
+                            Secondary {
+                                text: "Disabled";
+                                color: Ink.faint;
+                                enabled: false;
+                            }
+                        }
+                    }
+                    Sample {
+                        name: "IconTap · bare, hover, filled, filled hover, small";
+                        HorizontalLayout {
+                            spacing: 12px;
+                            alignment: start;
+                            cross-axis-alignment: center;
+                            IconTap {
+                                icon: Icons.back;
+                                label: "Back";
+                            }
+                            IconTap {
+                                icon: Icons.close;
+                                label: "Close";
+                                force-hover: true;
+                            }
+                            IconTap {
+                                icon: Icons.back;
+                                label: "Back";
+                                fill: Ink.surface-high;
+                            }
+                            IconTap {
+                                icon: Icons.back;
+                                label: "Back";
+                                fill: Ink.surface-top;
+                                force-hover: true;
+                            }
+                            IconTap {
+                                icon: Icons.edit;
+                                label: "Edit";
+                                size: 40px;
+                                tint: Ink.dim;
+                            }
+                        }
+                    }
+                    Sample {
+                        name: "Toggle · off, on, hover, disabled off, disabled on";
+                        HorizontalLayout {
+                            spacing: 16px;
+                            alignment: start;
+                            Toggle {
+                                label: "Off";
+                            }
+                            Toggle {
+                                on: true;
+                                label: "On";
+                            }
+                            Toggle {
+                                on: true;
+                                label: "Hovered";
+                                force-hover: true;
+                            }
+                            Toggle {
+                                enabled: false;
+                                label: "Disabled";
+                            }
+                            Toggle {
+                                on: true;
+                                enabled: false;
+                                label: "Disabled";
+                            }
+                        }
+                    }
+                }
+                Sample {
+                    name: "Primary · enabled, hover, disabled, busy";
+                    VerticalLayout {
+                        width: 320px;
+                        spacing: 12px;
+                        Primary {
+                            text: "Sign in";
+                        }
+                        Primary {
+                            text: "Sign in";
+                            force-hover: true;
+                        }
+                        Primary {
+                            text: "Sign in";
+                            enabled: false;
+                        }
+                        Primary {
+                            text: "Sign in";
+                            busy: true;
+                        }
+                    }
+                }
+                Sample {
+                    name: "ShortcutsDialog";
+                    Rectangle {
+                        width: 512px;
+                        height: 680px;
+                        background: Ink.surface-high;
+                        ShortcutsDialog { }
+                    }
+                }
+            }
+
+            Heading {
+                text: "GROUPS AND MARKS";
+            }
+            Row {
+                Sample {
+                    name: "SectionLabel · GroupRow: button, switch on, disabled, hover · choices · leading";
+                    VerticalLayout {
+                        width: 720px;
+                        SectionLabel {
+                            text: "At login";
+                        }
+                        GroupRow {
+                            i: 0;
+                            n: 4;
+                            title: "Providers & servers";
+                            sub: "Server list up to date · used by 3 routes";
+                            kind: RowKind.button;
+                            Chevron { }
+                        }
+                        GroupRow {
+                            i: 1;
+                            n: 4;
+                            title: "Connect when it starts";
+                            sub: "The routes of the profile in use";
+                            kind: RowKind.switch;
+                            checked: true;
+                            Toggle {
+                                on: true;
+                                passive: true;
+                            }
+                        }
+                        GroupRow {
+                            i: 2;
+                            n: 4;
+                            title: "Start minimised to the tray";
+                            sub: "Only the tray icon at login; the window opens when you ask";
+                            kind: RowKind.switch;
+                            checked: true;
+                            enabled: false;
+                            Toggle {
+                                on: true;
+                                enabled: false;
+                                passive: true;
+                            }
+                        }
+                        GroupRow {
+                            i: 3;
+                            n: 4;
+                            title: "Start unbraid when I log in";
+                            sub: "In the background, before your apps go online";
+                            kind: RowKind.switch;
+                            force-hover: true;
+                            Toggle {
+                                passive: true;
+                            }
+                        }
+                        SectionLabel {
+                            text: "Theme";
+                            tall: true;
+                            Secondary {
+                                text: "Reset";
+                            }
+                        }
+                        GroupRow {
+                            i: 0;
+                            n: 2;
+                            title: "System";
+                            sub: "Follows your desktop's light or dark setting";
+                            kind: RowKind.choice;
+                            checked: true;
+                        }
+                        GroupRow {
+                            i: 1;
+                            n: 2;
+                            title: "Dark";
+                            sub: "unbraid's own look";
+                            kind: RowKind.choice;
+                        }
+                        Gap {
+                            size: 12px;
+                        }
+                        GroupRow {
+                            label: "Firefox";
+                            AppIcon {
+                                letter: "F";
+                                size: 32px;
+                            }
+                            RowText {
+                                title: "Firefox";
+                                sub: "Plain row, an app icon at its start";
+                            }
+                            Small {
+                                text: "907 MB";
+                                color: Ink.text;
+                            }
+                        }
+                        CaptionRow {
+                            text: "A caption under a group: the tray needs a desktop with a system tray.";
+                        }
+                    }
+                }
+                Sample {
+                    name: "CodeChip · RouteMark · AppIcon · Chevron · Wordmark";
+                    VerticalLayout {
+                        spacing: 14px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            CodeChip {
+                                code: "NL";
+                                color: Ink.route(0);
+                            }
+                            CodeChip {
+                                code: "US";
+                                color: Ink.route(1);
+                            }
+                            CodeChip {
+                                code: "IT";
+                                color: Ink.dim;
+                                filled: false;
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            RouteMark {
+                                code: "NL";
+                                color: Ink.route(0);
+                            }
+                            RouteMark {
+                                code: "US";
+                                color: Ink.route(1);
+                            }
+                            RouteMark {
+                                code: "IT";
+                                color: Ink.route(2);
+                                filled: false;
+                            }
+                            RouteMark {
+                                code: "CH";
+                                color: Ink.route(3);
+                                hops: 2;
+                            }
+                            RouteMark {
+                                code: "··";
+                                color: Ink.route(4);
+                            }
+                            RouteMark {
+                                direct: true;
+                                color: Ink.direct;
+                            }
+                            RouteMark {
+                                direct: true;
+                                color: Ink.direct;
+                                filled: false;
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 10px;
+                            alignment: start;
+                            cross-axis-alignment: center;
+                            AppIcon {
+                                letter: "S";
+                            }
+                            AppIcon {
+                                letter: "B";
+                                size: 32px;
+                            }
+                            Chevron { }
+                            Chevron {
+                                value: "Standard";
+                            }
+                        }
+                        Wordmark {
+                            size: 44px;
+                        }
+                    }
+                }
+            }
+
+            Heading {
+                text: "INPUTS";
+            }
+            Row {
+                Sample {
+                    name: "SearchField · compact with keys, typed, phone";
+                    VerticalLayout {
+                        width: 580px;
+                        spacing: 12px;
+                        SearchField {
+                            placeholder: "Search apps";
+                            compact: true;
+                            keys: "Ctrl+F";
+                        }
+                        SearchField {
+                            placeholder: "Search apps";
+                            compact: true;
+                            value: "fire";
+                        }
+                        SearchField {
+                            placeholder: "Country or city";
+                        }
+                    }
+                }
+                Sample {
+                    name: "PillField · empty, typed, secret";
+                    VerticalLayout {
+                        width: 420px;
+                        spacing: 12px;
+                        PillField {
+                            label: "Access token";
+                        }
+                        PillField {
+                            label: "Username";
+                            value: "pablo";
+                        }
+                        PillField {
+                            label: "Password";
+                            value: "hunter22";
+                            secret: true;
+                        }
+                    }
+                }
+                Sample {
+                    name: "DialogField · resting, typed, secret";
+                    Rectangle {
+                        width: 468px;
+                        background: Ink.surface;
+                        border-radius: 28px;
+                        VerticalLayout {
+                            padding: 24px;
+                            spacing: 20px;
+                            DialogField {
+                                label: "Home subnets";
+                                placeholder: "192.168.1.0/24";
+                            }
+                            DialogField {
+                                label: "Server";
+                                value: "vpn.example.net:51820";
+                            }
+                            DialogField {
+                                label: "Private key";
+                                value: "kL9q3sJ2uF0x";
+                                secret: true;
+                            }
+                        }
+                    }
+                }
+            }
+            Row {
+                Sample {
+                    name: "Prompt";
+                    Rectangle {
+                        width: 560px;
+                        height: 300px;
+                        background: Ink.surface-high;
+                        Prompt {
+                            title: "Open this sign-in link?";
+                            confirm: "Open";
+                            Sub {
+                                text: "Your control server sent a sign-in link to login.example.com, not to its own address. Open it only if you trust that site.";
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+                Sample {
+                    name: "Screen · Back, a search, a group";
+                    Rectangle {
+                        width: 560px;
+                        height: 470px;
+                        Screen {
+                            navigation-icon: Icons.back;
+                            navigation-label: "Back";
+                            overline: "9–15 Nov";
+                            title: "Usage";
+                            sub: "4.1 GB download · 289 MB upload";
+                            SearchField {
+                                placeholder: "Country or city";
+                            }
+                            Gap {
+                                size: 8px;
+                            }
+                            GroupRow {
+                                i: 0;
+                                n: 2;
+                                title: "NordVPN";
+                                sub: "Access token";
+                                kind: RowKind.button;
+                                Chevron { }
+                            }
+                            GroupRow {
+                                i: 1;
+                                n: 2;
+                                title: "Mullvad";
+                                sub: "Account number";
+                                kind: RowKind.button;
+                                Chevron { }
+                            }
+                            Rectangle {
+                                vertical-stretch: 1;
+                            }
+                        }
+                    }
+                }
+                Sample {
+                    name: "Screen · the wordmark as title";
+                    Rectangle {
+                        width: 360px;
+                        height: 200px;
+                        Screen {
+                            overline: "Sign in";
+                            title: "un/braid";
+                            sub: "Choose your VPN";
+                        }
+                    }
+                }
+            }
+
+            Heading {
+                text: "CHARTS";
+            }
+            Row {
+                Sample {
+                    name: "Ring";
+                    Ring {
+                        summary: "Netherlands 55 %, United States 30 %, Italy 15 %";
+                        parts: [
+                            { value: 55, color: Ink.route(0) },
+                            { value: 30, color: Ink.route(1) },
+                            { value: 15, color: Ink.route(2) },
+                        ];
+                    }
+                }
+                Sample {
+                    name: "Ring · one part";
+                    Ring {
+                        summary: "All through Netherlands";
+                        parts: [{ value: 1, color: Ink.route(0) }];
+                    }
+                }
+                Sample {
+                    name: "Meter";
+                    VerticalLayout {
+                        width: 240px;
+                        spacing: 14px;
+                        Meter {
+                            frac: 1;
+                            color: Ink.route(1);
+                        }
+                        Meter {
+                            frac: 0.62;
+                            color: Ink.route(0);
+                        }
+                        Meter {
+                            frac: 0.3;
+                            color: Ink.text.with-alpha(0.75);
+                        }
+                        Meter {
+                            frac: 0.002;
+                            color: Ink.route(2);
+                        }
+                        Meter {
+                            frac: 0;
+                            color: Ink.route(2);
+                        }
+                    }
+                }
+                Sample {
+                    name: "WeekMarks";
+                    WeekMarks {
+                        width: 220px;
+                        hours: [3, 8.5, 12, 0, 5, 0, 0];
+                        labels: ["M", "T", "W", "T", "F", "S", "S"];
+                        today: 2;
+                    }
+                }
+                Sample {
+                    name: "Spark";
+                    Spark {
+                        width: 220px;
+                        color: Ink.text;
+                        values: [36.3, 33.5, 38.1, 35.5, 37.2, 35.6, 35.2, 38.0, 32.9, 35.0, 29.3, 31.2, 32.0, 35.5, 28.4, 27.8,
+                            29.1, 30.2, 24.6, 24.6, 26.5, 19.4, 25.8, 25.3, 20.6, 21.2, 22.3, 28.2, 22.3, 27.0, 30.1, 29.2, 30.9,
+                            31.3, 29.0, 30.6, 35.4, 35.4, 37.0, 37.2, 36.7, 35.7, 37.9, 38.5, 35.3, 37.1, 34.5, 38.2, 35.1, 31.8,
+                            38.2, 30.9, 30.7, 32.1, 27.4, 26.0, 24.3, 27.8, 27.9, 25.1];
+                    }
+                }
+                Sample {
+                    name: "Timeline";
+                    Timeline {
+                        width: 400px;
+                        summary: "Protected 8:00 to 12:30 and 13:10 to 18:00, paused 12:30 to 13:10";
+                        spans: [
+                            { from: 0.333, to: 0.521, paused: false },
+                            { from: 0.521, to: 0.549, paused: true },
+                            { from: 0.549, to: 0.75, paused: false },
+                        ];
+                    }
+                }
+            }
+            Row {
+                Sample {
+                    name: "StackedBars · a week, Tuesday selected";
+                    StackedBars {
+                        width: 640px;
+                        plot-height: 170px;
+                        max-value: 2.5;
+                        scale: "2.5 GB";
+                        summary: "Data per day, by exit";
+                        selected: 1;
+                        labels: ["M", "T", "W", "T", "F", "S", "S"];
+                        columns: [
+                            [{ value: 0.9, color: Ink.route(1) }, { value: 0.45, color: Ink.route(0) }, { value: 0.35, color: Ink.route(2) }],
+                            [{ value: 0.95, color: Ink.route(1) }, { value: 0.4, color: Ink.route(0) }, { value: 0.37, color: Ink.route(2) }],
+                            [{ value: 0.3, color: Ink.route(1) }, { value: 0, color: Ink.route(0) }, { value: 0.2, color: Ink.route(2) }],
+                            [{ value: 1.4, color: Ink.route(1) }],
+                            [],
+                            [{ value: 0.02, color: Ink.route(0) }],
+                            [],
+                        ];
+                    }
+                }
+                Sample {
+                    name: "LiveArea · three exits, the last minute";
+                    LiveArea {
+                        width: 640px;
+                        cap: 50;
+                        unit: "Mbps";
+                        summary: "Download per exit, last minute";
+                        series: [
+                            { color: Ink.route(1), values: [16.9, 17.1, 21.6, 19.1, 23.2, 23.1, 21.9, 25.4, 22.8, 25.6, 23.2, 23.1, 24.8,
+                                26.7, 21.4, 21.0, 22.5, 23.3, 19.6, 17.1, 19.5, 12.3, 16.3, 11.6, 9.7, 8.7, 9.3, 12.2, 8.0, 10.6, 11.2,
+                                10.0, 11.8, 9.6, 10.6, 12.6, 16.9, 16.6, 17.2, 20.3, 20.7, 20.9, 25.1, 25.5, 23.3, 26.0, 26.0, 28.4,
+                                27.4, 24.3, 28.2, 21.9, 23.0, 24.1, 19.1, 20.0, 15.8, 18.5, 17.8, 15.3] },
+                            { color: Ink.route(0), values: [15.5, 13.0, 14.3, 13.4, 12.8, 11.7, 12.5, 12.1, 9.4, 9.4, 6.1, 7.9, 6.9, 7.7,
+                                6.4, 3.8, 3.8, 4.8, 2.1, 3.9, 2.9, 3.1, 3.3, 6.7, 4.8, 6.0, 7.3, 10.1, 7.7, 10.0, 11.2, 13.3, 13.7, 14.4,
+                                12.5, 13.4, 13.4, 15.5, 15.8, 12.3, 12.1, 11.8, 11.2, 11.6, 11.3, 9.2, 7.3, 8.1, 7.1, 7.1, 8.0, 6.3, 5.0,
+                                5.0, 4.9, 2.3, 5.6, 5.2, 5.8, 5.9] },
+                            { color: Ink.route(2), values: [3.9, 3.4, 2.2, 3.0, 1.2, 0.8, 0.8, 0.5, 0.7, 0, 0, 0.2, 0.3, 1.1, 0.6, 3.0,
+                                2.8, 2.1, 2.9, 3.6, 4.1, 4.0, 6.2, 7.0, 6.1, 6.5, 5.7, 5.9, 6.6, 6.4, 7.7, 5.9, 5.4, 7.3, 5.9, 4.6, 5.1,
+                                3.3, 4.0, 4.6, 3.9, 3.0, 1.6, 1.4, 0.7, 1.9, 1.2, 1.7, 0.6, 0.4, 2.0, 2.7, 2.7, 3.0, 3.4, 3.7, 2.9, 4.1,
+                                4.3, 3.9] },
+                        ];
+                    }
+                }
+            }
+            Row {
+                Sample {
+                    name: "Heatmap · 13 weeks";
+                    Heatmap {
+                        width: 640px;
+                        summary: "Hours connected per day, last 13 weeks";
+                        selected: 84;
+                        weekdays: ["M", "T", "W", "T", "F", "S", "S"];
+                        months: [{ week: 0, name: "Aug" }, { week: 5, name: "Sep" }, { week: 9, name: "Oct" }];
+                        hours: [0, 4.7, 10.4, 14.6, 1.0, 5.5, 7.5, 0, 0, 1.4, 0, 0, 6.2, 0, 5.8, 1.9, 2.2, 7.2, 5.9, 6.6, 5.7, 3.2,
+                            3.2, 2.3, 0, 0, 2.5, 1.5, 9.5, 0.3, 4.3, 7.5, 3.4, 5.9, 0.5, 6.2, 8.6, 3.0, 8.7, 5.4, 0, 6.9, 8.5, 3.1,
+                            8.8, 8.5, 7.8, 5.6, 0.9, 8.2, 3.0, 0, 4.6, 0, 6.1, 7.5, 4.0, 6.0, 0, 3.4, 0, 9.7, 7.3, 8.1, 9.6, 0, 7.4,
+                            4.5, 0, 5.8, 1.2, 6.8, 2.7, 0, 10.1, 8.1, 5.4, 14.3, 9.0, 7.2, 0, 6.7, 7.5, 7.7, 4.9, 7.0, 4.5, -1, -1, -1,
+                            -1];
+                    }
+                }
+                Sample {
+                    name: "Dial · 87 Mbps";
+                    Dial {
+                        mbps: 87;
+                        color: Ink.route(1);
+                        label: "87 megabits per second, download";
+                    }
+                }
+                Sample {
+                    name: "Dial · combined, 1.8 Gbps";
+                    Dial {
+                        mbps: 1800;
+                        color: Ink.text;
+                        ticks: Charts.combined-ticks;
+                        label: "1.8 gigabits per second together, download";
+                    }
+                }
+            }
+
+            Heading {
+                text: "MOTION";
+            }
+            Row {
+                Sample {
+                    name: "Rise · four rows, after their reveal";
+                    VerticalLayout {
+                        width: 420px;
+                        for i in 5: Rise {
+                            index: i;
+                            play: true;
+                            GroupRow {
+                                i: i;
+                                n: 5;
+                                title: "Row " + (i + 1);
+                                sub: i > 3 ? "Shows at once" : "Rose " + (i * 60) + " ms after the first";
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

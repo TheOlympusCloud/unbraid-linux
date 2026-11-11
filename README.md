@@ -38,8 +38,10 @@ unbraid comes in two parts:
   app keeps its VPN; the tray (where your desktop has one), the launcher or `unbraid` brings it back.
 - **The engine** (`unbraid-engine.service`) is a system service: sing-box's own Linux daemon, built with the same
   patches as the Android engine. It needs root for the TUN interface and routes, and nothing else. The app reaches it
-  over a local socket; the engine knows which user connects, and asks polkit before one user takes over another's
-  connection.
+  over a local socket; the engine knows which user connects, and asks polkit before anyone first takes charge of it
+  (a user at the computer is let through without a question; system accounts never are) and before one user takes over
+  another's connection. It runs in a systemd sandbox: only the capabilities networking needs, the system read-only, no
+  home folders.
 
 Each TCP and UDP connection is routed by the program that owns it, which the engine looks up for every connection. An app
 is a desktop entry (what your launcher lists), resolved to the programs it starts: the program itself, the folder it is
@@ -124,9 +126,13 @@ Settings, Desktop holds what a desktop app needs:
 - remember the window's size and place;
 - the theme: System follows your desktop's light or dark setting, or choose Dark or Light.
 
-The tray icon shows whether you're connected, and its menu connects, disconnects, pauses, switches profiles and opens
-the window. GNOME has no tray of its own: the AppIndicator extension adds one, and without it the launcher's menu and the
-command line below do its job.
+The tray icon sits in your panel's tray, on desktops that show status icons (KDE Plasma, Xfce, Cinnamon, MATE, LXQt and
+others). It shows whether you're connected, paused or not connected, and its menu connects, disconnects, pauses for 5,
+15 or 30 minutes or an hour (the time left shows while paused, and it resumes by itself), switches profiles and opens
+the dashboard. GNOME has no tray of its own: the AppIndicator extension adds one (Ubuntu has it on by default), and the
+icon appears once it is on. Without a tray, the launcher's menu and the command line below do its job, and closing the
+window quits unbraid unless a connection is running: then the connection stays up, and the launcher brings the window
+back.
 
 The launcher's menu for unbraid can connect, pause and disconnect. The same works from a terminal:
 
@@ -144,13 +150,14 @@ Before you log in, while paused and if unbraid stops, apps use your normal conne
 
 ## Build
 
-You need JDK 21 and Go 1.26 (Go fetches the exact toolchain itself through `GOTOOLCHAIN`). The packages need
-`dpkg-deb`, `fakeroot` and Python 3.
+You need Rust 1.99 or later and Go 1.26 (Go fetches the exact toolchain itself through `GOTOOLCHAIN`). The packages
+need `dpkg-deb`, `fakeroot`, Python 3, and `cargo install --locked cargo-audit@0.23.0 cargo-auditable@0.7.7`: their build
+stops on a crate with an advisory not reviewed in `app/.cargo/audit.toml`, and the app's binary carries its crate list.
 
 ```bash
-engine/build.sh             # builds engine/out/unbraid-engine from sing-box v1.14.4 with the patches in engine/patches/
-./gradlew :app:run          # runs the app from source (with a running engine; see below)
-packaging/build.sh          # writes the .deb and the Arch PKGBUILD to dist/
+engine/build.sh                                   # builds engine/out/unbraid-engine from sing-box v1.14.4 with the patches in engine/patches/
+cargo run --release --manifest-path app/Cargo.toml   # runs the app from source (with a running engine; see below)
+packaging/build.sh                                # writes the .deb and the Arch PKGBUILD to dist/
 ```
 
 `engine/build.sh` keeps its work files in `~/.cache/unbraid-engine`; set `WORK` to use another folder. The patches stop
@@ -161,22 +168,24 @@ installing it, run the engine and point the app at it:
 
 ```bash
 sudo engine/out/unbraid-engine run --working-directory /var/lib/unbraid-engine --socket /run/unbraid-engine/engine.sock
-UNBRAID_ENGINE_BIN=$PWD/engine/out/unbraid-engine ./gradlew :app:run
+UNBRAID_ENGINE_BIN=$PWD/engine/out/unbraid-engine cargo run --release --manifest-path app/Cargo.toml
 ```
 
 ## Test
 
 ```bash
-./gradlew test              # the Android app's unit tests, the Linux ones, and the screens clicked through headless
-engine/build.sh test && ./gradlew engineTest   # the engine's patch tests; the real engine checks every compiled
-                                               # config and routes three programs through their own exits
+(cd app && cargo test)        # the unit tests, every screen and the window's flows drawn headless, and the real engine
+                              #   (once engine/build.sh built it) checking every compiled config and routing three
+                              #   programs through their own exits
+engine/build.sh test          # the engine's patch tests
 DISPLAY=:99 packaging/test.sh   # installs, runs and removes the packages in clean Debian 13, Ubuntu 24.04 and Arch,
-                                #   and checks that Debian 12 refuses the package
+                                #   checks that Debian 12 refuses the package, and keeps the built Arch package in dist/
 ```
 
-`./gradlew test` saves a screenshot of each screen it visits in `app/build/screenshots`, in a 1280 x 800 window, the
-light theme and the smallest window too; the ones in `docs/screenshots` come from there. `packaging/test.sh` needs
-bubblewrap and an X display (an `Xvfb :99` is fine), and no root.
+`cargo test` saves a screenshot of each screen it visits in `app/target/screenshots`, in a 1280 x 800 window, the
+light theme and the smallest window too; the ones in `docs/screenshots` come from there. It needs no display; the
+tray's test runs on a private session bus when `dbus-run-session` is installed. `packaging/test.sh` needs bubblewrap
+and an X display (an `Xvfb :99` is fine), and no root.
 
 ## Differences from the Android app
 
@@ -202,6 +211,14 @@ file only you can read), and are only sent to the service they belong to. The en
 configuration to disk. A Tailscale node's keys stay in the engine's own folder, which only root can read, as with
 Tailscale's own Linux daemon. The list of installed apps is read on your computer so you can assign routes, and it never
 leaves it. The privacy policy, with every service the app talks to, is at [unbraid.app/privacy](https://unbraid.app/privacy).
+
+Routing by program is not a security boundary. A program you run can give itself another program's name, or put
+itself in a folder an app runs from, and so take that app's route, Direct included. Android tells apps apart by their
+user ID, which they can't change.
+
+On a computer with several users, the connection belongs to the user who started it. While it runs, every user's
+programs follow that user's routes, and that user's statistics list their connections too. Another user takes it over
+with an administrator's password.
 
 To report a security problem, see [SECURITY.md](SECURITY.md).
 

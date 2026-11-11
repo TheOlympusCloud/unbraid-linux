@@ -1,0 +1,194 @@
+// The disclosures, each asked right before what it covers: how the VPN works, before the first connection, and the
+// installed apps, before their list is first read. Each is a dialog on the modal layer (make it the window's last
+// child): Agree and continue, or Not now, which Esc and a click beside it are too.
+
+import { Ink, Overline, Title, Sub, Caption } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { Tappable, Secondary, Modal } from "components.slint";
+
+// A line of a sheet: its icon, then what it says.
+component SheetLine inherits HorizontalLayout {
+    in property <string> icon;
+    in property <string> text;
+    spacing: 14px;
+    VerticalLayout {
+        padding-top: 1px;
+        alignment: start;
+        Icon {
+            icon: root.icon;
+            size: 20px;
+            tint: Ink.dim;
+        }
+    }
+    Sub {
+        horizontal-stretch: 1;
+        text: root.text;
+        font-size: 15px;
+        // 22 px lines when it wraps.
+        line-height-factor: (22 - 0.01) / (15 * 1.275);
+        color: Ink.text;
+        wrap: word-wrap;
+    }
+}
+
+// A sheet's action: the accent's pill.
+component SheetAction inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+    height: 48px;
+    border-radius: 24px;
+    background: Ink.accent;
+    horizontal-stretch: 0;
+    forward-focus: tap;
+    HorizontalLayout {
+        padding-left: 22px;
+        padding-right: 22px;
+        Title {
+            text: root.text;
+            color: Ink.on-accent;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        ring: Ink.text;
+        accessible-role: button;
+        accessible-label: root.text;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A sheet in the app's style: its icon on a tinted tile, the overline and title, the lines (its children, 18 px
+// apart), a foot note, then Not now and the action.
+component InfoSheet inherits Modal {
+    in property <string> icon;
+    in property <string> over;
+    in property <string> title;
+    in property <string> action;
+    in property <string> foot;
+    callback agree();
+    callback dismiss();
+    label: root.title;
+    close => {
+        root.dismiss();
+    }
+    Rectangle {
+        min-width: 280px;
+        preferred-width: 640px;
+        max-width: 640px;
+        border-radius: 28px;
+        background: Ink.surface;
+        VerticalLayout {
+            padding: 24px;
+            spacing: 18px;
+            HorizontalLayout {
+                spacing: 14px;
+                cross-axis-alignment: center;
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 16px;
+                    background: Ink.accent-container;
+                    Icon {
+                        x: 12px;
+                        y: 12px;
+                        icon: root.icon;
+                        tint: Ink.accent;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 4px;
+                    alignment: center;
+                    Overline {
+                        text: root.over.to-uppercase();
+                    }
+                    Title {
+                        text: root.title;
+                        font-size: 22px;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+            @children
+            if root.foot != "": Caption {
+                text: root.foot;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                cross-axis-alignment: center;
+                Secondary {
+                    text: "Not now";
+                    color: Ink.text;
+                    clicked => {
+                        root.dismiss();
+                    }
+                }
+                SheetAction {
+                    text: root.action;
+                    clicked => {
+                        root.agree();
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The VPN half of the disclosure, before the first connection.
+export component VpnDisclosure inherits InfoSheet {
+    icon: Icons.tunnel;
+    over: "Before you connect";
+    title: "How the VPN works";
+    action: "Agree and continue";
+    foot: "The tunnel itself runs in the unbraid-engine system service.";
+    SheetLine {
+        icon: Icons.routes;
+        text: "unbraid creates a VPN on this computer to route each app through the exit you chose.";
+    }
+    SheetLine {
+        icon: Icons.dns;
+        text: "Traffic goes to the exits you chose: VPN providers, your own servers or Tailscale.";
+    }
+    SheetLine {
+        icon: Icons.direct;
+        text: "Apps set to Direct and your local network use your normal connection.";
+    }
+    SheetLine {
+        icon: Icons.block;
+        text: "unbraid has no servers and collects nothing.";
+    }
+    SheetLine {
+        icon: Icons.shield;
+        text: "Apps use your normal connection whenever unbraid is off: before you log in, while paused and if it stops.";
+    }
+}
+
+// The installed-apps half, when the list is first asked for.
+export component AppsDisclosure inherits InfoSheet {
+    icon: Icons.apps;
+    over: "Before your apps appear";
+    title: "Your installed apps";
+    action: "Agree and continue";
+    foot: "Not now keeps the list closed; Apps asks again.";
+    SheetLine {
+        icon: Icons.apps;
+        text: "unbraid reads the list of installed apps, only on this computer.";
+    }
+    SheetLine {
+        icon: Icons.routes;
+        text: "It needs the list to let you give each app its own exit.";
+    }
+    SheetLine {
+        icon: Icons.phone;
+        text: "The list never leaves this computer and is not uploaded.";
+    }
+}

@@ -1,0 +1,7 @@
+{
+    "nl": "nord|Location(provider=nord, countryId=153, countryCode=NL, country=Netherlands, cityId=null, city=null, region=null, group=null, protocol=null, pinned=null)|",
+    "se": "mullvad|Location(provider=mullvad, countryId=null, countryCode=SE, country=Sweden, cityId=null, city=null, region=se-got, group=null, protocol=null, pinned=null)|",
+    "ch": "airvpn|Location(provider=airvpn, countryId=null, countryCode=CH, country=Switzerland, cityId=null, city=null, region=null, group=null, protocol=null, pinned=null)|",
+    "nlo": "nord|Location(provider=nord, countryId=153, countryCode=NL, country=Netherlands, cityId=null, city=null, region=null, group=null, protocol=openvpn_udp, pinned=null)|",
+    "pin": "mullvad|Location(provider=mullvad, countryId=null, countryCode=SE, country=null, cityId=null, city=null, region=null, group=null, protocol=null, pinned=null)|185.2.2.2"
+}
