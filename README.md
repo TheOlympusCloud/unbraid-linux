@@ -126,9 +126,13 @@ Settings, Desktop holds what a desktop app needs:
 - remember the window's size and place;
 - the theme: System follows your desktop's light or dark setting, or choose Dark or Light.
 
-The tray icon shows whether you're connected, and its menu connects, disconnects, pauses, switches profiles and opens
-the window. GNOME has no tray of its own: the AppIndicator extension adds one, and without it the launcher's menu and the
-command line below do its job.
+The tray icon sits in your panel's tray, on desktops that show status icons (KDE Plasma, Xfce, Cinnamon, MATE, LXQt and
+others). It shows whether you're connected, paused or not connected, and its menu connects, disconnects, pauses for 5,
+15 or 30 minutes or an hour (the time left shows while paused, and it resumes by itself), switches profiles and opens
+the dashboard. GNOME has no tray of its own: the AppIndicator extension adds one (Ubuntu has it on by default), and the
+icon appears once it is on. Without a tray, the launcher's menu and the command line below do its job, and closing the
+window quits unbraid unless a connection is running: then the connection stays up, and the launcher brings the window
+back.
 
 The launcher's menu for unbraid can connect, pause and disconnect. The same works from a terminal:
 

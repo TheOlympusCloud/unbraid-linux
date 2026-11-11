@@ -34,6 +34,7 @@ pub mod speed_test;
 pub mod sqlite;
 pub mod stats;
 pub mod store;
+pub mod tray;
 pub mod ts_login;
 pub mod ui;
 pub mod vpn;
