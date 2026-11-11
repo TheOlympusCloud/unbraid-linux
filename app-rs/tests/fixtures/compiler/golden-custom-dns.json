@@ -1,0 +1,518 @@
+{
+    "log": {
+        "level": "warn",
+        "timestamp": false
+    },
+    "dns": {
+        "servers": [
+            {
+                "type": "fakeip",
+                "tag": "fake",
+                "inet4_range": "198.18.0.0/18"
+            },
+            {
+                "type": "local",
+                "tag": "local"
+            },
+            {
+                "type": "udp",
+                "tag": "boot-r-nl",
+                "server": "103.86.96.100",
+                "detour": "r-nl"
+            },
+            {
+                "type": "tls",
+                "tag": "dns-r-nl",
+                "server": "dns.example.org",
+                "server_port": 853,
+                "tls": {
+                    "enabled": true,
+                    "server_name": "dns.example.org"
+                },
+                "domain_resolver": "boot-r-nl",
+                "detour": "r-nl"
+            },
+            {
+                "type": "openvpn",
+                "tag": "boot-r-im",
+                "endpoint": "r-im",
+                "accept_default_resolvers": true,
+                "fallback_server": "9.9.9.9"
+            },
+            {
+                "type": "tls",
+                "tag": "dns-r-im",
+                "server": "dns.example.org",
+                "server_port": 853,
+                "tls": {
+                    "enabled": true,
+                    "server_name": "dns.example.org"
+                },
+                "domain_resolver": "boot-r-im",
+                "detour": "r-im"
+            },
+            {
+                "type": "tls",
+                "tag": "dns-filter",
+                "server": "dns.example.org",
+                "server_port": 853,
+                "tls": {
+                    "enabled": true,
+                    "server_name": "dns.example.org"
+                },
+                "domain_resolver": "local"
+            }
+        ],
+        "rules": [
+            {
+                "domain_suffix": [
+                    "local",
+                    "lan",
+                    "home.arpa",
+                    "fritz.box"
+                ],
+                "server": "local"
+            },
+            {
+                "query_type": [
+                    "A",
+                    "AAAA"
+                ],
+                "server": "fake",
+                "rewrite_ttl": 1
+            },
+            {
+                "type": "logical",
+                "mode": "or",
+                "rules": [
+                    {
+                        "process_path_regex": [
+                            "^/opt/spotify/"
+                        ]
+                    },
+                    {
+                        "process_name": [
+                            "spotify"
+                        ]
+                    }
+                ],
+                "server": "dns-filter"
+            },
+            {
+                "type": "logical",
+                "mode": "or",
+                "rules": [
+                    {
+                        "process_path_regex": [
+                            "^/opt/thunderbird/"
+                        ]
+                    },
+                    {
+                        "process_name": [
+                            "thunderbird"
+                        ]
+                    }
+                ],
+                "server": "dns-r-im"
+            },
+            {
+                "type": "logical",
+                "mode": "or",
+                "rules": [
+                    {
+                        "process_path_regex": [
+                            "^/opt/firefox/"
+                        ]
+                    },
+                    {
+                        "process_name": [
+                            "firefox"
+                        ]
+                    }
+                ],
+                "server": "dns-r-nl"
+            }
+        ],
+        "final": "dns-filter",
+        "strategy": "ipv4_only",
+        "optimistic": {
+            "enabled": true,
+            "timeout": "1h"
+        },
+        "timeout": "5s",
+        "cache_capacity": 4096
+    },
+    "inbounds": [
+        {
+            "type": "tun",
+            "tag": "tun",
+            "address": [
+                "172.19.0.1/30"
+            ],
+            "mtu": 9000,
+            "auto_route": true,
+            "strict_route": true,
+            "stack": "gvisor",
+            "udp_timeout": "30m"
+        },
+        {
+            "type": "mixed",
+            "tag": "probe",
+            "listen": "127.0.0.1",
+            "listen_port": 40000,
+            "users": [
+                {
+                    "username": "r-nl",
+                    "password": "golden-pw"
+                },
+                {
+                    "username": "r-im",
+                    "password": "golden-pw"
+                }
+            ]
+        }
+    ],
+    "endpoints": [
+        {
+            "type": "wireguard",
+            "tag": "r-nl",
+            "mtu": 1280,
+            "address": [
+                "10.5.0.2/32"
+            ],
+            "private_key": "aGVsbG8taGVsbG8taGVsbG8taGVsbG8taGVsbG8tMTI=",
+            "peers": [
+                {
+                    "address": "185.1.1.1",
+                    "port": 51820,
+                    "public_key": "5p4RkybdRU5uaDi90eu4KZPTFif0lKCg4Qp6t1c4F30=",
+                    "allowed_ips": [
+                        "0.0.0.0/0"
+                    ],
+                    "persistent_keepalive_interval": 25
+                }
+            ]
+        },
+        {
+            "type": "openvpn-client",
+            "tag": "r-im",
+            "server": "usa-new-york-1-ca-version-2.expressnetw.com",
+            "server_port": 1195,
+            "network": "udp",
+            "username": "user",
+            "password": "pass",
+            "tls": {
+                "server_name": "Server",
+                "server_name_type": "name-prefix",
+                "certificate": "-----BEGIN CERTIFICATE-----\nMIIDETCCAfmgAwIBAgIUWpsBcGDsE2RdKoKr0jySTkaTPHUwDQYJKoZIhvcNAQEL\nBQAwGDEWMBQGA1UEAwwNRHVtbXkgVGVzdCBDQTAeFw0yNjEwMTgwMDI5NDdaFw0z\nNjEwMTUwMDI5NDdaMBgxFjAUBgNVBAMMDUR1bW15IFRlc3QgQ0EwggEiMA0GCSqG\nSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCLMQMxyWhrLmFyER3fl1r+LMzWKbnkWPWw\ncjukkyhSY2q+BHpLlOkywOha7RhlkgaDaqiynKE42nE4o0tX9K0hCagLr4PC0+LC\nE3ul9Y8Wr94TqXWKjquNQsiEJMSIFzW6KTA4fBVGEg4IrGRKzpPzP52F1xtdX1gN\nFkNw7grm9+mHO3El6W0dN7v/rpIbPuhYEbC3ZGPAqqNg6bVYJ+lyV9RPaXqLvvs/\nhielyObsnfLtkxhtCFKUAXqfSs55tRwwGSDKcl/BBS25W7mJ4vUOw8ImbU+ZEh0B\nMQQGwzM0y5fHn9WEgMeYCSH4OXgxenIuVEe6cHtqNEckthObVtKNAgMBAAGjUzBR\nMB0GA1UdDgQWBBRdaJ/6ddIYOuFYCO7g7I8UEhplnTAfBgNVHSMEGDAWgBRdaJ/6\nddIYOuFYCO7g7I8UEhplnTAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUA\nA4IBAQAWR/mQLwqMW6L1sWIPxdL6Z4o6ChWWq99c2cstYbtq9RWQfIpgZCMEhXty\nupqUluowwc52Dtv3oGggQZKDUinHeTvIgntDJ1Ed2uZnEKQhb6ayS9vhBFoIfPfs\ni5HK1vg7iUZWUyw56BpNP01JbEnMsGZ9A0Ia1sWMJZNAvyHTFz71+lhMdkLxxvyQ\nZUt92UvEaLFJRumv4T2FJopLP/8eF2fHxiESF3nOGa/Z8uuDTrfUwCOZ/XzGDjxq\nW+zeIFrmUloNpGO4F0XPAX8vwCvnDnyUBA+95hJYjsXVbKbZ4b9ndE2TiqyM5/QE\nX+ttmjqx6BPJSrr3Tj1Hx8sqvPWx\n-----END CERTIFICATE-----",
+                "ns_certificate_type": "server",
+                "control_wrap": {
+                    "type": "tls_auth",
+                    "key": "-----BEGIN OpenVPN Static key V1-----\n00000000000000000000000000000000\n01010101010101010101010101010101\n02020202020202020202020202020202\n03030303030303030303030303030303\n04040404040404040404040404040404\n05050505050505050505050505050505\n06060606060606060606060606060606\n07070707070707070707070707070707\n08080808080808080808080808080808\n09090909090909090909090909090909\n0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a\n0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b\n0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c\n0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d\n0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e\n0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f\n-----END OpenVPN Static key V1-----",
+                    "direction": "client"
+                }
+            },
+            "auth": "SHA512",
+            "compression_lzo": "no",
+            "mss_fix": 1200,
+            "fragment": 1300,
+            "mtu": 1500,
+            "pull_filters": [
+                {
+                    "action": "ignore",
+                    "text": "route "
+                },
+                {
+                    "action": "ignore",
+                    "text": "route-ipv6 "
+                },
+                {
+                    "action": "ignore",
+                    "text": "route-metric"
+                },
+                {
+                    "action": "ignore",
+                    "text": "redirect-gateway"
+                },
+                {
+                    "action": "ignore",
+                    "text": "redirect-private"
+                },
+                {
+                    "action": "ignore",
+                    "text": "block-ipv6"
+                },
+                {
+                    "action": "ignore",
+                    "text": "block-outside-dns"
+                }
+            ]
+        }
+    ],
+    "outbounds": [
+        {
+            "type": "direct",
+            "tag": "direct"
+        }
+    ],
+    "route": {
+        "rules": [
+            {
+                "inbound": [
+                    "r-nl",
+                    "r-im"
+                ],
+                "action": "reject"
+            },
+            {
+                "inbound": [
+                    "tun"
+                ],
+                "protocol": "dns",
+                "action": "hijack-dns"
+            },
+            {
+                "inbound": [
+                    "tun"
+                ],
+                "port": 53,
+                "network": "udp",
+                "action": "hijack-dns"
+            },
+            {
+                "ip_cidr": [
+                    "198.18.64.0/18",
+                    "198.18.128.0/18",
+                    "198.18.192.0/18",
+                    "198.19.0.0/18",
+                    "198.19.64.0/18",
+                    "198.19.128.0/18",
+                    "198.19.192.0/18"
+                ],
+                "action": "reject",
+                "no_drop": true
+            },
+            {
+                "inbound": [
+                    "tun"
+                ],
+                "process_path": [
+                    "/usr/lib/unbraid/bin/unbraid"
+                ],
+                "action": "resolve",
+                "server": "local"
+            },
+            {
+                "inbound": [
+                    "tun"
+                ],
+                "process_path": [
+                    "/usr/lib/unbraid/bin/unbraid"
+                ],
+                "outbound": "direct"
+            },
+            {
+                "inbound": "probe",
+                "auth_user": [
+                    "r-nl"
+                ],
+                "action": "resolve",
+                "server": "dns-r-nl"
+            },
+            {
+                "inbound": "probe",
+                "auth_user": [
+                    "r-nl"
+                ],
+                "outbound": "r-nl"
+            },
+            {
+                "inbound": "probe",
+                "auth_user": [
+                    "r-im"
+                ],
+                "action": "resolve",
+                "server": "dns-r-im"
+            },
+            {
+                "inbound": "probe",
+                "auth_user": [
+                    "r-im"
+                ],
+                "outbound": "r-im"
+            },
+            {
+                "ip_cidr": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "169.254.0.0/16",
+                    "224.0.0.0/4",
+                    "255.255.255.255/32"
+                ],
+                "outbound": "direct"
+            },
+            {
+                "type": "logical",
+                "mode": "or",
+                "rules": [
+                    {
+                        "process_path_regex": [
+                            "^/opt/spotify/"
+                        ]
+                    },
+                    {
+                        "process_name": [
+                            "spotify"
+                        ]
+                    }
+                ],
+                "action": "resolve",
+                "server": "dns-filter"
+            },
+            {
+                "ip_cidr": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "169.254.0.0/16",
+                    "224.0.0.0/4",
+                    "255.255.255.255/32"
+                ],
+                "outbound": "direct"
+            },
+            {
+                "type": "logical",
+                "mode": "or",
+                "rules": [
+                    {
+                        "process_path_regex": [
+                            "^/opt/spotify/"
+                        ]
+                    },
+                    {
+                        "process_name": [
+                            "spotify"
+                        ]
+                    }
+                ],
+                "outbound": "direct"
+            },
+            {
+                "type": "logical",
+                "mode": "or",
+                "rules": [
+                    {
+                        "process_path_regex": [
+                            "^/opt/thunderbird/"
+                        ]
+                    },
+                    {
+                        "process_name": [
+                            "thunderbird"
+                        ]
+                    }
+                ],
+                "action": "resolve",
+                "server": "dns-r-im"
+            },
+            {
+                "ip_cidr": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "169.254.0.0/16",
+                    "224.0.0.0/4",
+                    "255.255.255.255/32"
+                ],
+                "outbound": "direct"
+            },
+            {
+                "type": "logical",
+                "mode": "or",
+                "rules": [
+                    {
+                        "process_path_regex": [
+                            "^/opt/thunderbird/"
+                        ]
+                    },
+                    {
+                        "process_name": [
+                            "thunderbird"
+                        ]
+                    }
+                ],
+                "outbound": "r-im"
+            },
+            {
+                "type": "logical",
+                "mode": "or",
+                "rules": [
+                    {
+                        "process_path_regex": [
+                            "^/opt/firefox/"
+                        ]
+                    },
+                    {
+                        "process_name": [
+                            "firefox"
+                        ]
+                    }
+                ],
+                "action": "resolve",
+                "server": "dns-r-nl"
+            },
+            {
+                "ip_cidr": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "169.254.0.0/16",
+                    "224.0.0.0/4",
+                    "255.255.255.255/32"
+                ],
+                "outbound": "direct"
+            },
+            {
+                "type": "logical",
+                "mode": "or",
+                "rules": [
+                    {
+                        "process_path_regex": [
+                            "^/opt/firefox/"
+                        ]
+                    },
+                    {
+                        "process_name": [
+                            "firefox"
+                        ]
+                    }
+                ],
+                "outbound": "r-nl"
+            },
+            {
+                "action": "resolve",
+                "server": "dns-filter"
+            },
+            {
+                "ip_cidr": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "169.254.0.0/16",
+                    "224.0.0.0/4",
+                    "255.255.255.255/32"
+                ],
+                "outbound": "direct"
+            },
+            {
+                "network": "icmp",
+                "action": "reject"
+            }
+        ],
+        "final": "direct",
+        "auto_detect_interface": true,
+        "default_domain_resolver": "local",
+        "find_process": true
+    }
+}
