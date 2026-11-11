@@ -161,9 +161,9 @@ packaging/build.sh                                # writes the .deb and the Arch
 ```
 
 `engine/build.sh` keeps its work files in `~/.cache/unbraid-engine`; set `WORK` to use another folder. The patches stop
-the engine from writing the running configuration, which holds private keys, to disk, refuse files sent through
-Taildrop, give an OpenVPN tunnel a resolver inside it when its server pushes none, let the app's connection checks look
-up their servers through the tunnel being checked, and name the daemon `unbraid-engine`. To try the app without
+the engine from writing the running configuration, which holds private keys, to disk, give an OpenVPN tunnel a resolver
+inside it when its server pushes none, let the app's connection checks look up their servers through the tunnel being
+checked, and name the daemon `unbraid-engine`. To try the app without
 installing it, run the engine and point the app at it:
 
 ```bash
