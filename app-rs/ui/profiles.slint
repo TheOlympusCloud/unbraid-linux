@@ -1,0 +1,857 @@
+// Profiles: saved setups to switch between, on Routes. The Profiles page renames, deletes and reorders them; a sheet
+// names a new one or edits one; under Routes' header a bar offers Use for one shown but not in use, and an empty one's
+// default route reads Not set.
+
+import { Ink, Type, Overline, Code, Title, Body, Sub, Caption } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { Motion } from "motion.slint";
+import { Metrics, Tappable, IconTap, RouteMark, Screen, Primary, Secondary } from "components.slint";
+import { Prompt, CaptionRow } from "inputs.slint";
+import { BottomSheet, CardTap } from "limit_sheet.slint";
+
+// A saved profile on the Profiles page.
+export struct ProfileRow {
+    name: string,
+    in-use: bool,
+    summary: string,
+    code: string,
+    hue: int,
+    // Its default route is Direct, or not set yet.
+    direct: bool,
+}
+
+// The profile sheet as it stands, for what is typed.
+export struct ProfileSheetView {
+    title: string,
+    sub: string,
+    // A new profile's first choice: "Copy of Work", or "Current setup" with none in use.
+    copy: string,
+    // The name as typed, cut to the most characters a name has.
+    name: string,
+    // The name Save saves; "" while it can't be saved.
+    valid: string,
+    taken: bool,
+    hint: string,
+    count: string,
+    keeps-default: string,
+    keeps-exceptions: [string],
+    save: string,
+}
+
+// A profile shown but not in use; an empty name shows no bar.
+export struct UseBarView {
+    name: string,
+    title: string,
+    sub: string,
+    back: string,
+    ready: bool,
+}
+
+export global ProfilesPage {
+    in property <[ProfileRow]> profiles;
+    // "2 of 20 · drag to reorder".
+    in property <string> sub;
+    // As many profiles as there can be, and the note that says so.
+    in property <bool> at-limit;
+    in property <string> full-note: "20 profiles is the most. Delete one to add another.";
+    in property <ProfileSheetView> sheet;
+    // Where Routes stands with profiles; the sidebar's Manage reaches it too (manage()).
+    in-out property <bool> managing;
+    in-out property <bool> sheet-open;
+    // The profile the sheet edits; "" for a new one.
+    in-out property <string> editing;
+    // A new profile starts empty, rather than as a copy.
+    in-out property <bool> empty;
+    // A new profile was refused at the limit: Routes says so.
+    in-out property <bool> full;
+    // The sheet changed: what it shows (sheet) for this profile, start and name.
+    callback sheet-changed(editing: string, empty: bool, name: string);
+    callback new-profile(name: string, empty: bool);
+    callback rename-profile(old: string, name: string);
+    callback forget-profile(name: string);
+    // Moves profile [name] [by] places (negative: up).
+    callback move-profile(name: string, by: int);
+
+    // A new profile, or the note at the limit.
+    public function add-profile(empty: bool) {
+        if self.at-limit {
+            self.full = true;
+        } else {
+            self.full = false;
+            self.empty = empty;
+            self.editing = "";
+            self.sheet-open = true;
+        }
+    }
+
+    // The sidebar's Manage, or Save… with no profile yet.
+    public function manage() {
+        if self.profiles.length == 0 {
+            self.add-profile(false);
+        } else {
+            self.managing = true;
+        }
+    }
+}
+
+// The label face of the profile controls: the title face at the sub size.
+component Label inherits Title {
+    font-size: 14px;
+}
+
+// [glyph] with a small + badge, for adding a profile.
+export component AddMark inherits Rectangle {
+    in property <string> glyph: Icons.layers;
+    in property <color> ink;
+    in property <color> badge;
+    in property <color> plus;
+    in property <color> ring;
+    width: 24px;
+    height: 24px;
+    Icon {
+        icon: root.glyph;
+        tint: root.ink;
+    }
+    Rectangle {
+        x: 24px - 15px + 5px;
+        y: 24px - 15px + 4px;
+        width: 15px;
+        height: 15px;
+        border-radius: 7.5px;
+        background: root.ring;
+        Rectangle {
+            width: 11px;
+            height: 11px;
+            border-radius: 5.5px;
+            background: root.badge;
+            Icon {
+                icon: Icons.add;
+                size: 10px;
+                tint: root.plus;
+            }
+        }
+    }
+}
+
+// Under Routes' header while a profile is shown but not in use: what is in use, Back to it, and Use, the one thing that
+// switches (every app reconnects). An empty profile can't be used until it has a default route.
+export component UseBar inherits HorizontalLayout {
+    in property <UseBarView> bar;
+    callback back();
+    callback use();
+    padding-left: Metrics.gutter;
+    padding-right: Metrics.gutter;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    Rectangle {
+        border-radius: 20px;
+        background: Ink.surface;
+        border-width: 1px;
+        border-color: Ink.line;
+        accessible-role: text;
+        accessible-label: root.bar.title + ". " + root.bar.sub;
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 6px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            spacing: 4px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                padding-top: 4px;
+                padding-bottom: 4px;
+                spacing: 2px;
+                alignment: center;
+                Label {
+                    text: root.bar.title;
+                    wrap: word-wrap;
+                    accessible-role: none;
+                }
+                Caption {
+                    text: root.bar.sub;
+                    wrap: word-wrap;
+                    accessible-role: none;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Secondary {
+                    text: root.bar.back;
+                    color: Ink.dim;
+                    clicked => {
+                        root.back();
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    min-height: 40px;
+                    border-radius: 20px;
+                    background: root.bar.ready ? Ink.accent : Ink.surface-high;
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        Label {
+                            text: "Use";
+                            color: root.bar.ready ? Ink.on-accent : Ink.faint;
+                            vertical-alignment: center;
+                            accessible-role: none;
+                        }
+                    }
+                    Tappable {
+                        border-radius: 20px;
+                        enabled: root.bar.ready;
+                        ring: Ink.text;
+                        accessible-role: button;
+                        accessible-label: "Use " + root.bar.name;
+                        accessible-enabled: root.bar.ready;
+                        accessible-action-default => {
+                            root.use();
+                        }
+                        clicked => {
+                            root.use();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The default route of an empty profile: not chosen yet, so it can't be used. Choose opens the picker.
+export component NotSet inherits HorizontalLayout {
+    callback choose();
+    padding-left: Metrics.gutter;
+    padding-right: Metrics.gutter;
+    Rectangle {
+        min-height: 96px;
+        border-radius: 28px;
+        border-width: 1.5px;
+        border-color: Ink.line;
+        HorizontalLayout {
+            padding-left: 20px;
+            padding-right: 20px;
+            padding-top: 18px;
+            padding-bottom: 18px;
+            spacing: 12px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 6px;
+                alignment: center;
+                Overline {
+                    text: "ALL OTHER APPS";
+                    accessible-role: none;
+                }
+                Title {
+                    text: "Not set";
+                    font-size: 24.2px;
+                    accessible-role: none;
+                }
+                Caption {
+                    text: "Choose where apps go by default";
+                    accessible-role: none;
+                }
+            }
+            Label {
+                text: "Choose";
+                color: Ink.accent;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+        }
+        Tappable {
+            border-radius: 28px;
+            accessible-role: button;
+            accessible-label: "Default route not set. Choose where apps go by default";
+            accessible-action-default => {
+                root.choose();
+            }
+            clicked => {
+                root.choose();
+            }
+        }
+    }
+}
+
+// One profile on the Profiles page: the handle to drag it by, its default route's mark, its name (and In use), its
+// summary, and the pencil for its sheet.
+component ProfileItem {
+    in property <ProfileRow> profile;
+    in property <int> i;
+    in property <int> n;
+    callback edit();
+    // Profile [name] moved [rows] rows by its handle.
+    callback dragged(name: string, rows: int);
+    private property <length> top-r: self.i == 0 ? 22px : 6px;
+    private property <length> bottom-r: self.i == self.n - 1 ? 22px : 6px;
+    // The profile being dragged, and the rows it has moved: the row keeps the press while the list reorders under it.
+    private property <string> holding;
+    private property <int> moved;
+    min-height: max(64px + 2px, body.min-height);
+    preferred-height: max(64px + 2px, body.preferred-height);
+    Rectangle {
+        x: Metrics.gutter;
+        y: 1px;
+        width: root.width - 2 * Metrics.gutter;
+        height: root.height - 2px;
+        background: Ink.surface;
+        border-top-left-radius: root.top-r;
+        border-top-right-radius: root.top-r;
+        border-bottom-left-radius: root.bottom-r;
+        border-bottom-right-radius: root.bottom-r;
+    }
+    body := HorizontalLayout {
+        padding-left: Metrics.gutter;
+        padding-right: Metrics.gutter + 4px;
+        padding-top: 1px + 8px;
+        padding-bottom: 1px + 8px;
+        // The handle: dragging past half a row moves the profile one place; arrow keys and screen readers move it too.
+        handle := Rectangle {
+            width: 44px;
+            height: 48px;
+            accessible-role: button;
+            accessible-label: "Move " + root.profile.name;
+            accessible-description: "Drag, or press Up or Down";
+            accessible-action-increment => {
+                root.dragged(root.profile.name, 1);
+            }
+            accessible-action-decrement => {
+                root.dragged(root.profile.name, -1);
+            }
+            Icon {
+                icon: Icons.drag;
+                size: 20px;
+                tint: Ink.dim;
+            }
+            drag := TouchArea {
+                pointer-event(event) => {
+                    if event.kind == PointerEventKind.down {
+                        root.holding = root.profile.name;
+                        root.moved = 0;
+                        keys.focus();
+                    }
+                }
+                moved => {
+                    // Rounded to the nearest row: past half a row is a place.
+                    if Math.round((self.mouse-y - self.pressed-y) / root.height) != root.moved {
+                        root.dragged(root.holding, Math.round((self.mouse-y - self.pressed-y) / root.height) - root.moved);
+                        root.moved = Math.round((self.mouse-y - self.pressed-y) / root.height);
+                    }
+                }
+            }
+            keys := FocusScope {
+                x: 0;
+                width: 0px;
+                key-pressed(event) => {
+                    if event.text == Key.UpArrow {
+                        root.dragged(root.profile.name, -1);
+                        return accept;
+                    }
+                    if event.text == Key.DownArrow {
+                        root.dragged(root.profile.name, 1);
+                        return accept;
+                    }
+                    return reject;
+                }
+            }
+            if keys.has-focus: Rectangle {
+                border-radius: 12px;
+                border-width: 2px;
+                border-color: Ink.accent;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            RouteMark {
+                code: root.profile.code;
+                color: root.profile.direct ? Ink.direct : Ink.route(root.profile.hue);
+                direct: root.profile.direct;
+                accessible-role: none;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            padding-left: 12px;
+            spacing: 3px;
+            alignment: center;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Title {
+                    text: root.profile.name;
+                    overflow: elide;
+                }
+                if root.profile.in-use: VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        height: 24px;
+                        border-radius: 12px;
+                        background: Ink.accent-container;
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 8px;
+                            spacing: 2px;
+                            VerticalLayout {
+                                alignment: center;
+                                Icon {
+                                    icon: Icons.check;
+                                    size: 14px;
+                                    tint: Ink.accent;
+                                }
+                            }
+                            Caption {
+                                text: "In use";
+                                color: Ink.accent;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+            Caption {
+                text: root.profile.summary;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            IconTap {
+                icon: Icons.edit;
+                label: "Edit " + root.profile.name;
+                tint: Ink.dim;
+                clicked => {
+                    root.edit();
+                }
+            }
+        }
+    }
+}
+
+// Manage profiles: rename or delete behind the pencil, drag the handle to reorder. Esc or Back returns to Routes.
+export component ProfilesScreen inherits FocusScope {
+    // Held past half a second, Add profile adds an empty one.
+    private property <bool> held;
+    init => {
+        self.focus();
+    }
+    key-pressed(event) => {
+        if event.text == Key.Escape {
+            ProfilesPage.managing = false;
+            return accept;
+        }
+        return reject;
+    }
+    Screen {
+        overline: "Routes";
+        title: "Profiles";
+        sub: ProfilesPage.sub;
+        navigation-icon: Icons.back;
+        navigation-label: "Back";
+        navigate => {
+            ProfilesPage.managing = false;
+        }
+        list := Flickable {
+            vertical-stretch: 1;
+            mouse-drag-pan-enabled: false;
+            content-height: column.preferred-height;
+            column := VerticalLayout {
+                width: list.width;
+                padding-bottom: 24px;
+                alignment: start;
+                for p[i] in ProfilesPage.profiles: ProfileItem {
+                    profile: p;
+                    i: i;
+                    n: ProfilesPage.profiles.length;
+                    edit => {
+                        ProfilesPage.editing = p.name;
+                        ProfilesPage.sheet-open = true;
+                    }
+                    dragged(name, rows) => {
+                        ProfilesPage.move-profile(name, rows);
+                    }
+                }
+                CaptionRow {
+                    text: "The tray's menu switches between them. Removing a route moves its apps to each profile's default route.";
+                }
+            }
+        }
+        // At the limit the button greys and the reason sits beside it.
+        HorizontalLayout {
+            padding: Metrics.gutter;
+            spacing: 12px;
+            alignment: end;
+            if ProfilesPage.at-limit: Caption {
+                horizontal-stretch: 1;
+                text: ProfilesPage.full-note;
+                wrap: word-wrap;
+                vertical-alignment: center;
+            }
+            Rectangle {
+                height: 56px;
+                border-radius: 28px;
+                background: ProfilesPage.at-limit ? Ink.surface-high : Ink.accent;
+                HorizontalLayout {
+                    padding-left: 18px;
+                    padding-right: 22px;
+                    spacing: 12px;
+                    VerticalLayout {
+                        alignment: center;
+                        AddMark {
+                            ink: ProfilesPage.at-limit ? Ink.faint : Ink.on-accent;
+                            badge: ProfilesPage.at-limit ? Ink.surface-high : Ink.on-accent;
+                            plus: ProfilesPage.at-limit ? Ink.faint : Ink.accent;
+                            ring: ProfilesPage.at-limit ? Ink.surface-high : Ink.accent;
+                        }
+                    }
+                    Title {
+                        text: "Add profile";
+                        color: ProfilesPage.at-limit ? Ink.faint : Ink.on-accent;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                }
+                add := Tappable {
+                    border-radius: 28px;
+                    ring: Ink.text;
+                    accessible-role: button;
+                    accessible-label: "Add profile";
+                    accessible-description: "Hold it for an empty one";
+                    accessible-action-default => {
+                        ProfilesPage.add-profile(false);
+                    }
+                    clicked => {
+                        if !root.held {
+                            ProfilesPage.add-profile(false);
+                        }
+                        root.held = false;
+                    }
+                }
+                Timer {
+                    interval: 500ms;
+                    running: add.pressed && !root.held;
+                    triggered => {
+                        root.held = true;
+                        ProfilesPage.add-profile(true);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The profile sheet's name: Material's outlined field in the body face, its label floating up to the outline; the bad
+// ink while the name is taken.
+component NameField inherits Rectangle {
+    in-out property <string> value;
+    in property <bool> error;
+    callback changed(text: string);
+    private property <bool> focused: input.has-focus;
+    private property <bool> up: self.focused || self.value != "";
+    private property <color> ink: self.error ? Ink.bad : self.focused ? Ink.accent : Ink.dim;
+    min-height: 56px;
+    forward-focus: input;
+    Rectangle {
+        border-radius: 16px;
+        border-width: root.focused ? 2px : 1px;
+        border-color: root.error ? Ink.bad : root.focused ? Ink.accent : Ink.line;
+    }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        input := TextInput {
+            text <=> root.value;
+            color: Ink.text;
+            font-family: Type.sans;
+            font-size: 16px;
+            font-weight: 500;
+            single-line: true;
+            vertical-alignment: center;
+            selection-background-color: Ink.accent-container;
+            selection-foreground-color: Ink.text;
+            accessible-label: "Name";
+            edited => {
+                root.changed(self.text);
+            }
+        }
+    }
+    Rectangle {
+        x: 12px;
+        y: root.up ? -self.height / 2 : (root.height - self.height) / 2;
+        width: self.preferred-width;
+        height: self.preferred-height;
+        background: root.up ? Ink.surface : transparent;
+        animate y {
+            duration: Motion.reduced ? 0ms : 150ms;
+            easing: cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        HorizontalLayout {
+            padding-left: 4px;
+            padding-right: 4px;
+            Caption {
+                text: "Name";
+                color: root.ink;
+                accessible-role: none;
+            }
+        }
+    }
+}
+
+// One line of what a profile keeps: its label, and its values at the end.
+component Keeps inherits HorizontalLayout {
+    in property <string> label;
+    in property <[string]> lines;
+    spacing: 12px;
+    Sub {
+        horizontal-stretch: 1;
+        text: root.label;
+    }
+    VerticalLayout {
+        spacing: 2px;
+        for line in root.lines: Sub {
+            text: line;
+            color: Ink.text;
+            horizontal-alignment: right;
+        }
+    }
+}
+
+// One half of the new profile's start: a copy, or empty.
+component Segment inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    in property <bool> first;
+    callback clicked();
+    height: 48px;
+    border-top-left-radius: root.first ? 22px : 8px;
+    border-bottom-left-radius: root.first ? 22px : 8px;
+    border-top-right-radius: root.first ? 8px : 22px;
+    border-bottom-right-radius: root.first ? 8px : 22px;
+    background: root.on ? Ink.accent-container : Ink.surface-high;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 4px;
+        alignment: center;
+        if root.on: VerticalLayout {
+            alignment: center;
+            Icon {
+                icon: Icons.check;
+                size: 18px;
+                tint: Ink.accent;
+            }
+        }
+        Label {
+            text: root.text;
+            color: root.on ? Ink.accent : Ink.text;
+            vertical-alignment: center;
+            overflow: elide;
+            accessible-role: none;
+        }
+    }
+    CardTap {
+        border-top-left-radius: root.border-top-left-radius;
+        border-bottom-left-radius: root.border-bottom-left-radius;
+        border-top-right-radius: root.border-top-right-radius;
+        border-bottom-right-radius: root.border-bottom-right-radius;
+        label: root.text;
+        accessible-role: tab;
+        accessible-label: root.text;
+        accessible-item-selectable: true;
+        accessible-item-selected: root.on;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// New profile (editing "") or edit one: a name of at most twelve characters people see, what it keeps, and, when
+// editing, Delete. Fills the window, as a bottom sheet does.
+export component ProfileSheet inherits Rectangle {
+    private property <bool> deleting;
+    private property <bool> new: ProfilesPage.editing == "";
+    init => {
+        name.value = ProfilesPage.editing;
+        ProfilesPage.sheet-changed(ProfilesPage.editing, ProfilesPage.empty, ProfilesPage.editing);
+    }
+    BottomSheet {
+        label: ProfilesPage.sheet.title;
+        close => {
+            ProfilesPage.sheet-open = false;
+        }
+        VerticalLayout {
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-bottom: 24px;
+            spacing: 14px;
+            HorizontalLayout {
+                spacing: 14px;
+                alignment: start;
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 16px;
+                    background: Ink.accent-container;
+                    if root.new: AddMark {
+                        ink: Ink.accent;
+                        badge: Ink.accent;
+                        plus: Ink.accent-container;
+                        ring: Ink.accent-container;
+                    }
+                    if !root.new: Icon {
+                        icon: Icons.layers;
+                        tint: Ink.accent;
+                    }
+                }
+                VerticalLayout {
+                    spacing: 2px;
+                    alignment: center;
+                    Title {
+                        text: ProfilesPage.sheet.title;
+                        font-size: 22px;
+                    }
+                    Caption {
+                        text: ProfilesPage.sheet.sub;
+                    }
+                }
+            }
+            if root.new: HorizontalLayout {
+                spacing: 2px;
+                accessible-role: tab-list;
+                Segment {
+                    horizontal-stretch: 1;
+                    text: ProfilesPage.sheet.copy;
+                    on: !ProfilesPage.empty;
+                    first: true;
+                    clicked => {
+                        ProfilesPage.empty = false;
+                        ProfilesPage.sheet-changed(ProfilesPage.editing, false, name.value);
+                    }
+                }
+                Segment {
+                    horizontal-stretch: 1;
+                    text: "Empty";
+                    on: ProfilesPage.empty;
+                    clicked => {
+                        ProfilesPage.empty = true;
+                        ProfilesPage.sheet-changed(ProfilesPage.editing, true, name.value);
+                    }
+                }
+            }
+            VerticalLayout {
+                spacing: 6px;
+                name := NameField {
+                    error: ProfilesPage.sheet.taken;
+                    changed(text) => {
+                        ProfilesPage.sheet-changed(ProfilesPage.editing, ProfilesPage.empty, text);
+                        // Typing stops at the most characters a name has.
+                        if self.value != ProfilesPage.sheet.name {
+                            self.value = ProfilesPage.sheet.name;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    Caption {
+                        horizontal-stretch: 1;
+                        text: ProfilesPage.sheet.hint;
+                        color: ProfilesPage.sheet.taken ? Ink.bad : Ink.dim;
+                        wrap: word-wrap;
+                    }
+                    Code {
+                        text: ProfilesPage.sheet.count;
+                        color: Ink.dim;
+                    }
+                }
+            }
+            Rectangle {
+                border-radius: 20px;
+                background: Ink.surface-high;
+                VerticalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 12px;
+                    padding-bottom: 12px;
+                    spacing: 8px;
+                    Overline {
+                        text: "WHAT IT KEEPS";
+                    }
+                    Keeps {
+                        label: "Default route";
+                        lines: [ProfilesPage.sheet.keeps-default];
+                    }
+                    Keeps {
+                        label: "Exceptions";
+                        lines: ProfilesPage.sheet.keeps-exceptions;
+                    }
+                }
+            }
+            Caption {
+                text: "Routes are shared: changing a route's location changes it in every profile that uses it.";
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+                if !root.new: VerticalLayout {
+                    alignment: center;
+                    Secondary {
+                        text: "Delete";
+                        color: Ink.bad;
+                        clicked => {
+                            root.deleting = true;
+                        }
+                    }
+                }
+                if !root.new: Rectangle {
+                    horizontal-stretch: 1;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Secondary {
+                        text: "Cancel";
+                        color: Ink.dim;
+                        clicked => {
+                            ProfilesPage.sheet-open = false;
+                        }
+                    }
+                }
+                Primary {
+                    width: 150px;
+                    text: ProfilesPage.sheet.save;
+                    enabled: ProfilesPage.sheet.valid != "";
+                    clicked => {
+                        if root.new {
+                            ProfilesPage.new-profile(ProfilesPage.sheet.valid, ProfilesPage.empty);
+                        } else {
+                            ProfilesPage.rename-profile(ProfilesPage.editing, ProfilesPage.sheet.valid);
+                        }
+                        ProfilesPage.sheet-open = false;
+                    }
+                }
+            }
+        }
+    }
+    if root.deleting: Prompt {
+        title: "Delete " + ProfilesPage.editing + "?";
+        confirm: "Delete";
+        danger: true;
+        confirmed => {
+            root.deleting = false;
+            ProfilesPage.forget-profile(ProfilesPage.editing);
+            ProfilesPage.sheet-open = false;
+        }
+        dismissed => {
+            root.deleting = false;
+        }
+        Sub {
+            text: "Your routes stay as they are now.";
+            color: Ink.text;
+            wrap: word-wrap;
+        }
+    }
+}

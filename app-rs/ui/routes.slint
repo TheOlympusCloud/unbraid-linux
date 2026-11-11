@@ -1,0 +1,1319 @@
+// The Routes page: the connection, large, with its power button; the default route and the exceptions; every exit in
+// use with the address it reported; the home network. A route's click opens its sheet, its right click a menu.
+
+import { Ink, Type, Headline, Overline, Code, Small, Title, Body, Sub, Caption } from "theme.slint";
+import { Icons, Icon, Shapes } from "icons.slint";
+import { Motion, Rise, Squish } from "motion.slint";
+import { Metrics, Tappable, IconTap, RouteMark, SectionLabel, AppIcon, Secondary } from "components.slint";
+import { Phase, PageHeader, PillButton, PillKind, ClickMenu, MenuItem } from "shell.slint";
+import { Prompt, DialogField } from "inputs.slint";
+import { BottomSheet, SheetAction, SheetNote, CardTap } from "limit_sheet.slint";
+import { ProfilesPage, ProfilesScreen, ProfileSheet, UseBar, UseBarView, NotSet } from "profiles.slint";
+
+export { Phase }
+
+// What an item of a route's menu or sheet, or of the power sheet, does.
+export enum Act { change-location, rename, make-default, make-direct-default, assign-in-apps, remove, drop, pause, disconnect }
+
+// One item of a menu or a sheet; [danger] ones are in the bad ink. [minutes] for a pause.
+export struct RouteAction {
+    act: Act,
+    text: string,
+    danger: bool,
+    minutes: int,
+}
+
+// A sheet: its title, a line above its actions ([lead]), its actions and a note under them.
+export struct Sheet {
+    title: string,
+    lead: string,
+    actions: [RouteAction],
+    note: string,
+}
+
+// The address a route's exit reported, a check under way, or one that failed; "" shows nothing.
+export struct ExitLine {
+    text: string,
+    ip: bool,
+    failed: bool,
+}
+
+// An app in a route's stack: its key (for its icon) and its initial.
+export struct AppMark {
+    pkg: string,
+    letter: string,
+}
+
+// A route: the default route's card, or an exception's row. Direct is no route: no code, no colour.
+export struct RouteCard {
+    id: string,
+    direct: bool,
+    code: string,
+    hue: int,
+    name: string,
+    place: string,
+    server: string,
+    apps-label: string,
+    no-apps: bool,
+    apps: [AppMark],
+    more: int,
+    exit: ExitLine,
+    wide: bool,
+    menu: [RouteAction],
+    sheet: Sheet,
+}
+
+// One exit in the Exits card.
+export struct ExitRow {
+    code: string,
+    hue: int,
+    name: string,
+    place: string,
+    speed: string,
+    exit: ExitLine,
+}
+
+// The home network's row; an empty [sub] shows none.
+export struct HomeRow {
+    sub: string,
+    login-url: string,
+    lit: bool,
+}
+
+export global RoutesPage {
+    in property <string> overline: "Every app, its own exit";
+    in property <Phase> phase;
+    // A profile switch is under way: shown as a connect.
+    in property <bool> switching;
+    // The band's first line, as written; the screen sets it in capitals.
+    in property <string> status: "Not connected";
+    in property <string> title: "Unprotected";
+    in property <string> sub: "Click to connect";
+    // [sub] is the connection's error.
+    in property <bool> sub-bad;
+    // What a click on the band or the power button does, for screen readers.
+    in property <string> label: "Connect";
+    // The power button opens Pause and Disconnect; otherwise it connects.
+    in property <bool> power-menu;
+    // A timed pause: its ring, and how much is left (1 to 0).
+    in property <bool> paused-ring;
+    in property <float> paused-left: 1;
+    // Live speeds while statistics are recorded.
+    in property <bool> speeds;
+    in property <string> down;
+    in property <string> down-unit;
+    in property <string> up;
+    in property <string> up-unit;
+    // A switch the engine refused ("" when none), and the profile Try again switches to.
+    in property <string> refused;
+    in property <string> retry;
+    // A profile shown but not in use; an empty name shows no bar.
+    in property <UseBarView> use-bar;
+    // An empty profile's default route, not chosen yet.
+    in property <bool> not-set;
+    in property <RouteCard> default-route;
+    in property <[RouteCard]> exceptions;
+    in property <bool> all-default;
+    in property <bool> nord-note;
+    // Connected, showing the profile in use: routes in their colours.
+    in property <bool> lit;
+    in property <[ExitRow]> exits;
+    in property <HomeRow> home;
+    in property <Sheet> power;
+    // The first rows rise in: true the first time this process shows Routes.
+    in property <bool> reveal;
+    // An app's icon, none for its initial.
+    pure callback icon(pkg: string) -> image;
+    callback connect();
+    callback pause(minutes: int);
+    callback disconnect();
+    callback new-route();
+    // Not set's Choose: the picker, for the default route.
+    callback choose-default();
+    callback change-location(id: string);
+    // Route [id] (or "direct") as the default route.
+    callback make-default(id: string);
+    callback assign-in-apps();
+    callback rename-route(id: string, name: string);
+    callback remove-route(id: string);
+    // Takes route [id] out of the profile shown (not in use) only.
+    callback drop-route(id: string);
+    callback retry-switch(name: string);
+    callback dismiss-refused();
+    callback use-profile(name: string);
+    // The use bar's Back or Close: Routes shows the profile in use again.
+    callback stop-viewing();
+    callback tailscale-sign-in(url: string);
+
+    // Green protected, orange paused, red unprotected: the button and the status line say the same thing.
+    public pure function state-color(phase: Phase) -> color {
+        return phase == Phase.on ? Ink.good : phase == Phase.paused ? Ink.accent : phase == Phase.off ? Ink.bad : Ink.dim;
+    }
+}
+
+struct XY {
+    x: float,
+    y: float,
+}
+
+// A dashed outline, 7 px dashes and 5 px gaps, inside the edge of a rectangle whose top and bottom corners are rounded:
+// rows and slots outside the VPN or still empty. Slint strokes no dashes, so each dash is a short path of its own.
+export component Dashed {
+    in property <length> top-radius;
+    in property <length> bottom-radius;
+    in property <color> color: Ink.line;
+    // How much of the line shows inside the edge.
+    in property <length> thickness: 0.75px;
+    private property <float> t: self.thickness / 1px;
+    private property <float> w: self.width / 1px - self.t;
+    private property <float> h: self.height / 1px - self.t;
+    private property <float> rt: max(0, self.top-radius / 1px - self.t / 2);
+    private property <float> rb: max(0, self.bottom-radius / 1px - self.t / 2);
+    private property <float> s1: self.w - 2 * self.rt;
+    private property <float> s2: self.s1 + self.rt * 1.5707963;
+    private property <float> s3: self.s2 + self.h - self.rt - self.rb;
+    private property <float> s4: self.s3 + self.rb * 1.5707963;
+    private property <float> s5: self.s4 + self.w - 2 * self.rb;
+    private property <float> s6: self.s5 + self.rb * 1.5707963;
+    private property <float> s7: self.s6 + self.h - self.rt - self.rb;
+    private property <float> total: self.s7 + self.rt * 1.5707963;
+    // The point [d] along the outline, clockwise from the end of the top-left corner.
+    pure function at(d0: float) -> XY {
+        let d = Math.mod(d0, root.total);
+        let o = root.t / 2;
+        if d < root.s1 {
+            return { x: o + root.rt + d, y: o };
+        }
+        if d < root.s2 {
+            return {
+                x: o + root.w - root.rt + root.rt * Math.sin((d - root.s1) / max(root.rt, 0.01) * 1rad),
+                y: o + root.rt - root.rt * Math.cos((d - root.s1) / max(root.rt, 0.01) * 1rad),
+            };
+        }
+        if d < root.s3 {
+            return { x: o + root.w, y: o + root.rt + d - root.s2 };
+        }
+        if d < root.s4 {
+            return {
+                x: o + root.w - root.rb + root.rb * Math.cos((d - root.s3) / max(root.rb, 0.01) * 1rad),
+                y: o + root.h - root.rb + root.rb * Math.sin((d - root.s3) / max(root.rb, 0.01) * 1rad),
+            };
+        }
+        if d < root.s5 {
+            return { x: o + root.w - root.rb - (d - root.s4), y: o + root.h };
+        }
+        if d < root.s6 {
+            return {
+                x: o + root.rb - root.rb * Math.sin((d - root.s5) / max(root.rb, 0.01) * 1rad),
+                y: o + root.h - root.rb + root.rb * Math.cos((d - root.s5) / max(root.rb, 0.01) * 1rad),
+            };
+        }
+        if d < root.s7 {
+            return { x: o, y: o + root.h - root.rb - (d - root.s6) };
+        }
+        return {
+            x: o + root.rt - root.rt * Math.cos((d - root.s7) / max(root.rt, 0.01) * 1rad),
+            y: o + root.rt - root.rt * Math.sin((d - root.s7) / max(root.rt, 0.01) * 1rad),
+        };
+    }
+    // Dash [i] as a polyline along the outline, so it follows the corners too.
+    pure function dash(i: int) -> string {
+        let a = root.at(i * 12);
+        let b = root.at(i * 12 + 1.75);
+        let c = root.at(i * 12 + 3.5);
+        let d = root.at(i * 12 + 5.25);
+        let e = root.at(i * 12 + 7);
+        return "M " + a.x + " " + a.y + " L " + b.x + " " + b.y + " L " + c.x + " " + c.y + " L " + d.x + " " + d.y + " L " + e.x + " " + e.y;
+    }
+    // At the outline's own coordinates: a fitted path would be scaled and centred inside its stroke.
+    for i in Math.floor(root.total / 12): Path {
+        width: root.width;
+        height: root.height;
+        fit: ImageFit.preserve;
+        commands: root.dash(i);
+        stroke: root.color;
+        stroke-width: root.thickness;
+        accessible-role: none;
+    }
+}
+
+// Its children top to bottom, centred: a half pixel goes down the page, so the lines sit where the approved look has
+// them.
+component Middle inherits Rectangle {
+    in property <length> spacing;
+    horizontal-stretch: 0;
+    min-width: body.min-width;
+    preferred-width: body.preferred-width;
+    min-height: body.min-height;
+    preferred-height: body.preferred-height;
+    body := VerticalLayout {
+        y: Math.round((root.height - self.preferred-height) / 2 / 1px) * 1px;
+        width: root.width;
+        height: self.preferred-height;
+        spacing: root.spacing;
+        @children
+    }
+}
+
+// What a route's right click offers: what its sheet does, at once. Set x and y, then show().
+component RouteMenu inherits ClickMenu {
+    in property <[RouteAction]> actions;
+    callback act(action: RouteAction);
+    for a in root.actions: VerticalLayout {
+        // The removal is set apart, below a line.
+        if a.danger: Rectangle {
+            height: 9px;
+            Rectangle {
+                height: 1px;
+                background: Ink.line;
+            }
+        }
+        MenuItem {
+            text: a.text;
+            color: a.danger ? Ink.bad : Ink.text;
+            icon: a.act == Act.change-location || a.act == Act.rename ? Icons.edit
+                : a.act == Act.make-default ? Icons.star
+                : a.act == Act.make-direct-default ? Icons.direct
+                : a.act == Act.assign-in-apps ? Icons.apps : Icons.close;
+            clicked => {
+                root.act(a);
+            }
+        }
+    }
+}
+
+// The address a route's exit reported, in the size of the server line above it. A check that failed is said quietly,
+// never in red: the route may well be working.
+component ExitText inherits HorizontalLayout {
+    in property <ExitLine> exit;
+    // Set at the row's end.
+    in property <bool> end;
+    spacing: 4px;
+    alignment: root.end ? LayoutAlignment.end : LayoutAlignment.start;
+    if root.exit.failed: VerticalLayout {
+        alignment: center;
+        Icon {
+            icon: Icons.info;
+            size: 14px;
+            tint: Ink.dim;
+        }
+    }
+    if root.exit.ip: Code {
+        text: root.exit.text;
+        color: Ink.dim;
+    }
+    if !root.exit.ip: Caption {
+        text: root.exit.text;
+        font-size: 12px;
+        color: Ink.dim;
+    }
+}
+
+// Up to five overlapping app icons, then a "+N" pill; a dashed slot when no app is assigned.
+component AppStack inherits HorizontalLayout {
+    in property <[AppMark]> apps;
+    in property <int> more;
+    // The surface the stack sits on: each icon's edge cuts the one under it.
+    in property <color> edge;
+    height: 24px;
+    spacing: -6px;
+    alignment: start;
+    if root.apps.length == 0: Dashed {
+        width: 24px;
+        top-radius: 8px;
+        bottom-radius: 8px;
+        thickness: 1.5px;
+    }
+    for app in root.apps: Rectangle {
+        width: 24px;
+        AppIcon {
+            size: 24px;
+            icon: RoutesPage.icon(app.pkg);
+            letter: app.letter;
+        }
+        Rectangle {
+            border-radius: 8px;
+            border-width: 1.5px;
+            border-color: root.edge;
+        }
+    }
+    if root.more > 0: HorizontalLayout {
+        padding-left: 10px;
+        Rectangle {
+            min-width: 40px;
+            border-radius: 12px;
+            background: Ink.surface-top;
+            HorizontalLayout {
+                padding-left: 7px;
+                padding-right: 7px;
+                Code {
+                    text: "+" + root.more;
+                    font-size: 11px;
+                    color: Ink.text;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+// The default route as the hero: where everything else exits, large, and how many apps that is. No icons: it is
+// "the rest".
+component DefaultTile {
+    in property <RouteCard> card;
+    in property <bool> lit;
+    callback clicked();
+    callback act(action: RouteAction);
+    // Where its menu opens: the right click.
+    private property <length> menu-x;
+    private property <length> menu-y;
+    // Press: the corners tighten 28 → 16 px and the card squishes, then both spring back.
+    private property <length> corner: tap.pressed ? 16px : 28px;
+    animate corner {
+        duration: Motion.fast-spatial;
+        easing: spring(0.4);
+    }
+    min-height: body.min-height;
+    preferred-height: body.preferred-height;
+    squish := Squish {
+        pressed: tap.pressed;
+    }
+    frame := Rectangle {
+        x: Metrics.gutter + (1 - squish.scale) * (root.width - 2 * Metrics.gutter) / 2;
+        y: (1 - squish.scale) * root.height / 2;
+        width: (root.width - 2 * Metrics.gutter) * squish.scale;
+        height: root.height * squish.scale;
+        border-radius: root.corner;
+        background: Ink.surface-top;
+        border-width: 1px;
+        border-color: (root.card.direct ? Ink.line : Ink.route(root.card.hue)).with-alpha(root.lit ? 0.45 : 0.25);
+        tap := CardTap {
+            border-radius: root.corner;
+            label: root.card.name + ", " + root.card.apps-label;
+            clicked => {
+                root.clicked();
+            }
+            menu(x, y) => {
+                root.menu-x = frame.x + x;
+                root.menu-y = frame.y + y;
+                menu.show();
+            }
+        }
+    }
+    body := VerticalLayout {
+        padding-left: Metrics.gutter + 20px;
+        padding-right: Metrics.gutter + 20px;
+        padding-top: 18px;
+        padding-bottom: 18px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 8px;
+            Overline {
+                horizontal-stretch: 1;
+                text: root.card.apps-label.to-uppercase();
+                overflow: elide;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            Icon {
+                icon: Icons.chevron;
+                size: 20px;
+                tint: Ink.dim;
+            }
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: start;
+            Middle {
+                RouteMark {
+                    code: root.card.code;
+                    color: root.lit && !root.card.direct ? Ink.route(root.card.hue) : Ink.faint;
+                    direct: root.card.direct;
+                    accessible-role: none;
+                }
+            }
+            Title {
+                text: root.card.name;
+                font-size: 24px;
+                overflow: elide;
+                accessible-role: none;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Caption {
+                text: root.card.place;
+                overflow: elide;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            if root.card.server != "": Code {
+                text: root.card.server;
+                color: Ink.dim;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+        }
+        if root.card.exit.text != "": ExitText {
+            exit: root.card.exit;
+        }
+    }
+    menu := RouteMenu {
+        x: root.menu-x;
+        y: root.menu-y;
+        actions: root.card.menu;
+        act(a) => {
+            root.act(a);
+        }
+    }
+}
+
+// The apps column of every row on Routes: one width, so the exits and their chips line up.
+global Rows {
+    out property <length> apps-column: 136px;
+}
+
+// One exception: its apps on the left (five icons at most, then +N), where they exit on the right, its chip closing the
+// row. Direct's row has no fill, only a dashed outline.
+component RouteRow {
+    in property <RouteCard> card;
+    in property <bool> lit;
+    in property <int> i;
+    in property <int> n;
+    callback clicked();
+    callback act(action: RouteAction);
+    // Where its menu opens: the right click.
+    private property <length> menu-x;
+    private property <length> menu-y;
+    private property <length> top-r: self.i == 0 ? 22px : 6px;
+    private property <length> bottom-r: self.i == self.n - 1 ? 22px : 6px;
+    private property <color> fill: self.card.direct ? transparent : Ink.surface;
+    min-height: max(72px + 2px, body.min-height);
+    preferred-height: max(72px + 2px, body.preferred-height);
+    squish := Squish {
+        pressed: tap.pressed;
+    }
+    frame := Rectangle {
+        x: Metrics.gutter + (1 - squish.scale) * (root.width - 2 * Metrics.gutter) / 2;
+        y: 1px + (1 - squish.scale) * (root.height - 2px) / 2;
+        width: (root.width - 2 * Metrics.gutter) * squish.scale;
+        height: (root.height - 2px) * squish.scale;
+        background: root.fill;
+        border-top-left-radius: root.top-r;
+        border-top-right-radius: root.top-r;
+        border-bottom-left-radius: root.bottom-r;
+        border-bottom-right-radius: root.bottom-r;
+        if root.card.direct: Dashed {
+            width: parent.width;
+            height: parent.height;
+            top-radius: root.top-r;
+            bottom-radius: root.bottom-r;
+        }
+        tap := CardTap {
+            border-top-left-radius: root.top-r;
+            border-top-right-radius: root.top-r;
+            border-bottom-left-radius: root.bottom-r;
+            border-bottom-right-radius: root.bottom-r;
+            label: root.card.name + ", " + root.card.place + ", " + root.card.apps-label;
+            clicked => {
+                root.clicked();
+            }
+            menu(x, y) => {
+                root.menu-x = frame.x + x;
+                root.menu-y = frame.y + y;
+                menu.show();
+            }
+        }
+    }
+    body := VerticalLayout {
+        padding-left: Metrics.gutter + 16px;
+        padding-right: Metrics.gutter + 16px;
+        padding-top: 1px + 12px;
+        padding-bottom: 1px + 12px;
+        spacing: 6px;
+        alignment: center;
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                width: Rows.apps-column;
+                spacing: 8px;
+                AppStack {
+                    apps: root.card.apps;
+                    more: root.card.more;
+                    edge: root.card.direct ? Ink.ground : root.fill;
+                }
+                Caption {
+                    text: root.card.apps-label;
+                    color: root.card.no-apps ? Ink.dim : Ink.text;
+                    overflow: elide;
+                    accessible-role: none;
+                }
+            }
+            // The exit reads right-aligned beside its chip.
+            Middle {
+                horizontal-stretch: 1;
+                spacing: 3px;
+                Title {
+                    text: root.card.name;
+                    horizontal-alignment: right;
+                    overflow: elide;
+                    accessible-role: none;
+                }
+                Caption {
+                    text: root.card.place;
+                    horizontal-alignment: right;
+                    overflow: elide;
+                    accessible-role: none;
+                }
+                if !root.card.wide && root.card.exit.text != "": ExitText {
+                    exit: root.card.exit;
+                    end: true;
+                }
+            }
+            // One width whatever the code ("IT", "WG", Direct's glyph): the exits' text lines up too.
+            HorizontalLayout {
+                width: 36px;
+                alignment: end;
+                Middle {
+                    RouteMark {
+                        code: root.card.direct ? "··" : root.card.code;
+                        color: root.card.direct ? Ink.direct : root.lit ? Ink.route(root.card.hue) : Ink.faint;
+                        direct: root.card.direct;
+                        accessible-role: none;
+                    }
+                }
+            }
+        }
+        // A long (IPv6) address takes a line of its own under the row.
+        if root.card.wide: HorizontalLayout {
+            padding-right: 48px;
+            ExitText {
+                exit: root.card.exit;
+                end: true;
+            }
+        }
+    }
+    menu := RouteMenu {
+        x: root.menu-x;
+        y: root.menu-y;
+        actions: root.card.menu;
+        act(a) => {
+            root.act(a);
+        }
+    }
+}
+
+// A card on Routes that asks for one thing: its action does it, the close button puts it away.
+component Notice inherits HorizontalLayout {
+    in property <string> icon;
+    in property <color> tint;
+    in property <string> text;
+    in property <string> action;
+    callback acted();
+    callback dismissed();
+    padding-left: Metrics.gutter;
+    padding-right: Metrics.gutter;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    Rectangle {
+        border-radius: 20px;
+        background: Ink.surface;
+        border-width: 1px;
+        border-color: Ink.line;
+        // Read out when it appears: a failure the user didn't click for.
+        accessible-role: AccessibleRole.text;
+        accessible-label: root.text;
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 4px;
+            padding-top: 4px;
+            padding-bottom: 4px;
+            spacing: 10px;
+            VerticalLayout {
+                alignment: center;
+                Icon {
+                    icon: root.icon;
+                    size: 22px;
+                    tint: root.tint;
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                padding-top: 8px;
+                padding-bottom: 8px;
+                alignment: center;
+                Sub {
+                    text: root.text;
+                    color: Ink.text;
+                    wrap: word-wrap;
+                    accessible-role: none;
+                }
+            }
+            Secondary {
+                text: root.action;
+                clicked => {
+                    root.acted();
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                IconTap {
+                    icon: Icons.close;
+                    label: "Dismiss";
+                    size: 40px;
+                    tint: Ink.dim;
+                    clicked => {
+                        root.dismissed();
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Every exit this setup uses, with the address it reported and, while statistics are recorded, its download now.
+component ExitsCard inherits Rectangle {
+    background: Ink.surface;
+    border-radius: 22px;
+    VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        padding-top: 16px;
+        padding-bottom: 16px;
+        spacing: 12px;
+        Overline {
+            text: RoutesPage.lit ? "EXITS NOW" : "EXITS";
+        }
+        if RoutesPage.exits.length == 0: Sub {
+            text: "No exit yet: add a route.";
+            wrap: word-wrap;
+        }
+        for exit in RoutesPage.exits: HorizontalLayout {
+            spacing: 12px;
+            Middle {
+                RouteMark {
+                    code: exit.code;
+                    color: RoutesPage.lit ? Ink.route(exit.hue) : Ink.faint;
+                }
+            }
+            Middle {
+                horizontal-stretch: 1;
+                Body {
+                    text: exit.name;
+                    font-size: 14px;
+                    overflow: elide;
+                }
+                Caption {
+                    text: exit.place;
+                    overflow: elide;
+                }
+            }
+            Middle {
+                if exit.speed != "": Small {
+                    text: exit.speed;
+                    color: Ink.text;
+                    horizontal-alignment: right;
+                }
+                if exit.exit.text != "": ExitText {
+                    exit: exit.exit;
+                    end: true;
+                }
+            }
+        }
+    }
+}
+
+// The home network: every app reaches it, through Tailscale or WireGuard, laid out like the route rows.
+component HomeCard inherits HorizontalLayout {
+    in property <HomeRow> home;
+    padding-left: Metrics.gutter;
+    padding-right: Metrics.gutter;
+    padding-top: 12px;
+    Rectangle {
+        border-radius: 28px;
+        background: Ink.home-surface;
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 12px;
+            padding-bottom: 12px;
+            HorizontalLayout {
+                min-height: 56px;
+                spacing: 12px;
+                VerticalLayout {
+                    width: Rows.apps-column;
+                    spacing: 8px;
+                    alignment: center;
+                    HorizontalLayout {
+                        alignment: start;
+                        Rectangle {
+                            width: 24px;
+                            height: 24px;
+                            border-radius: 8px;
+                            background: Ink.surface-top;
+                            Icon {
+                                icon: Icons.apps;
+                                size: 16px;
+                                tint: Ink.text;
+                            }
+                        }
+                    }
+                    Caption {
+                        text: "Every app";
+                        color: Ink.text;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 3px;
+                    alignment: center;
+                    Title {
+                        text: "Home network";
+                        horizontal-alignment: right;
+                        overflow: elide;
+                    }
+                    Caption {
+                        text: root.home.sub;
+                        horizontal-alignment: right;
+                        overflow: elide;
+                    }
+                }
+                HorizontalLayout {
+                    width: 36px;
+                    alignment: end;
+                    VerticalLayout {
+                        alignment: center;
+                        RouteMark {
+                            code: "HM";
+                            hops: 0;
+                            color: root.home.lit ? Ink.route(3) : Ink.faint;
+                            accessible-role: none;
+                        }
+                    }
+                }
+            }
+            if root.home.login-url != "": HorizontalLayout {
+                alignment: start;
+                padding-left: -16px;
+                Secondary {
+                    text: "Sign in to Tailscale";
+                    clicked => {
+                        RoutesPage.tailscale-sign-in(root.home.login-url);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The power button: a cookie in the connection's colour that turns slowly while protected; a circle around a loader
+// while connecting; within a pause's ring, its time draining. The band names it for screen readers.
+component BandPower inherits Rectangle {
+    in property <Phase> phase;
+    in property <bool> ring;
+    in property <float> left: 1;
+    callback clicked();
+    private property <color> fill: self.phase == Phase.connecting ? Ink.surface-top : RoutesPage.state-color(self.phase);
+    private property <length> cookie: self.ring ? 88px : 96px;
+    private property <int> turn;
+    private property <int> spin;
+    // Relaxes into a circle while connecting.
+    private property <float> round: self.phase == Phase.connecting ? 1 : 0;
+    animate round {
+        duration: Motion.spatial;
+        easing: spring(0.2);
+    }
+    width: 104px;
+    height: 104px;
+    accessible-role: none;
+    squish := Squish {
+        pressed: touch.pressed;
+    }
+    if !root.ring: Rectangle {
+        border-radius: self.width / 2;
+        border-width: 1px;
+        border-color: root.fill.with-alpha(0.25);
+    }
+    // The pause's ring: the track, and what is left of the pause from the top, clockwise.
+    if root.ring: Rectangle {
+        border-radius: self.width / 2;
+        border-width: 3px;
+        border-color: Ink.surface-top;
+    }
+    if root.ring && root.left >= 0.999: Rectangle {
+        border-radius: self.width / 2;
+        border-width: 3px;
+        border-color: Ink.accent;
+    }
+    if root.ring && root.left < 0.999 && root.left > 0: Path {
+        width: 104px;
+        height: 104px;
+        fit: ImageFit.preserve;
+        stroke: Ink.accent;
+        stroke-width: 3px;
+        stroke-line-cap: LineCap.round;
+        commands: "M 52 1.5 A 50.5 50.5 0 " + (root.left > 0.5 ? 1 : 0) + " 1 " + (52 + 50.5 * Math.sin(root.left * 360deg)) + " " + (52 - 50.5 * Math.cos(root.left * 360deg));
+    }
+    Path {
+        x: (parent.width - root.cookie * squish.scale) / 2;
+        y: (parent.height - root.cookie * squish.scale) / 2;
+        width: root.cookie * squish.scale;
+        height: root.cookie * squish.scale;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: root.phase == Phase.on && !Motion.reduced ? Shapes.cookie-turns[root.turn] : Shapes.cookie;
+        fill: root.fill;
+        opacity: 1 - root.round;
+    }
+    Rectangle {
+        x: (parent.width - root.cookie * squish.scale) / 2;
+        y: (parent.height - root.cookie * squish.scale) / 2;
+        width: root.cookie * squish.scale;
+        height: root.cookie * squish.scale;
+        border-radius: self.width / 2;
+        background: root.fill;
+        opacity: root.round;
+    }
+    if root.phase == Phase.connecting: Path {
+        width: 52px;
+        height: 52px;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: Shapes.cookie-turns[root.spin];
+        fill: Ink.good;
+    }
+    if root.phase != Phase.connecting: Icon {
+        icon: Icons.power;
+        size: 32px;
+        tint: Ink.ground;
+    }
+    // Only a live connection turns, slowly: a full turn in 40 s, in 5° steps.
+    Timer {
+        interval: 556ms;
+        running: root.phase == Phase.on && !Motion.reduced;
+        triggered => {
+            root.turn = Math.mod(root.turn + 1, Shapes.cookie-turns.length);
+        }
+    }
+    Timer {
+        interval: 60ms;
+        running: root.phase == Phase.connecting && !Motion.reduced;
+        triggered => {
+            root.spin = Math.mod(root.spin + 1, Shapes.cookie-turns.length);
+        }
+    }
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// The connection, large: its state in the display face, what it means, live speeds while recorded, and the power
+// button. The status says "click to …": a click on it does what the button does.
+component StatusBand inherits Rectangle {
+    callback power();
+    // A profile switch reconnects every app: the button shows it as it shows a connect.
+    private property <Phase> shown: RoutesPage.switching && RoutesPage.phase == Phase.on ? Phase.connecting : RoutesPage.phase;
+    background: Ink.surface;
+    border-radius: 28px;
+    HorizontalLayout {
+        padding-left: 28px;
+        padding-right: 20px;
+        padding-top: 18px;
+        padding-bottom: 18px;
+        spacing: 28px;
+        Rectangle {
+            horizontal-stretch: 1;
+            VerticalLayout {
+                spacing: 4px;
+                alignment: center;
+                Overline {
+                    text: RoutesPage.status.to-uppercase();
+                    color: RoutesPage.switching ? Ink.dim : RoutesPage.state-color(RoutesPage.phase);
+                    overflow: elide;
+                    accessible-role: none;
+                }
+                Headline {
+                    text: RoutesPage.title.to-uppercase();
+                    font-size: 60px;
+                    color: RoutesPage.switching || RoutesPage.phase == Phase.connecting ? Ink.text : RoutesPage.state-color(RoutesPage.phase);
+                    overflow: elide;
+                    accessible-role: none;
+                }
+                Sub {
+                    text: RoutesPage.sub;
+                    color: RoutesPage.sub-bad ? Ink.bad : Ink.dim;
+                    wrap: word-wrap;
+                    max-lines: 2;
+                    overflow: elide;
+                    accessible-role: none;
+                }
+            }
+            Tappable {
+                cursor: MouseCursor.pointer;
+                accessible-role: button;
+                accessible-label: RoutesPage.label;
+                accessible-description: RoutesPage.status + ". " + RoutesPage.title + ". " + RoutesPage.sub;
+                accessible-action-default => {
+                    root.power();
+                }
+                clicked => {
+                    root.power();
+                }
+            }
+        }
+        if RoutesPage.speeds && RoutesPage.phase == Phase.on: VerticalLayout {
+            spacing: 2px;
+            alignment: center;
+            Overline {
+                text: "DOWNLOAD";
+            }
+            HorizontalLayout {
+                spacing: 4px;
+                Headline {
+                    text: RoutesPage.down;
+                    font-size: 34px;
+                }
+                VerticalLayout {
+                    alignment: end;
+                    padding-bottom: 4px;
+                    Caption {
+                        text: RoutesPage.down-unit;
+                    }
+                }
+            }
+        }
+        if RoutesPage.speeds && RoutesPage.phase == Phase.on: VerticalLayout {
+            spacing: 2px;
+            alignment: center;
+            Overline {
+                text: "UPLOAD";
+            }
+            HorizontalLayout {
+                spacing: 4px;
+                Headline {
+                    text: RoutesPage.up;
+                    font-size: 34px;
+                }
+                VerticalLayout {
+                    alignment: end;
+                    padding-bottom: 4px;
+                    Caption {
+                        text: RoutesPage.up-unit;
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            BandPower {
+                phase: root.shown;
+                ring: RoutesPage.paused-ring;
+                left: RoutesPage.paused-left;
+                clicked => {
+                    root.power();
+                }
+            }
+        }
+    }
+}
+
+// A route's sheet, or Pause and Disconnect: its title, a line above its actions, the actions, a note under them.
+component RouteSheet inherits BottomSheet {
+    in property <Sheet> sheet;
+    callback act(action: RouteAction);
+    label: root.sheet.title;
+    VerticalLayout {
+        padding-bottom: 16px;
+        HorizontalLayout {
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            Title {
+                text: root.sheet.title;
+                overflow: elide;
+            }
+        }
+        if root.sheet.lead != "": SheetNote {
+            text: root.sheet.lead;
+            sub: true;
+        }
+        for a in root.sheet.actions: SheetAction {
+            text: a.text;
+            ink: a.danger ? Ink.bad : Ink.text;
+            clicked => {
+                root.act(a);
+            }
+        }
+        if root.sheet.note != "": SheetNote {
+            text: root.sheet.note;
+        }
+    }
+}
+
+export component RoutesScreen inherits Rectangle {
+    // The sheet open over the page: a route's (its id), Pause and Disconnect ("power"), or none ("").
+    private property <string> sheet-id;
+    private property <Sheet> sheet;
+    private property <string> sheet-name;
+    // The route being renamed ("" for none) and its new name.
+    private property <string> renaming;
+    private property <string> new-name;
+    background: Ink.ground;
+
+    // What an action of a menu or a sheet does to route [id] (named [name]).
+    function act(id: string, name: string, a: RouteAction) {
+        root.sheet-id = "";
+        if a.act == Act.change-location {
+            RoutesPage.change-location(id);
+        } else if a.act == Act.rename {
+            root.new-name = name;
+            root.renaming = id;
+        } else if a.act == Act.make-default {
+            RoutesPage.make-default(id);
+        } else if a.act == Act.make-direct-default {
+            RoutesPage.make-default("direct");
+        } else if a.act == Act.assign-in-apps {
+            RoutesPage.assign-in-apps();
+        } else if a.act == Act.remove {
+            RoutesPage.remove-route(id);
+        } else if a.act == Act.drop {
+            RoutesPage.drop-route(id);
+        } else if a.act == Act.pause {
+            RoutesPage.pause(a.minutes);
+        } else if a.act == Act.disconnect {
+            RoutesPage.disconnect();
+        }
+    }
+
+    function open(card: RouteCard) {
+        root.sheet = card.sheet;
+        root.sheet-name = card.name;
+        root.sheet-id = card.id;
+    }
+
+    // A connect the connection hasn't taken up yet counts as on, so a second click offers to stop instead.
+    function power() {
+        if RoutesPage.power-menu {
+            root.sheet = RoutesPage.power;
+            root.sheet-id = "power";
+        } else {
+            RoutesPage.connect();
+        }
+    }
+
+    if !ProfilesPage.managing: VerticalLayout {
+        padding-left: 30px;
+        padding-top: 26px;
+        padding-right: 30px;
+        PageHeader {
+            overline: RoutesPage.overline;
+            title: "Routes";
+            if RoutesPage.phase == Phase.on: PillButton {
+                text: "Pause 15 min";
+                icon: Icons.pause;
+                clicked => {
+                    RoutesPage.pause(15);
+                }
+            }
+            if RoutesPage.phase == Phase.on || RoutesPage.phase == Phase.connecting: PillButton {
+                text: "Disconnect";
+                kind: PillKind.outline;
+                clicked => {
+                    RoutesPage.disconnect();
+                }
+            }
+            PillButton {
+                text: "New route";
+                icon: Icons.add;
+                kind: PillKind.primary;
+                clicked => {
+                    RoutesPage.new-route();
+                }
+            }
+        }
+        StatusBand {
+            power => {
+                root.power();
+            }
+        }
+        HorizontalLayout {
+            vertical-stretch: 1;
+            padding-top: 8px;
+            spacing: 18px;
+            list := Flickable {
+                width: (parent.width - 18px) * 1.55 / 2.55;
+                mouse-drag-pan-enabled: false;
+                content-height: column.preferred-height;
+                column := VerticalLayout {
+                    width: list.width;
+                    padding-bottom: 24px;
+                    alignment: start;
+                    // A switch the engine couldn't run: the last profile is back, said once, with Try again.
+                    if RoutesPage.refused != "": Notice {
+                        icon: Icons.error;
+                        tint: Ink.bad;
+                        text: RoutesPage.refused;
+                        action: "Try again";
+                        acted => {
+                            RoutesPage.retry-switch(RoutesPage.retry);
+                        }
+                        dismissed => {
+                            RoutesPage.dismiss-refused();
+                        }
+                    }
+                    // Shown, not in use: nothing reconnects until Use.
+                    if RoutesPage.use-bar.name != "": UseBar {
+                        bar: RoutesPage.use-bar;
+                        back => {
+                            RoutesPage.stop-viewing();
+                        }
+                        use => {
+                            RoutesPage.use-profile(RoutesPage.use-bar.name);
+                        }
+                    }
+                    if ProfilesPage.full && ProfilesPage.at-limit: Notice {
+                        icon: Icons.layers;
+                        tint: Ink.dim;
+                        text: ProfilesPage.full-note;
+                        action: "Manage";
+                        acted => {
+                            ProfilesPage.full = false;
+                            ProfilesPage.managing = true;
+                        }
+                        dismissed => {
+                            ProfilesPage.full = false;
+                        }
+                    }
+                    SectionLabel {
+                        text: "Default route";
+                        tall: true;
+                    }
+                    // An empty profile has no default route yet: one to choose, never Direct by accident.
+                    if RoutesPage.not-set: NotSet {
+                        choose => {
+                            RoutesPage.choose-default();
+                        }
+                    }
+                    if !RoutesPage.not-set: Rise {
+                        index: 0;
+                        play: RoutesPage.reveal;
+                        DefaultTile {
+                            card: RoutesPage.default-route;
+                            lit: RoutesPage.lit;
+                            clicked => {
+                                root.open(RoutesPage.default-route);
+                            }
+                            act(a) => {
+                                root.act(RoutesPage.default-route.id, RoutesPage.default-route.name, a);
+                            }
+                        }
+                    }
+                    if RoutesPage.exceptions.length > 0: SectionLabel {
+                        text: "Exceptions";
+                        tall: true;
+                    }
+                    for card[i] in RoutesPage.exceptions: Rise {
+                        index: i + 1;
+                        play: RoutesPage.reveal;
+                        RouteRow {
+                            card: card;
+                            lit: RoutesPage.lit;
+                            i: i;
+                            n: RoutesPage.exceptions.length;
+                            clicked => {
+                                root.open(card);
+                            }
+                            act(a) => {
+                                root.act(card.id, card.name, a);
+                            }
+                        }
+                    }
+                    // Nothing set apart yet: say what that means instead of leaving the page empty.
+                    if RoutesPage.all-default: HorizontalLayout {
+                        padding-left: 24px;
+                        padding-right: Metrics.gutter;
+                        padding-top: 12px;
+                        Sub {
+                            text: "All apps use the default route. Send some through another exit with New route, or from Apps.";
+                            wrap: word-wrap;
+                        }
+                    }
+                    if RoutesPage.nord-note: HorizontalLayout {
+                        padding-left: 24px;
+                        padding-right: Metrics.gutter;
+                        padding-top: 12px;
+                        Caption {
+                            text: "Nord allows 10 connections per account; each active location uses one.";
+                            color: Ink.faint;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+            side := Flickable {
+                horizontal-stretch: 1;
+                mouse-drag-pan-enabled: false;
+                content-height: right.preferred-height;
+                right := VerticalLayout {
+                    width: side.width;
+                    padding-top: 16px;
+                    padding-bottom: 24px;
+                    spacing: 18px;
+                    alignment: start;
+                    ExitsCard { }
+                    if RoutesPage.home.sub != "": HomeCard {
+                        home: RoutesPage.home;
+                    }
+                }
+            }
+        }
+    }
+    if ProfilesPage.managing: ProfilesScreen { }
+
+    // What opens over the page covers the whole window, the sidebar too.
+    if root.sheet-id != "": RouteSheet {
+        x: -root.absolute-position.x;
+        y: -root.absolute-position.y;
+        width: root.absolute-position.x + root.width;
+        height: root.absolute-position.y + root.height;
+        sheet: root.sheet;
+        close => {
+            root.sheet-id = "";
+        }
+        act(a) => {
+            root.act(root.sheet-id, root.sheet-name, a);
+        }
+    }
+    if ProfilesPage.sheet-open: ProfileSheet {
+        x: -root.absolute-position.x;
+        y: -root.absolute-position.y;
+        width: root.absolute-position.x + root.width;
+        height: root.absolute-position.y + root.height;
+    }
+    if root.renaming != "": Prompt {
+        x: -root.absolute-position.x;
+        y: -root.absolute-position.y;
+        width: root.absolute-position.x + root.width;
+        height: root.absolute-position.y + root.height;
+        title: "Rename";
+        confirm: "Save";
+        enabled: root.new-name.replace-all(" ", "") != "";
+        confirmed => {
+            RoutesPage.rename-route(root.renaming, root.new-name);
+            root.renaming = "";
+        }
+        dismissed => {
+            root.renaming = "";
+        }
+        DialogField {
+            label: "Name";
+            placeholder: "e.g. Home VPS";
+            value <=> root.new-name;
+        }
+    }
+}
