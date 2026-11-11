@@ -249,4 +249,26 @@ mod tests {
         assert_eq!((vec!["start", "start"], Some(aborted)), run(&[Some(aborted), Some(aborted)], false).await);
         assert_eq!((vec!["start"], Some(Code::Unavailable)), run(&[Some(Code::Unavailable)], false).await);
     }
+
+    /// The engine's worker must say READY in time; one that hangs fails the config check instead of blocking it.
+    #[test]
+    fn worker_start_is_bounded() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let socket = tmp.path().join("w.sock");
+        let script = |name: &str, body: &str| {
+            let f = tmp.path().join(name);
+            std::fs::write(&f, body).unwrap();
+            std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o755)).unwrap();
+            f
+        };
+        let hang = script("hang-worker", "#!/bin/sh\nsleep 30\n");
+        let start = std::time::Instant::now();
+        assert!(start_worker(&hang, &socket, 1).is_err());
+        assert!(start.elapsed() < Duration::from_secs(10), "took {:?}", start.elapsed());
+        let ready = script("ready-worker", "#!/bin/sh\necho READY\nsleep 30\n");
+        let mut worker = start_worker(&ready, &socket, 5).unwrap();
+        let _ = worker.kill();
+        let _ = worker.wait();
+    }
 }

@@ -36,7 +36,7 @@ impl Snapshot {
     pub fn write(&self, body: &str) {
         *self.held.lock().unwrap() = Some(body.to_string());
         if (self.save)(body).is_err() {
-            eprintln!("Unbraid: snapshot: not saved");
+            crate::log::w("Unbraid", "snapshot: not saved");
         }
     }
 

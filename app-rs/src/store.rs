@@ -170,7 +170,7 @@ impl Store {
         let text = serde_json::to_string(&*self.setup.borrow()).ok();
         let ok = text.is_some_and(|t| self.seal("setup.bin", Some(&t)));
         if !ok {
-            eprintln!("Unbraid: store: setup not saved");
+            crate::log::e("Unbraid", "store: setup not saved");
         }
         self.failed(Some(!ok), None);
         ok
@@ -180,7 +180,7 @@ impl Store {
         let text = serde_json::to_string(&*self.accounts.borrow()).ok();
         let ok = text.is_some_and(|t| self.seal("accounts.bin", Some(&t)));
         if !ok {
-            eprintln!("Unbraid: store: accounts not saved");
+            crate::log::e("Unbraid", "store: accounts not saved");
         }
         self.failed(None, Some(!ok));
         ok
@@ -243,7 +243,7 @@ impl Store {
         all.retain(|k, _| live.iter().any(|p| p == k.split('|').next().unwrap_or(k)));
         let ok = serde_json::to_string(&all).is_ok_and(|t| self.seal("links.bin", Some(&t)));
         if !ok {
-            eprintln!("Unbraid: store: last servers not saved");
+            crate::log::w("Unbraid", "store: last servers not saved");
         }
     }
 
