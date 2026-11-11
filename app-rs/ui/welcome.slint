@@ -1,0 +1,629 @@
+// The welcome, before anything else: the idea, the four places, then the terms. Someone updating from before the
+// terms gets only the terms, as "One thing first". Close skips to the terms, which can't be skipped. The window shows
+// it in a card in the middle, as wide as reading wants.
+
+import { Ink, Overline, Small, Title, Sub, Caption, Headline } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { Motion } from "motion.slint";
+import { Tappable, IconTap, RouteMark } from "components.slint";
+import { Desk } from "shell.slint";
+import { Progress, NextPill, Para } from "tour.slint";
+
+// A page's head and its lead paragraph ("" for none).
+export struct WelcomeStep {
+    overline: string,
+    title: string,
+    lead: string,
+}
+
+// A strand of the braid in its 342 × 230 box: a whole one, or the piece that goes over at a crossing (front).
+// colour: 0 the accent, 1 the second route colour, 2 Direct's.
+export struct Strand {
+    path: string,
+    colour: int,
+    front: bool,
+}
+
+export global WelcomePage {
+    // A new install: the idea and the four places first, with Skip, Back and the steps.
+    in property <bool> fresh: true;
+    // The idea, the four places, the terms.
+    in property <[WelcomeStep]> steps;
+    in property <[Strand]> strands;
+    callback accept();
+    callback open-terms();
+    callback open-privacy();
+}
+
+// A lead paragraph: the body face, regular, dim, 24 px lines.
+component Lead inherits Para {
+    font-size: 16px;
+    line: 24px;
+}
+
+// A page's title in capitals, its full stop in the accent where the face sets it after the last letter.
+component PageTitle inherits Rectangle {
+    in property <string> text;
+    width: whole.preferred-width;
+    height: whole.preferred-height;
+    accessible-role: AccessibleRole.text;
+    accessible-label: self.text;
+    whole := Headline {
+        x: 0;
+        y: 0;
+        text: root.text.to-uppercase() + ".";
+        font-size: 52px;
+        visible: false;
+    }
+    Headline {
+        x: 0;
+        y: 0;
+        text: root.text.to-uppercase();
+        font-size: 52px;
+        accessible-role: none;
+    }
+    Headline {
+        x: whole.preferred-width - self.preferred-width;
+        y: 0;
+        text: ".";
+        font-size: 52px;
+        color: Ink.accent;
+        accessible-role: none;
+    }
+}
+
+// One strand: the ground's wider stroke under it parts it from those it crosses. A Path fits its commands inside its
+// stroke, so each is as much larger as its stroke is wide, to keep the box's scale.
+component StrandPath {
+    in property <Strand> strand;
+    in property <float> scale;
+    in property <length> box-width;
+    private property <length> box-height: self.box-width * 230 / 342;
+    private property <color> ink: self.strand.colour == 0 ? Ink.accent : self.strand.colour == 1 ? Ink.route(1) : Ink.direct;
+    x: 0;
+    y: 0;
+    Path {
+        x: -self.stroke-width / 2;
+        y: -self.stroke-width / 2;
+        width: root.box-width + self.stroke-width;
+        height: root.box-height + self.stroke-width;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 342;
+        viewbox-height: 230;
+        commands: root.strand.path;
+        fill: transparent;
+        stroke: Ink.ground;
+        stroke-width: 13px * root.scale;
+        stroke-line-cap: root.strand.front ? LineCap.butt : LineCap.round;
+        accessible-role: none;
+    }
+    Path {
+        x: -self.stroke-width / 2;
+        y: -self.stroke-width / 2;
+        width: root.box-width + self.stroke-width;
+        height: root.box-height + self.stroke-width;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 342;
+        viewbox-height: 230;
+        commands: root.strand.path;
+        fill: transparent;
+        stroke: root.ink;
+        stroke-width: 6px * root.scale;
+        stroke-line-cap: LineCap.round;
+        accessible-role: none;
+    }
+}
+
+// A dot of the drawing: centre (x, y) and radius in the box's units.
+component Dot inherits Rectangle {
+    in property <float> cx;
+    in property <float> cy;
+    in property <float> radius;
+    in property <float> scale;
+    x: (self.cx - self.radius) * self.scale * 1px;
+    y: (self.cy - self.radius) * self.scale * 1px;
+    width: 2 * self.radius * self.scale * 1px;
+    height: self.width;
+    border-radius: self.width / 2;
+}
+
+// Three strands braided together leave the computer, then part for their exits: the name, drawn. It draws in once,
+// from the left; the exits' names come in at the end.
+component Braid inherits Rectangle {
+    private property <float> scale: self.width / 342px;
+    private property <float> reveal;
+    init => {
+        self.reveal = 1;
+    }
+    animate reveal {
+        duration: Motion.slow-spatial;
+        easing: spring(0.2);
+    }
+    // With the desktop's animations off, even if they go off mid-draw, the braid is simply there.
+    private property <float> at: Motion.reduced ? 1 : self.reveal;
+    height: 230px;
+    accessible-role: image;
+    accessible-label: "Three braided strands leave the computer and part into three exits: the Netherlands for everything else, the United States for streaming, Direct for the bank.";
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width * clamp(root.at, 0, 1);
+        height: root.height;
+        clip: true;
+        for strand in WelcomePage.strands: StrandPath {
+            strand: strand;
+            scale: root.scale;
+            box-width: root.width;
+        }
+        Dot {
+            cx: 22;
+            cy: 115;
+            radius: 14;
+            scale: root.scale;
+            background: Ink.surface-top;
+            border-width: 2px * root.scale;
+            border-color: Ink.text;
+        }
+        Dot {
+            cx: 22;
+            cy: 115;
+            radius: 4;
+            scale: root.scale;
+            background: Ink.text;
+        }
+        for y[i] in [34, 115, 196]: Dot {
+            cx: 336;
+            cy: y;
+            radius: 5;
+            scale: root.scale;
+            background: i == 0 ? Ink.accent : i == 1 ? Ink.route(1) : Ink.direct;
+        }
+    }
+    for exit[i] in [{ y: 34, code: "NL", label: "Everything else" }, { y: 115, code: "US", label: "Streaming" }, { y: 196, code: "", label: "Your bank, direct" }]: Rectangle {
+        x: 0;
+        y: (exit.y - 34) * root.scale * 1px;
+        width: root.width;
+        height: 26px;
+        opacity: clamp((root.at - 0.6) / 0.4, 0, 1);
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            cross-axis-alignment: center;
+            Caption {
+                text: exit.label;
+                color: Ink.text;
+                overflow: elide;
+            }
+            RouteMark {
+                code: exit.code;
+                color: i == 0 ? Ink.accent : i == 1 ? Ink.route(1) : Ink.direct;
+                direct: exit.code == "";
+            }
+        }
+    }
+}
+
+// The four pages, each with what lives there, above the bar they live in.
+component Places inherits VerticalLayout {
+    private property <[string]> what: ["Your exits and the power switch", "Which app goes where", "Data, flows and speed, if you want", "Providers, servers, home, protection"];
+    // Each place a quarter of the width, whatever its words.
+    columns := HorizontalLayout {
+        height: 260px;
+        for page[i] in Desk.pages: VerticalLayout {
+            width: columns.width / Desk.pages.length;
+            cross-axis-alignment: center;
+            Rectangle {
+                height: i * 36px;
+            }
+            VerticalLayout {
+                padding-left: 3px;
+                padding-right: 3px;
+                spacing: 4px;
+                Small {
+                    text: "0\{i + 1}";
+                    font-size: 11px;
+                }
+                Title {
+                    text: page.label;
+                    font-size: 15px;
+                }
+                Caption {
+                    text: root.what[i];
+                    font-size: 12px;
+                    // 16 px lines when it wraps.
+                    line-height-factor: (16 - 0.01) / (12 * 1.275);
+                    wrap: word-wrap;
+                }
+            }
+            Rectangle {
+                height: 8px;
+            }
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background: Ink.dim;
+            }
+            Rectangle {
+                width: 2px;
+                vertical-stretch: 1;
+                background: Ink.line;
+            }
+        }
+    }
+    Rectangle {
+        height: 72px;
+        border-radius: 24px;
+        background: Ink.bar;
+        border-width: 1px;
+        border-color: Ink.line;
+        tabs := HorizontalLayout {
+            for page in Desk.pages: VerticalLayout {
+                width: tabs.width / Desk.pages.length;
+                alignment: center;
+                cross-axis-alignment: center;
+                Rectangle {
+                    width: 56px;
+                    height: 32px;
+                    border-radius: 16px;
+                    background: Ink.surface-top;
+                    Icon {
+                        x: 16px;
+                        y: 4px;
+                        icon: page.icon;
+                    }
+                }
+                Caption {
+                    text: page.label;
+                    font-size: 12px;
+                    color: Ink.text;
+                }
+            }
+        }
+    }
+    Rectangle {
+        height: 16px;
+    }
+    Caption {
+        text: "Always in the sidebar on the left.";
+        horizontal-alignment: center;
+    }
+}
+
+// A link to a page on the web: a pill with the external mark.
+component WebLink inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+    height: 40px;
+    border-radius: 20px;
+    border-width: 1px;
+    border-color: Ink.line;
+    horizontal-stretch: 0;
+    forward-focus: tap;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 12px;
+        spacing: 6px;
+        cross-axis-alignment: center;
+        Sub {
+            text: root.text;
+            color: Ink.text;
+            accessible-role: none;
+        }
+        Icon {
+            icon: Icons.external;
+            size: 16px;
+            tint: Ink.dim;
+        }
+    }
+    tap := Tappable {
+        border-radius: root.border-radius;
+        cursor: MouseCursor.pointer;
+        accessible-role: button;
+        accessible-label: root.text;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// One thing the terms say: its icon on a tile, then the sentence.
+component TermsLine inherits HorizontalLayout {
+    in property <string> icon;
+    in property <string> text;
+    spacing: 14px;
+    cross-axis-alignment: center;
+    Rectangle {
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        background: Ink.surface-top;
+        Icon {
+            x: 8px;
+            y: 8px;
+            icon: root.icon;
+            size: 20px;
+        }
+    }
+    Para {
+        horizontal-stretch: 1;
+        text: root.text;
+        font-size: 15px;
+        line: 21px;
+        ink: Ink.text;
+    }
+}
+
+// Mandatory: accept the terms and acknowledge the privacy policy. The disclosures, which have their own sheets, stay
+// apart.
+component Terms inherits VerticalLayout {
+    in property <string> lead;
+    in property <bool> agreed;
+    callback toggle();
+    if root.lead != "": Lead {
+        text: root.lead;
+    }
+    if root.lead != "": Rectangle {
+        height: 24px;
+    }
+    VerticalLayout {
+        spacing: 16px;
+        TermsLine {
+            icon: Icons.vpn-key;
+            text: "You bring your own VPN accounts and servers. Their own terms still apply.";
+        }
+        TermsLine {
+            icon: Icons.block;
+            text: "unbraid has no servers and collects nothing.";
+        }
+        TermsLine {
+            icon: Icons.file;
+            text: "Free and open source under the GPL v3, with no warranty.";
+        }
+    }
+    Rectangle {
+        height: 20px;
+    }
+    Rectangle {
+        height: 1px;
+        background: Ink.line;
+    }
+    Rectangle {
+        height: 8px;
+    }
+    Rectangle {
+        min-height: 56px;
+        border-radius: 16px;
+        forward-focus: tap;
+        HorizontalLayout {
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 14px;
+            cross-axis-alignment: center;
+            Rectangle {
+                width: 24px;
+                height: 24px;
+                border-radius: 7px;
+                background: root.agreed ? Ink.accent : transparent;
+                border-width: root.agreed ? 0 : 2px;
+                border-color: Ink.dim;
+                if root.agreed: Icon {
+                    x: 2px;
+                    y: 2px;
+                    icon: Icons.check;
+                    size: 20px;
+                    tint: Ink.on-accent;
+                }
+            }
+            Sub {
+                horizontal-stretch: 1;
+                text: "I accept the Terms of use and have read the Privacy policy";
+                font-size: 15px;
+                // 22 px lines when it wraps.
+                line-height-factor: (22 - 0.01) / (15 * 1.275);
+                color: Ink.text;
+                wrap: word-wrap;
+                accessible-role: none;
+            }
+        }
+        tap := Tappable {
+            border-radius: parent.border-radius;
+            accessible-role: checkbox;
+            accessible-label: "I accept the Terms of use and have read the Privacy policy";
+            accessible-checkable: true;
+            accessible-checked: root.agreed;
+            accessible-action-default => {
+                root.toggle();
+            }
+            clicked => {
+                root.toggle();
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 38px;
+        padding-top: 4px;
+        spacing: 8px;
+        alignment: start;
+        WebLink {
+            text: "Terms of use";
+            clicked => {
+                WelcomePage.open-terms();
+            }
+        }
+        WebLink {
+            text: "Privacy policy";
+            clicked => {
+                WelcomePage.open-privacy();
+            }
+        }
+    }
+    Rectangle {
+        height: 10px;
+    }
+    HorizontalLayout {
+        padding-left: 38px;
+        Caption {
+            text: "Needed to use unbraid. Both open in your browser.";
+            wrap: word-wrap;
+        }
+    }
+}
+
+// One page, scrolling on a short window; it fades in as it comes.
+component WelcomeBody inherits Rectangle {
+    in property <int> page;
+    in property <bool> agreed;
+    callback toggle();
+    private property <WelcomeStep> step: WelcomePage.steps[self.page];
+    private property <float> shown;
+    init => {
+        self.shown = 1;
+    }
+    animate shown {
+        duration: Motion.fast-effects;
+        easing: spring(0);
+    }
+    opacity: Motion.reduced ? 1 : self.shown;
+    flick := Flickable {
+        mouse-drag-pan-enabled: false;
+        content-height: column.preferred-height;
+        column := VerticalLayout {
+            width: flick.width;
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-bottom: 24px;
+            alignment: start;
+            Overline {
+                text: root.step.overline.to-uppercase();
+            }
+            Rectangle {
+                height: 6px;
+            }
+            HorizontalLayout {
+                alignment: start;
+                PageTitle {
+                    text: root.step.title;
+                }
+            }
+            Rectangle {
+                height: 20px;
+            }
+            if root.page == 0: VerticalLayout {
+                Lead {
+                    text: root.step.lead;
+                }
+                Rectangle {
+                    height: 40px;
+                }
+                Braid { }
+            }
+            if root.page == 1: VerticalLayout {
+                Lead {
+                    text: root.step.lead;
+                }
+                Rectangle {
+                    height: 32px;
+                }
+                Places { }
+            }
+            if root.page == 2: Terms {
+                lead: root.step.lead;
+                agreed: root.agreed;
+                toggle => {
+                    root.toggle();
+                }
+            }
+        }
+    }
+}
+
+// The welcome, filling the window's card. Esc steps back a page.
+export component WelcomeScreen inherits FocusScope {
+    private property <int> page: WelcomePage.fresh ? 0 : 2;
+    private property <bool> agreed;
+    init => {
+        self.focus();
+    }
+    key-pressed(event) => {
+        if event.text == Key.Escape && WelcomePage.fresh && self.page > 0 {
+            self.page -= 1;
+            return accept;
+        }
+        return reject;
+    }
+    VerticalLayout {
+        HorizontalLayout {
+            height: 56px;
+            padding-left: 4px;
+            padding-top: 4px;
+            alignment: start;
+            cross-axis-alignment: center;
+            if WelcomePage.fresh && root.page < 2: IconTap {
+                icon: Icons.close;
+                label: "Skip the introduction";
+                clicked => {
+                    root.page = 2;
+                }
+            }
+        }
+        if root.page == 0: WelcomeBody {
+            vertical-stretch: 1;
+            page: 0;
+        }
+        if root.page == 1: WelcomeBody {
+            vertical-stretch: 1;
+            page: 1;
+        }
+        if root.page == 2: WelcomeBody {
+            vertical-stretch: 1;
+            page: 2;
+            agreed: root.agreed;
+            toggle => {
+                root.agreed = !root.agreed;
+            }
+        }
+        HorizontalLayout {
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-top: 16px;
+            padding-bottom: 16px;
+            spacing: 8px;
+            cross-axis-alignment: center;
+            if WelcomePage.fresh: Progress {
+                horizontal-stretch: 1;
+                n: 3;
+                at: root.page;
+            }
+            if !WelcomePage.fresh: Rectangle {
+                horizontal-stretch: 1;
+            }
+            if WelcomePage.fresh && root.page > 0: IconTap {
+                icon: Icons.back;
+                label: "Back";
+                fill: Ink.surface-high;
+                clicked => {
+                    root.page -= 1;
+                }
+            }
+            if root.page < 2: NextPill {
+                text: "Next";
+                clicked => {
+                    root.page += 1;
+                }
+            }
+            if root.page == 2: NextPill {
+                text: "Accept and continue";
+                enabled: root.agreed;
+                clicked => {
+                    WelcomePage.accept();
+                }
+            }
+        }
+    }
+}
