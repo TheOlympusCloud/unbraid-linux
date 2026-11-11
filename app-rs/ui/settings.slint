@@ -547,6 +547,10 @@ component ListView inherits Flickable {
 
 // The screen: the subjects, then the page shown. Put SettingsDialogs at the window's end, so they cover everything.
 export component SettingsScreen inherits Rectangle {
+    // Where the tour's Settings stops point: three subjects, in the window.
+    out property <{x: length, y: length, width: length, height: length}> providers-spot;
+    out property <{x: length, y: length, width: length, height: length}> local-spot;
+    out property <{x: length, y: length, width: length, height: length}> about-spot;
     // The page whose Advanced settings are open; each page's start closed.
     private property <string> advanced;
     background: Ink.ground;
@@ -604,6 +608,25 @@ export component SettingsScreen inherits Rectangle {
                                 }
                             }
                             SubjectItem {
+                                property <{x: length, y: length, width: length, height: length}> spot: { x: self.absolute-position.x, y: self.absolute-position.y, width: self.width, height: self.height };
+                                init => {
+                                    if s.key == "providers" {
+                                        root.providers-spot = self.spot;
+                                    } else if s.key == "local" {
+                                        root.local-spot = self.spot;
+                                    } else if s.key == "about" {
+                                        root.about-spot = self.spot;
+                                    }
+                                }
+                                changed spot => {
+                                    if s.key == "providers" {
+                                        root.providers-spot = self.spot;
+                                    } else if s.key == "local" {
+                                        root.local-spot = self.spot;
+                                    } else if s.key == "about" {
+                                        root.about-spot = self.spot;
+                                    }
+                                }
                                 subject: s;
                                 on: s.key == SettingsPage.subject;
                                 clicked => {

@@ -915,6 +915,8 @@ component BandPower inherits Rectangle {
 // button. The status says "click to …": a click on it does what the button does.
 component StatusBand inherits Rectangle {
     callback power();
+    // The power button's place in the window, for the tour.
+    out property <{x: length, y: length, width: length, height: length}> power-spot: { x: knob.absolute-position.x, y: knob.absolute-position.y, width: knob.width, height: knob.height };
     // A profile switch reconnects every app: the button shows it as it shows a connect.
     private property <Phase> shown: RoutesPage.switching && RoutesPage.phase == Phase.on ? Phase.connecting : RoutesPage.phase;
     background: Ink.surface;
@@ -1009,7 +1011,7 @@ component StatusBand inherits Rectangle {
         }
         VerticalLayout {
             alignment: center;
-            BandPower {
+            knob := BandPower {
                 phase: root.shown;
                 ring: RoutesPage.paused-ring;
                 left: RoutesPage.paused-left;
@@ -1063,6 +1065,9 @@ export component RoutesScreen inherits Rectangle {
     // The route being renamed ("" for none) and its new name.
     private property <string> renaming;
     private property <string> new-name;
+    // Where the tour's stops point: the power button and the default route's card, in the window.
+    out property <{x: length, y: length, width: length, height: length}> power-spot;
+    out property <{x: length, y: length, width: length, height: length}> default-spot;
     background: Ink.ground;
 
     // What an action of a menu or a sheet does to route [id] (named [name]).
@@ -1137,6 +1142,12 @@ export component RoutesScreen inherits Rectangle {
             }
         }
         StatusBand {
+            init => {
+                root.power-spot = self.power-spot;
+            }
+            changed power-spot => {
+                root.power-spot = self.power-spot;
+            }
             power => {
                 root.power();
             }
@@ -1203,6 +1214,13 @@ export component RoutesScreen inherits Rectangle {
                         index: 0;
                         play: RoutesPage.reveal;
                         DefaultTile {
+                            property <{x: length, y: length, width: length, height: length}> spot: { x: self.absolute-position.x, y: self.absolute-position.y, width: self.width, height: self.height };
+                            init => {
+                                root.default-spot = self.spot;
+                            }
+                            changed spot => {
+                                root.default-spot = self.spot;
+                            }
                             card: RoutesPage.default-route;
                             lit: RoutesPage.lit;
                             clicked => {

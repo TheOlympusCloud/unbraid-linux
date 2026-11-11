@@ -39,6 +39,7 @@ pub mod ts_login;
 pub mod ui;
 pub mod vpn;
 pub mod wg_conf;
+pub mod window;
 
 /// The engine's gRPC services (`unbraid-engine`), generated from its own .proto files.
 pub mod engine_api {

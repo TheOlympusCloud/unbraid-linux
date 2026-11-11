@@ -1,9 +1,352 @@
-// Unbraid by TheOlympus: the window.
+// Unbraid by TheOlympus: the window. Before anything else the welcome; then sign-in, or the sidebar beside the four
+// pages; over them the location picker, the tour, the connection-limit sheet, the disclosures and the shortcuts.
+
+import { Ink, Caption, Sub } from "theme.slint";
+import { Prompt } from "inputs.slint";
+import { Motion } from "motion.slint";
+import { Metrics } from "components.slint";
+import { Sidebar, Desk, ProfileChip, Phase, ShortcutsDialog } from "shell.slint";
+import { RoutesScreen, RoutesPage } from "routes.slint";
+import { ProfilesPage } from "profiles.slint";
+import { LimitSheet, LimitSheetPage } from "limit_sheet.slint";
+import { AppsScreen, AppsPage } from "apps.slint";
+import { VpnDisclosure, AppsDisclosure } from "disclosures.slint";
+import { StatsScreen, StatsPage } from "stats.slint";
+import { SettingsScreen, SettingsPage, SettingsDialogs } from "settings.slint";
+import { ImportDialogs, ImporterPage } from "importer.slint";
+import { WelcomeScreen, WelcomePage } from "welcome.slint";
+import { TourOverlay, TourPage } from "tour.slint";
+import { PickerDialog, PickerPage } from "picker.slint";
+import { SignInScreen, SignInPage } from "sign_in.slint";
+
+export { Ink, Motion, Desk, RoutesPage, ProfilesPage, LimitSheetPage, AppsPage, StatsPage, SettingsPage, ImporterPage }
+export { WelcomePage, TourPage, PickerPage, SignInPage }
+export { ProfileChip, Phase, NavPage, Shortcut } from "shell.slint";
+export { Act, RouteAction, Sheet, ExitLine, AppMark, RouteCard, ExitRow, HomeRow } from "routes.slint";
+export { ProfileRow, ProfileSheetView, UseBarView } from "profiles.slint";
+export { ExitChip, ColumnHead, AppRow, RouteChoice, AlsoRow, AppDetail } from "apps.slint";
+export { NumPart, Part, Legend, Share, SpeedBar, AppBar, ExitBar, HubView, UsageView, LiveRow, LiveView, Named, Segment, Lane, Pill, FlowRow, FlowsView, Fact, JournalView, TunnelRow, TunnelsView, ServerRow, TunnelView, Member, HistoryRow, HistoryView, OffView } from "stats.slint";
+export { ChartPart, ChartSeries, DaySpan, MonthMark } from "charts.slint";
+export { Choice as SpeedChoice, SpeedCard, Gauge, GoButton, ServerCard, LegBar, LegResult, LegPick, Decision, Together, SpeedView } from "stats.slint";
+export { SettingsAct, SettingsEnd, SettingsGlyph, SettingsTone, SettingsRow, SettingsGroup, SettingsSubject, SettingsLicence, SettingsInput, SettingsDialog } from "settings.slint";
+export { ImportPrompt } from "importer.slint";
+export { WelcomeStep, Strand } from "welcome.slint";
+export { PickRow, PickKind, Lead, Choice, Blocking } from "picker.slint";
+export { ProviderRow, OtherRow, Other, FormField, FormView } from "sign_in.slint";
+
+// A step before the app proper (the welcome, signing in): a card in the middle of the window, as wide as reading wants.
+component Card inherits Rectangle {
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 24px;
+        width: min(600px, parent.width - 48px);
+        height: parent.height - 48px;
+        border-radius: 28px;
+        background: Ink.ground;
+        clip: true;
+        @children
+        Rectangle {
+            border-radius: 28px;
+            border-width: 1px;
+            border-color: Ink.surface-high;
+        }
+    }
+}
+
 export component AppWindow inherits Window {
+    // What shows: 0 the welcome, 1 sign-in, 2 the pages beside the sidebar, 3 Add provider beside the sidebar.
+    in property <int> stage;
+    // The page shown, as an index into Desk.pages.
+    in property <int> tab;
+    // The sidebar.
+    in property <Phase> phase;
+    in property <string> exit: "Direct";
+    in property <string> summary;
+    in property <[ProfileChip]> chips;
+    in property <string> version;
+    // Over the pages: the location picker, the tour, a disclosure (1 the VPN's, 2 the installed apps'), the shortcuts.
+    in property <bool> picker;
+    in property <bool> touring;
+    in property <int> sheet;
+    in property <bool> shortcuts;
+    // A change applied but couldn't be written.
+    in property <bool> unsaved;
+    // A Tailscale sign-in link to another host than the control server's (its host), or one not opened.
+    in property <string> ts-host;
+    in property <bool> ts-refused;
+    // Where the tour's stops point, as the pages shown say: Routes' power button and default route, the Apps list, the
+    // Stats intro, three of Settings' subjects.
+    private property <{x: length, y: length, width: length, height: length}> power-spot;
+    private property <{x: length, y: length, width: length, height: length}> default-spot;
+    private property <{x: length, y: length, width: length, height: length}> list-spot;
+    private property <{x: length, y: length, width: length, height: length}> intro-spot;
+    private property <{x: length, y: length, width: length, height: length}> providers-spot;
+    private property <{x: length, y: length, width: length, height: length}> local-spot;
+    private property <{x: length, y: length, width: length, height: length}> about-spot;
+    // Ctrl+F: Apps puts the focus in its search once it shows. Apps or Stats again: back to the top.
+    in-out property <bool> search-wanted;
+    in property <int> apps-top;
+    // The window's keys, before anything in it sees them: true for a key it used.
+    callback key(text: string, ctrl: bool, shift: bool, alt: bool) -> bool;
+    callback page-clicked(index: int);
+    callback connect();
+    callback pause();
+    callback disconnect();
+    callback manage-profiles();
+    callback profile-clicked(name: string);
+    callback shortcuts-asked();
+    callback shortcuts-closed();
+    callback sheet-agreed();
+    callback sheet-dismissed();
+    callback save-again();
+    // The window changed size (or was maximized): its place is noted.
+    callback placed();
+    callback ts-open();
+    callback ts-dismissed();
+
+    // The logo, drawn at start (the window's icon in the desktop's task bar).
+    in property <image> logo;
+
     title: "Unbraid by TheOlympus";
+    icon: root.logo;
     preferred-width: 1280px;
     preferred-height: 800px;
     min-width: 880px;
     min-height: 600px;
-    background: #0f1214;
+    background: Ink.ground;
+    changed width => {
+        root.placed();
+    }
+    changed height => {
+        root.placed();
+    }
+
+    // The window's keys reach it only through something focused inside: its own scope, until a page or a dialog takes
+    // the focus, and again when what had it closes.
+    init => {
+        keys.focus();
+    }
+    public function refocus() {
+        keys.focus();
+    }
+
+    keys := FocusScope {
+        capture-key-pressed(event) => {
+            return root.key(event.text, event.modifiers.control, event.modifiers.shift, event.modifiers.alt) ? accept : reject;
+        }
+
+        if root.stage == 0: Card {
+            WelcomeScreen {
+                width: 100%;
+                height: 100%;
+            }
+        }
+        if root.stage == 1: Card {
+            SignInScreen {
+                width: 100%;
+                height: 100%;
+            }
+        }
+        if root.stage >= 2: HorizontalLayout {
+            Sidebar {
+                // Set from the window, not the layout: the sidebar's own width would loop back into it.
+                wide: root.width >= Metrics.wide;
+                current: root.tab;
+                phase: root.phase;
+                exit: root.exit;
+                summary: root.summary;
+                profiles: root.chips;
+                version: root.version;
+                page-clicked(i) => {
+                    root.page-clicked(i);
+                }
+                connect => {
+                    root.connect();
+                }
+                pause => {
+                    root.pause();
+                }
+                disconnect => {
+                    root.disconnect();
+                }
+                manage-profiles => {
+                    root.manage-profiles();
+                }
+                profile-clicked(name) => {
+                    root.profile-clicked(name);
+                }
+                shortcuts => {
+                    root.shortcuts-asked();
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                Rectangle {
+                    vertical-stretch: 1;
+                    if root.stage == 3: Card {
+                        SignInScreen {
+                            width: 100%;
+                            height: 100%;
+                        }
+                    }
+                    if root.stage == 2 && root.tab == 0: RoutesScreen {
+                        init => {
+                            root.power-spot = self.power-spot;
+                            root.default-spot = self.default-spot;
+                        }
+                        changed power-spot => {
+                            root.power-spot = self.power-spot;
+                        }
+                        changed default-spot => {
+                            root.default-spot = self.default-spot;
+                        }
+                    }
+                    if root.stage == 2 && root.tab == 1: AppsScreen {
+                        property <bool> wanted: root.search-wanted;
+                        property <int> top: root.apps-top;
+                        init => {
+                            root.list-spot = self.list-spot;
+                            if root.search-wanted {
+                                root.search-wanted = false;
+                                self.focus-search();
+                            }
+                        }
+                        changed wanted => {
+                            if self.wanted {
+                                root.search-wanted = false;
+                                self.focus-search();
+                            }
+                        }
+                        changed top => {
+                            self.to-top();
+                        }
+                        changed list-spot => {
+                            root.list-spot = self.list-spot;
+                        }
+                    }
+                    if root.stage == 2 && root.tab == 2: StatsScreen {
+                        init => {
+                            root.intro-spot = self.intro-spot;
+                        }
+                        changed intro-spot => {
+                            root.intro-spot = self.intro-spot;
+                        }
+                    }
+                    if root.stage == 2 && root.tab == 3: SettingsScreen {
+                        init => {
+                            root.providers-spot = self.providers-spot;
+                            root.local-spot = self.local-spot;
+                            root.about-spot = self.about-spot;
+                        }
+                        changed providers-spot => {
+                            root.providers-spot = self.providers-spot;
+                        }
+                        changed local-spot => {
+                            root.local-spot = self.local-spot;
+                        }
+                        changed about-spot => {
+                            root.about-spot = self.about-spot;
+                        }
+                    }
+                }
+                // A change that applied but couldn't be written, wherever it was made: it would be gone after a restart.
+                if root.unsaved: Rectangle {
+                    accessible-role: button;
+                    accessible-label: caption.text;
+                    accessible-action-default => {
+                        root.save-again();
+                    }
+                    HorizontalLayout {
+                        padding-left: 24px;
+                        padding-right: 24px;
+                        padding-top: 12px;
+                        padding-bottom: 12px;
+                        caption := Caption {
+                            text: "Some of your changes couldn't be saved and would be lost when unbraid restarts. Click to try saving again.";
+                            color: Ink.bad;
+                            wrap: word-wrap;
+                            accessible-role: none;
+                        }
+                    }
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.save-again();
+                        }
+                    }
+                }
+            }
+        }
+        if root.stage >= 2 && root.picker: PickerDialog { }
+        if root.stage >= 2 && root.touring: TourOverlay {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: root.height;
+            // Add a route has none: its note is centred. Nor does a profile without a default route yet, or Stats
+            // while recording.
+            spot: TourPage.step == 0 ? root.power-spot
+                : TourPage.step == 1 && !RoutesPage.not-set ? root.default-spot
+                : TourPage.step == 3 ? root.list-spot
+                : TourPage.step == 4 && !StatsPage.recording ? root.intro-spot
+                : TourPage.step == 5 ? root.providers-spot
+                : TourPage.step == 6 ? root.local-spot
+                : TourPage.step == 7 ? root.about-spot
+                : { x: 0, y: 0, width: 0, height: 0 };
+        }
+        if root.stage >= 2: LimitSheet { }
+        if root.stage >= 2 && root.sheet == 1: VpnDisclosure {
+            agree => {
+                root.sheet-agreed();
+            }
+            dismiss => {
+                root.sheet-dismissed();
+            }
+        }
+        if root.stage >= 2 && root.sheet == 2: AppsDisclosure {
+            agree => {
+                root.sheet-agreed();
+            }
+            dismiss => {
+                root.sheet-dismissed();
+            }
+        }
+        if root.stage >= 2: SettingsDialogs { }
+        if root.stage >= 1: ImportDialogs { }
+        if root.ts-host != "": Prompt {
+            title: "Open this sign-in link?";
+            confirm: "Open";
+            confirmed => {
+                root.ts-open();
+            }
+            dismissed => {
+                root.ts-dismissed();
+            }
+            Sub {
+                text: "Your control server sent a sign-in link to \{root.ts-host}, not to its own address. Open it only if you trust that site.";
+                color: Ink.text;
+                wrap: word-wrap;
+            }
+        }
+        if root.ts-refused: Prompt {
+            title: "Sign-in link not opened";
+            confirm: "OK";
+            confirmed => {
+                root.ts-dismissed();
+            }
+            dismissed => {
+                root.ts-dismissed();
+            }
+            Sub {
+                text: "Your control server sent a sign-in link that isn't a secure web address, so unbraid won't open it.";
+                color: Ink.text;
+                wrap: word-wrap;
+            }
+        }
+        if root.shortcuts: ShortcutsDialog {
+            close => {
+                root.shortcuts-closed();
+            }
+        }
+    }
 }

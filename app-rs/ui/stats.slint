@@ -3193,6 +3193,8 @@ component SpeedSection inherits Rectangle {
 component OffPage inherits Screen {
     callback turn-on();
     callback view();
+    // The intro's place in the window, for the tour.
+    out property <{x: length, y: length, width: length, height: length}> intro-spot: { x: intro.absolute-position.x, y: intro.absolute-position.y, width: intro.width, height: intro.height };
     overline: StatsPage.off.overline;
     title: "Stats";
     VerticalLayout {
@@ -3216,7 +3218,7 @@ component OffPage inherits Screen {
                 }
             }
         }
-        Title {
+        intro := Title {
             text: StatsPage.off.title;
             font-size: 28px;
             font-weight: 500;
@@ -3343,12 +3345,20 @@ component StatsConsent inherits BottomSheet {
 // ---- the page --------------------------------------------------------------------------------------------------------
 
 export component StatsScreen inherits Rectangle {
+    // Where the tour's Stats stop points: the intro while recording is off, in the window.
+    out property <{x: length, y: length, width: length, height: length}> intro-spot;
     // The saved statistics were opened while recording is off.
     private property <bool> view-saved;
     // The consent sheet is open.
     private property <bool> asking;
     background: Ink.ground;
     if !StatsPage.recording && !root.view-saved: OffPage {
+        init => {
+            root.intro-spot = self.intro-spot;
+        }
+        changed intro-spot => {
+            root.intro-spot = self.intro-spot;
+        }
         turn-on => {
             root.asking = true;
         }

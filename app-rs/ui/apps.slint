@@ -503,6 +503,8 @@ component MenuLine inherits Rectangle {
 
 // The page. Its search takes the focus at focus-search() (Ctrl+F); to-top() scrolls the table back up.
 export component AppsScreen inherits Rectangle {
+    // Where the tour's Apps stop points: the list, in the window.
+    out property <{x: length, y: length, width: length, height: length}> list-spot;
     // Where the menu opens: at the right click, or above it when it wouldn't fit below.
     private property <length> menu-x;
     private property <length> menu-y;
@@ -599,6 +601,13 @@ export component AppsScreen inherits Rectangle {
             }
             // Before the list may be read: why it's needed, and the way to agree.
             if !AppsPage.disclosed: VerticalLayout {
+                property <{x: length, y: length, width: length, height: length}> spot: { x: self.absolute-position.x, y: self.absolute-position.y, width: self.width, height: self.height };
+                init => {
+                    root.list-spot = self.spot;
+                }
+                changed spot => {
+                    root.list-spot = self.spot;
+                }
                 padding-top: 12px;
                 spacing: 12px;
                 alignment: start;
@@ -772,6 +781,17 @@ export component AppsScreen inherits Rectangle {
                             Rectangle {
                                 height: AppsPage.rows.length * 52px;
                                 for row[index] in AppsPage.rows: TableRow {
+                                    property <{x: length, y: length, width: length, height: length}> spot: { x: self.absolute-position.x, y: self.absolute-position.y, width: self.width, height: self.height };
+                                    init => {
+                                        if index == 0 {
+                                            root.list-spot = self.spot;
+                                        }
+                                    }
+                                    changed spot => {
+                                        if index == 0 {
+                                            root.list-spot = self.spot;
+                                        }
+                                    }
                                     y: index * 52px;
                                     width: parent.width;
                                     app: row;
