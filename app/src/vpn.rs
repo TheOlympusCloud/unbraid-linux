@@ -24,6 +24,7 @@ use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, LazyLock, OnceLock, RwLock};
+use std::task::Poll;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::{JoinHandle, JoinSet};
@@ -514,10 +515,22 @@ impl Session {
 
     async fn run(mut self, mut inbox: mpsc::UnboundedReceiver<Msg>) {
         while let Some(m) = inbox.recv().await {
-            if let Msg::Cmd(_) = m {
-                WAITING.fetch_sub(1, Ordering::SeqCst);
+            let n = match &m {
+                Msg::Cmd(Cmd::Start(n) | Cmd::Stop(n) | Cmd::Pause(n, _)) => {
+                    WAITING.fetch_sub(1, Ordering::SeqCst);
+                    *n
+                }
+                _ => 0,
+            };
+            // A panic (in provider or compiler code, say) ends the connection as a failed connect does, never this task:
+            // quitting and every later command still need it.
+            if caught(self.on(m)).await.is_none() {
+                log::e(TAG, "the connection's work failed unexpectedly");
+                if self.phase() != Phase::Off {
+                    let _ = caught(self.teardown(Some("Could not connect".into()))).await;
+                }
+                handled(self.live, n);
             }
-            self.on(m).await;
         }
     }
 
@@ -1648,6 +1661,17 @@ fn alert(title: &str, text: &str) {
 /// What a disconnect or a pause says when the engine didn't stop.
 const NOT_STOPPED: &str = "The unbraid engine didn't stop, so the connection is still on. Try again, or restart the engine: sudo systemctl restart unbraid-engine";
 
+/// `f`'s output, or none if it panicked.
+async fn caught<T>(f: impl Future<Output = T>) -> Option<T> {
+    let mut f = std::pin::pin!(f);
+    std::future::poll_fn(|cx| match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f.as_mut().poll(cx))) {
+        Ok(Poll::Ready(v)) => Poll::Ready(Some(v)),
+        Ok(Poll::Pending) => Poll::Pending,
+        Err(_) => Poll::Ready(None),
+    })
+    .await
+}
+
 /// Statistics take up the engine's connections again: it numbers them afresh, against the tunnels it runs now.
 fn retime() {
     stats::post(|w| {
@@ -1921,6 +1945,21 @@ mod tests {
         s.teardown(Some("Connection lost".into())).await;
         assert_eq!((Phase::Off, Some("Connection lost")), (s.phase(), s.live.state().error.as_deref()));
         assert!(s.live.running().is_none());
+    }
+
+    /// A panic in the connection's work (it prints below) ends the connection as a failed connect does; the task carries
+    /// on, so quitting and later commands still reach it.
+    #[tokio::test]
+    async fn a_panic_ends_the_connection_not_its_task() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = session(dir.path());
+        connected(&mut s, &base());
+        let live = s.live;
+        let (me, inbox) = mpsc::unbounded_channel();
+        tokio::spawn(s.run(inbox));
+        me.send(Msg::Locked(Box::new(|_| panic!("a bug in provider code")))).unwrap();
+        assert_eq!(Some(Phase::Off), locked(&me, |s| s.phase()).await);
+        assert_eq!(Some("Could not connect".into()), live.state().error);
     }
 
     /// What the tray and the command line say of the connection, and what Routes says of blocked routes.
