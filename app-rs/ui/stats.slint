@@ -1,0 +1,3384 @@
+// The Stats page: a hub of tiles, each opening its section (Usage, Live, App flows, Journal, Tunnels and one tunnel),
+// and the speed tests' History. Route colours mark exits and nothing else; every chart says what it shows.
+
+import { Ink, Type, Headline, Overline, Code, Small, Title, Body, Sub, Caption } from "theme.slint";
+import { Icons, Icon, Shapes } from "icons.slint";
+import { Motion, Rise, Squish } from "motion.slint";
+import { Metrics, Tappable, IconTap, Screen, CodeChip, SectionLabel, GroupRow, RowKind, RowText, AppIcon, Secondary } from "components.slint";
+import { PageHeader, PillButton, PillKind } from "shell.slint";
+import { CaptionRow, Prompt } from "inputs.slint";
+import { ChartPart, ChartSeries, DaySpan, MonthMark, Charts, Meter, StackedBars, LiveArea, Spark, Heatmap, Timeline, Dial, WeekMarks } from "charts.slint";
+import { BottomSheet } from "limit_sheet.slint";
+
+export { ChartPart, ChartSeries, DaySpan, MonthMark }
+
+// One part of a measurement: its figure, large, and its unit, small ("3" "h").
+export struct NumPart {
+    value: string,
+    unit: string,
+}
+
+// A bar's slice: its weight and its exit's colour (see StatsPage.ink).
+export struct Part {
+    value: float,
+    hue: int,
+}
+
+// An exit in a chart's key.
+export struct Legend {
+    name: string,
+    hue: int,
+}
+
+// A provider's share of the period's data: its name, data and share ("4.4 GB  100%"), the share alone, as a fraction.
+export struct Share {
+    name: string,
+    value: string,
+    pct: string,
+    frac: float,
+}
+
+// An exit's speed beside the fastest one's.
+export struct SpeedBar {
+    code: string,
+    hue: int,
+    frac: float,
+}
+
+// An app of the hub's Apps card: the exit that carried most of it, its share of the biggest app, its data.
+export struct AppBar {
+    name: string,
+    code: string,
+    hue: int,
+    frac: float,
+    bytes: string,
+}
+
+// An exit of the hub's Exits card: how many apps used it ("2 apps"), its data.
+export struct ExitBar {
+    code: string,
+    hue: int,
+    name: string,
+    apps: string,
+    bytes: string,
+}
+
+export struct HubView {
+    overline: string,
+    usage: NumPart,
+    usage-line: string,
+    providers: [Share],
+    live: bool,
+    live-now: NumPart,
+    spark: [float],
+    week: [NumPart],
+    week-hours: [float],
+    today: int,
+    tested: bool,
+    best: string,
+    best-line: string,
+    fastest: [SpeedBar],
+    legend: [Legend],
+    // The bars, each in its exits' colours: StatsPage.ink of the view's hues.
+    columns: [[ChartPart]],
+    summary: string,
+    apps: [AppBar],
+    exits: [ExitBar],
+}
+
+export struct UsageView {
+    over: string,
+    value: NumPart,
+    sub: string,
+    trailing: string,
+    // Bars in the text's ink: StatsPage.ink(-1).
+    columns: [[ChartPart]],
+    summary: string,
+    label: string,
+    providers: [Share],
+}
+
+// An exit in Live: its download now.
+export struct LiveRow {
+    code: string,
+    hue: int,
+    name: string,
+    via: string,
+    now: NumPart,
+}
+
+export struct LiveView {
+    overline: string,
+    // Why nothing is measured; "" when it is.
+    empty: string,
+    now: NumPart,
+    sub: string,
+    // Each exit's last minute in Mbps, in its colour: StatsPage.ink of the view's hues.
+    series: [ChartSeries],
+    cap: float,
+    summary: string,
+    rows: [LiveRow],
+}
+
+// An app named on its exit's lane, with its data.
+export struct Named {
+    name: string,
+    bytes: string,
+}
+
+// A part of a lane's bar, in the lane's colour at [alpha].
+export struct Segment {
+    weight: float,
+    alpha: float,
+}
+
+// One exit of App flows as a lane: its data and share, its apps, a bar as long as its data split by its biggest apps.
+export struct Lane {
+    id: string,
+    code: string,
+    hue: int,
+    name: string,
+    apps: string,
+    bytes: string,
+    pct: string,
+    frac: float,
+    segments: [Segment],
+    names: [Named],
+    rest: string,
+    selected: bool,
+}
+
+// A filter pill over App flows' list: an exit ("" for All), its words and whether it's on.
+export struct Pill {
+    id: string,
+    code: string,
+    hue: int,
+    text: string,
+    on: bool,
+}
+
+// An app in App flows' list.
+export struct FlowRow {
+    pkg: string,
+    letter: string,
+    name: string,
+    code: string,
+    hue: int,
+    bytes: string,
+    frac: float,
+}
+
+export struct FlowsView {
+    sub: string,
+    empty: bool,
+    share: [Part],
+    lanes: [Lane],
+    pills: [Pill],
+    rows: [FlowRow],
+    // "Show all 14" or "Show fewer"; "" when the list is short.
+    more: string,
+}
+
+// One of the Journal day's figures and what it counts.
+export struct Fact {
+    parts: [NumPart],
+    label: string,
+}
+
+export struct JournalView {
+    week: [NumPart],
+    sub: string,
+    heat: [float],
+    months: [MonthMark],
+    // The day shown: its index in [heat], its epoch day, its date in words.
+    index: int,
+    day: int,
+    date: string,
+    has-prev: bool,
+    has-next: bool,
+    spans: [DaySpan],
+    summary: string,
+    facts: [Fact],
+}
+
+// An exit in Tunnels and its fastest test ("↓1080 ↑940").
+export struct TunnelRow {
+    id: string,
+    code: string,
+    hue: int,
+    name: string,
+    via: string,
+    tested: bool,
+    test: string,
+    frac: float,
+}
+
+export struct TunnelsView {
+    tested: bool,
+    best: string,
+    sub: string,
+    rows: [TunnelRow],
+}
+
+// A server of one tunnel and its share of the exit's data.
+export struct ServerRow {
+    name: string,
+    pct: string,
+    frac: float,
+}
+
+export struct TunnelView {
+    // The exit's stats id; "" unless a tunnel is open.
+    id: string,
+    overline: string,
+    title: string,
+    hue: int,
+    tested: bool,
+    best: string,
+    sub: string,
+    servers: [ServerRow],
+}
+
+// An exit of a combined run, under its History row.
+export struct Member {
+    code: string,
+    hue: int,
+    name: string,
+    down: string,
+    up: string,
+    ping: string,
+}
+
+// A test in History: alone, or a combined run ([all]) with its exits.
+export struct HistoryRow {
+    all: bool,
+    code: string,
+    hue: int,
+    when: string,
+    down: string,
+    up: string,
+    ping: string,
+    line: string,
+    members: [Member],
+}
+
+export struct HistoryView {
+    overline: string,
+    tested: bool,
+    best: string,
+    sub: string,
+    rows: [HistoryRow],
+}
+
+// Statistics off: what the page offers instead.
+export struct OffView {
+    overline: string,
+    title: string,
+    text: string,
+    button: string,
+    saved: bool,
+}
+
+// An exit to test, as its chip: a route's id or a node's, its look, and whether it's picked.
+export struct Choice {
+    id: string,
+    code: string,
+    hue: int,
+    name: string,
+    on: bool,
+}
+
+// A figure card of the speed test: its title, figure ("" for none yet) and unit; [active] while it's measured.
+export struct SpeedCard {
+    title: string,
+    value: string,
+    unit: string,
+    active: bool,
+}
+
+// The dial while a test measures: the reading in Mbps, its spoken form, how far the 20 seconds are, the phase's line.
+export struct Gauge {
+    mbps: float,
+    label: string,
+    upload: bool,
+    progress: float,
+    status: string,
+}
+
+// The GO button: its word, size, colour and spoken name; [working] shows the loading indicator, [bloom] a success.
+export struct GoButton {
+    text: string,
+    size: int,
+    hue: int,
+    label: string,
+    working: bool,
+    bloom: bool,
+}
+
+// Where a test runs: the M-Lab server's place, then its machine and what the test goes through.
+export struct ServerCard {
+    place: string,
+    line: string,
+}
+
+// An exit's share of a combined run while it measures.
+export struct LegBar {
+    code: string,
+    hue: int,
+    frac: float,
+    now: string,
+    stopped: bool,
+}
+
+// An exit of a finished combined run.
+export struct LegResult {
+    code: string,
+    hue: int,
+    name: string,
+    line: string,
+    failed: bool,
+    down: string,
+    up: string,
+    ping: string,
+}
+
+// A route before a combined run: ticked or not, then finding its server ([tone] 0 dim, 1 accent, 2 found).
+export struct LegPick {
+    id: string,
+    code: string,
+    hue: int,
+    name: string,
+    sub: string,
+    on: bool,
+    state: string,
+    tone: int,
+}
+
+// An exit that needs a decision before a combined run, and for one without a server at home, its choice.
+export struct Decision {
+    exit: string,
+    code: string,
+    hue: int,
+    title: string,
+    text: string,
+    choice: bool,
+    via: string,
+    out: string,
+    via-on: bool,
+}
+
+export struct Together {
+    cards: [SpeedCard],
+    measuring: bool,
+    gauge: Gauge,
+    exits: int,
+    bars: [LegBar],
+    finished: bool,
+    error: string,
+    done: bool,
+    window: string,
+    share: [Part],
+    results: [LegResult],
+    heading: string,
+    working: bool,
+    picks: [LegPick],
+    nodes: [Choice],
+    go: GoButton,
+    note: string,
+    start: [string],
+    deciding: bool,
+    decisions: [Decision],
+    cost: string,
+    yes: string,
+    can-go: bool,
+    nearest: [string],
+}
+
+export struct SpeedView {
+    overline: string,
+    empty: bool,
+    all-chip: bool,
+    all-on: bool,
+    all-hues: [int],
+    all-text: string,
+    choices: [Choice],
+    busy: bool,
+    exit: string,
+    name: string,
+    hue: int,
+    cards: [SpeedCard],
+    measuring: bool,
+    gauge: Gauge,
+    error: string,
+    missing: string,
+    go: GoButton,
+    preparing: string,
+    server-shown: bool,
+    server: ServerCard,
+    note: string,
+    ask: bool,
+    ask-title: string,
+    ask-text: string,
+    terms: string,
+    together: Together,
+}
+
+export global StatsPage {
+    // Statistics are recorded; off, the page offers them, unless the saved ones are opened.
+    in property <bool> recording;
+    in property <OffView> off;
+    // The first read is in: the sections have something to show.
+    in property <bool> loaded;
+    // Day, Week or Month: 0, 1 or 2.
+    in property <int> period: 1;
+    // The section open: "" for the hub, or "usage", "live", "flows", "journal", "tunnels", "tunnel:<id>", "speed",
+    // "history".
+    in property <string> section;
+    // Where Back and Esc go from it.
+    in property <string> back;
+    // The period's days, as the sections' overline says them.
+    in property <string> range;
+    // The period's chart: its labels, the top of its scale and that in words, the column now; [empty]: no data yet.
+    in property <[string]> labels;
+    in property <float> cap: 1;
+    in property <string> scale;
+    in property <int> selected: -1;
+    in property <bool> empty: true;
+    in property <[string]> weekdays: ["M", "T", "W", "T", "F", "S", "S"];
+    in property <HubView> hub;
+    in property <UsageView> usage;
+    in property <LiveView> live;
+    in property <FlowsView> flows;
+    in property <JournalView> journal;
+    in property <TunnelsView> tunnels;
+    in property <TunnelView> tunnel;
+    in property <HistoryView> history;
+    in property <SpeedView> speed;
+    // M-Lab's terms were agreed: GO tests at once.
+    in property <bool> mlab-consent;
+    // The hub's tiles rise in: true the first time this process shows Stats.
+    in property <bool> reveal;
+    // An app's icon, none for its initial.
+    pure callback icon(pkg: string) -> image;
+    // Opens [section]: "" for the hub.
+    callback go(section: string);
+    callback pick-period(period: int);
+    // App flows' list: for exit [id] only ("" for all), then all of it or its first twelve.
+    callback filter-flows(id: string);
+    callback toggle-all-flows();
+    // The Journal's day, as an epoch day.
+    callback pick-day(day: int);
+    // The consent sheet's Turn on.
+    callback turn-on();
+    // The speed test: an exit's chip (a route's id, a node's, or "all"), a test of [exit], M-Lab's terms agreed.
+    callback choose(id: string);
+    callback start-test(exit: string, anywhere: bool);
+    callback agree-mlab();
+    // All exits together: GO for the ticked ones (SpeedView.together.start), a route ticked or not, an exit without a
+    // server at home via the nearest one or left out, then Start (with together.nearest).
+    callback start-all();
+    callback tick(id: string, on: bool);
+    callback decide(exit: string, via: bool);
+    callback go-together();
+    callback cancel-test();
+    // M-Lab's privacy policy, in the browser.
+    callback privacy();
+
+    // An exit's colour from a hue: a route's (0 and up), or -1 text, -2 Direct, -3 faint, -4 neutral (text at 75 %),
+    // -5 the accent.
+    public pure function ink(hue: int) -> color {
+        return hue >= 0 ? Ink.route(hue) : hue == -1 ? Ink.text : hue == -2 ? Ink.direct : hue == -4 ? Ink.text.with-alpha(0.75)
+            : hue == -5 ? Ink.accent : Ink.faint;
+    }
+}
+
+// ---- shared pieces ---------------------------------------------------------------------------------------------------
+
+// Shares as one thin bar with rounded ends, each part as long as its value, in its exit's colour.
+component Ends inherits HorizontalLayout {
+    in property <[Part]> parts;
+    height: 10px;
+    spacing: 2px;
+    for part[j] in root.parts: Rectangle {
+        horizontal-stretch: part.value;
+        background: StatsPage.ink(part.hue);
+        border-top-left-radius: j == 0 ? 5px : 0;
+        border-bottom-left-radius: j == 0 ? 5px : 0;
+        border-top-right-radius: j == root.parts.length - 1 ? 5px : 0;
+        border-bottom-right-radius: j == root.parts.length - 1 ? 5px : 0;
+    }
+}
+
+// A measurement: mono figures, each unit smaller and dim on the figure's baseline ("4.4 GB", "3 h 20 m").
+component Num {
+    in property <[NumPart]> parts;
+    in property <length> size: 32px;
+    private property <length> unit: max(12px, self.size * 0.42);
+    height: Math.round(self.size * 1.2 / 1px) * 1px;
+    horizontal-stretch: 0;
+    accessible-role: text;
+    accessible-label: (self.parts.length > 0 ? self.parts[0].value + " " + self.parts[0].unit : "")
+        + (self.parts.length > 1 ? " " + self.parts[1].value + " " + self.parts[1].unit : "");
+    HorizontalLayout {
+        alignment: start;
+        for p[i] in root.parts: HorizontalLayout {
+            Code {
+                text: (i > 0 ? " " : "") + p.value;
+                font-size: root.size;
+                color: Ink.text;
+                accessible-role: none;
+            }
+            if p.unit != "": Rectangle {
+                width: unit.preferred-width;
+                unit := Code {
+                    x: 0;
+                    // Mono's ascent is its size: the unit's top this far down puts both on one baseline.
+                    y: root.size - root.unit;
+                    text: " " + p.unit;
+                    font-size: root.unit;
+                    color: Ink.dim;
+                    accessible-role: none;
+                }
+            }
+        }
+    }
+}
+
+// An exit's code chip, in its colour.
+component Chip inherits CodeChip {
+    in property <int> hue;
+    color: StatsPage.ink(self.hue);
+    accessible-role: none;
+}
+
+// Day, Week, Month: a connected group, the period on in the tonal accent with a check.
+component PeriodPicker inherits HorizontalLayout {
+    spacing: 2px;
+    for label[i] in ["Day", "Week", "Month"]: seg := Rectangle {
+        property <bool> on: i == StatsPage.period;
+        // Equal shares of the group, whatever their words.
+        horizontal-stretch: 1;
+        min-width: 0;
+        preferred-width: 0;
+        height: 48px;
+        border-top-left-radius: i == 0 ? 24px : 8px;
+        border-bottom-left-radius: i == 0 ? 24px : 8px;
+        border-top-right-radius: i == 2 ? 24px : 8px;
+        border-bottom-right-radius: i == 2 ? 24px : 8px;
+        background: self.on ? Ink.accent-container : Ink.surface-high;
+        clip: true;
+        HorizontalLayout {
+            alignment: center;
+            if seg.on: HorizontalLayout {
+                padding-right: 6px;
+                cross-axis-alignment: center;
+                Icon {
+                    icon: Icons.check;
+                    size: 18px;
+                    tint: Ink.text;
+                }
+            }
+            Sub {
+                text: label;
+                font-weight: 500;
+                color: seg.on ? Ink.text : Ink.dim;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+        }
+        Tappable {
+            accessible-role: radio-button;
+            accessible-label: label;
+            accessible-checkable: true;
+            accessible-checked: seg.on;
+            accessible-action-default => {
+                StatsPage.pick-period(i);
+            }
+            clicked => {
+                StatsPage.pick-period(i);
+            }
+        }
+    }
+}
+
+// A link to another section: an outlined pill with its icon.
+component LinkButton inherits Rectangle {
+    in property <string> icon;
+    in property <string> text;
+    callback clicked();
+    height: 48px;
+    border-radius: 24px;
+    border-width: 1px;
+    border-color: Ink.line;
+    horizontal-stretch: 0;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 16px;
+        spacing: 8px;
+        cross-axis-alignment: center;
+        Icon {
+            icon: root.icon;
+            size: 20px;
+            tint: Ink.text;
+        }
+        Sub {
+            text: root.text;
+            font-weight: 500;
+            color: Ink.text;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    Tappable {
+        border-radius: 24px;
+        accessible-role: button;
+        accessible-label: root.text;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A row of section links, under a list.
+component Links inherits HorizontalLayout {
+    padding-left: Metrics.gutter;
+    padding-top: 12px;
+    spacing: 8px;
+    alignment: start;
+}
+
+// A quiet message where a list or a figure would be.
+component Empty inherits HorizontalLayout {
+    in property <string> text;
+    padding-left: 24px;
+    padding-right: 24px;
+    padding-top: 16px;
+    padding-bottom: 16px;
+    Sub {
+        text: root.text;
+        wrap: word-wrap;
+    }
+}
+
+// The first card of a section: its key figure, then what explains it (the children).
+component Hero inherits HorizontalLayout {
+    in property <string> over;
+    in property <[NumPart]> parts;
+    in property <string> sub;
+    in property <string> trailing;
+    padding-left: Metrics.gutter;
+    padding-right: Metrics.gutter;
+    Rectangle {
+        border-radius: 28px;
+        background: Ink.surface-top;
+        VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+            HorizontalLayout {
+                Overline {
+                    horizontal-stretch: 1;
+                    text: root.over.to-uppercase();
+                    vertical-alignment: center;
+                }
+                if root.trailing != "": Code {
+                    text: root.trailing;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                }
+            }
+            VerticalLayout {
+                spacing: 2px;
+                Num {
+                    parts: root.parts;
+                    size: 48px;
+                }
+                if root.sub != "": Sub {
+                    text: root.sub;
+                    wrap: word-wrap;
+                }
+            }
+            @children
+        }
+    }
+}
+
+// A section page: the header with Back, the period picker pinned under it if [picker], then the section, scrolling, at
+// a reading width. Esc goes back.
+component Section inherits Rectangle {
+    in property <string> overline;
+    in property <string> title;
+    in property <string> sub;
+    in property <bool> picker;
+    background: Ink.ground;
+    init => {
+        keys.focus();
+    }
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                StatsPage.go(StatsPage.back);
+                return accept;
+            }
+            return reject;
+        }
+        Rectangle {
+            x: 14px;
+            width: min(root.width, 900px) - 14px;
+            Screen {
+                overline: root.overline;
+                title: root.title;
+                sub: root.sub;
+                navigation-icon: Icons.back;
+                navigation-label: "Back";
+                navigate => {
+                    StatsPage.go(StatsPage.back);
+                }
+                if root.picker: HorizontalLayout {
+                    padding-left: Metrics.gutter;
+                    padding-right: Metrics.gutter;
+                    padding-top: 4px;
+                    padding-bottom: 8px;
+                    PeriodPicker { }
+                }
+                list := Flickable {
+                    vertical-stretch: 1;
+                    mouse-drag-pan-enabled: false;
+                    content-height: column.preferred-height;
+                    column := VerticalLayout {
+                        width: list.width;
+                        padding-bottom: 24px;
+                        alignment: start;
+                        @children
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A sheet's two buttons: the outlined way out, and the accent action (greyed while not [enabled]).
+component SheetButtons inherits HorizontalLayout {
+    in property <string> no;
+    in property <string> yes;
+    in property <bool> enabled: true;
+    callback no-clicked();
+    callback yes-clicked();
+    spacing: 8px;
+    Rectangle {
+        height: 52px;
+        border-radius: 26px;
+        border-width: 1px;
+        border-color: Ink.line;
+        Body {
+            text: root.no;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        Tappable {
+            border-radius: 26px;
+            accessible-role: button;
+            accessible-label: root.no;
+            accessible-action-default => {
+                root.no-clicked();
+            }
+            clicked => {
+                root.no-clicked();
+            }
+        }
+    }
+    Rectangle {
+        height: 52px;
+        border-radius: 26px;
+        background: root.enabled ? Ink.accent : Ink.surface-top;
+        Body {
+            text: root.yes;
+            color: root.enabled ? Ink.on-accent : Ink.dim;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        Tappable {
+            border-radius: 26px;
+            enabled: root.enabled;
+            ring: Ink.text;
+            accessible-role: button;
+            accessible-label: root.yes;
+            accessible-enabled: root.enabled;
+            accessible-action-default => {
+                root.yes-clicked();
+            }
+            clicked => {
+                root.yes-clicked();
+            }
+        }
+    }
+}
+
+// ---- the hub ---------------------------------------------------------------------------------------------------------
+
+// A hub tile: one card, one target, opening its section. It presses like the route cards.
+component Tile {
+    in property <string> title;
+    in property <string> icon;
+    callback clicked();
+    min-height: max(160px, body.min-height);
+    preferred-height: body.preferred-height;
+    squish := Squish {
+        pressed: tap.pressed;
+    }
+    Rectangle {
+        x: (1 - squish.scale) * root.width / 2;
+        y: (1 - squish.scale) * root.height / 2;
+        width: root.width * squish.scale;
+        height: root.height * squish.scale;
+        border-radius: 24px;
+        background: Ink.surface;
+        tap := Tappable {
+            border-radius: 24px;
+            accessible-role: button;
+            accessible-label: root.title;
+            accessible-description: "Open " + root.title;
+            accessible-action-default => {
+                root.clicked();
+            }
+            clicked => {
+                root.clicked();
+            }
+        }
+    }
+    body := VerticalLayout {
+        padding: 14px;
+        spacing: 8px;
+        alignment: start;
+        HorizontalLayout {
+            spacing: 8px;
+            Icon {
+                icon: root.icon;
+                size: 20px;
+                tint: Ink.dim;
+            }
+            Sub {
+                horizontal-stretch: 1;
+                text: root.title;
+                font-weight: 500;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            Icon {
+                icon: Icons.chevron;
+                size: 20px;
+                tint: Ink.dim;
+            }
+        }
+        @children
+    }
+}
+
+// A dashboard card: its subject's name, and More opening the section it summarises.
+component Card inherits Rectangle {
+    in property <string> title;
+    callback more();
+    border-radius: 22px;
+    background: Ink.surface;
+    VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        padding-top: 16px;
+        padding-bottom: 16px;
+        spacing: 10px;
+        alignment: start;
+        HorizontalLayout {
+            Overline {
+                horizontal-stretch: 1;
+                text: root.title.to-uppercase();
+                vertical-alignment: center;
+            }
+            Rectangle {
+                border-radius: 8px;
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    padding-top: 2px;
+                    padding-bottom: 2px;
+                    Caption {
+                        text: "More";
+                        color: Ink.accent;
+                        accessible-role: none;
+                    }
+                }
+                Tappable {
+                    border-radius: 8px;
+                    cursor: MouseCursor.pointer;
+                    accessible-role: button;
+                    accessible-label: "More: " + root.title;
+                    accessible-action-default => {
+                        root.more();
+                    }
+                    clicked => {
+                        root.more();
+                    }
+                }
+            }
+        }
+        @children
+    }
+}
+
+// A provider's share in the Usage tile: its name, a neutral meter, the percentage.
+component ProviderMeter inherits HorizontalLayout {
+    in property <Share> share;
+    spacing: 10px;
+    cross-axis-alignment: center;
+    Caption {
+        width: 110px;
+        text: root.share.name;
+        font-size: 12px;
+        color: Ink.text;
+        overflow: elide;
+        vertical-alignment: center;
+    }
+    Meter {
+        horizontal-stretch: 1;
+        frac: root.share.frac;
+        color: StatsPage.ink(-4);
+    }
+    Code {
+        width: 36px;
+        text: root.share.pct;
+        color: Ink.dim;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+}
+
+// The overview: the four subjects' tiles in a row, the period's data by exit across the page, then the apps and the
+// exits that carried it, side by side.
+component Hub inherits Rectangle {
+    flick := Flickable {
+        mouse-drag-pan-enabled: false;
+        content-height: page.preferred-height;
+        page := VerticalLayout {
+            width: flick.width;
+            padding-left: 30px;
+            padding-top: 26px;
+            padding-right: 30px;
+            padding-bottom: 24px;
+            alignment: start;
+            PageHeader {
+                overline: StatsPage.hub.overline;
+                title: "Stats";
+                PeriodPicker {
+                    width: 330px;
+                    horizontal-stretch: 0;
+                }
+                VerticalLayout {
+                    horizontal-stretch: 0;
+                    alignment: end;
+                    PillButton {
+                        text: "Speed test";
+                        icon: Icons.speed;
+                        kind: PillKind.primary;
+                        clicked => {
+                            StatsPage.go("speed");
+                        }
+                    }
+                }
+            }
+            // Tiles in a row share the tallest one's height.
+            tiles := HorizontalLayout {
+                spacing: 12px;
+                Rise {
+                    width: (tiles.width - 36px) / 4;
+                    index: 0;
+                    play: StatsPage.reveal;
+                    Tile {
+                        title: "Usage";
+                        icon: Icons.usage;
+                        clicked => {
+                            StatsPage.go("usage");
+                        }
+                        Num {
+                            parts: [StatsPage.hub.usage];
+                            size: 28px;
+                        }
+                        Caption {
+                            text: StatsPage.hub.usage-line;
+                            font-size: 12px;
+                            overflow: elide;
+                        }
+                        // Who carried it, by provider: neutral meters (exits and their colours are App flows' subject).
+                        for share in StatsPage.hub.providers: ProviderMeter {
+                            share: share;
+                        }
+                    }
+                }
+                Rise {
+                    width: (tiles.width - 36px) / 4;
+                    index: 1;
+                    play: StatsPage.reveal;
+                    Tile {
+                        title: "Live";
+                        icon: Icons.speed;
+                        clicked => {
+                            StatsPage.go("live");
+                        }
+                        if StatsPage.hub.live: Num {
+                            parts: [StatsPage.hub.live-now];
+                            size: 28px;
+                        }
+                        if StatsPage.hub.live: Caption {
+                            text: "download now";
+                            font-size: 12px;
+                        }
+                        if StatsPage.hub.live: Spark {
+                            values: StatsPage.hub.spark;
+                            color: Ink.text;
+                        }
+                        if !StatsPage.hub.live: Sub {
+                            text: "Not connected";
+                        }
+                    }
+                }
+                Rise {
+                    width: (tiles.width - 36px) / 4;
+                    index: 2;
+                    play: StatsPage.reveal;
+                    Tile {
+                        title: "Journal";
+                        icon: Icons.calendar;
+                        clicked => {
+                            StatsPage.go("journal");
+                        }
+                        Num {
+                            parts: StatsPage.hub.week;
+                            size: 28px;
+                        }
+                        Caption {
+                            text: "connected this week";
+                            font-size: 12px;
+                        }
+                        if StatsPage.loaded: WeekMarks {
+                            hours: StatsPage.hub.week-hours;
+                            labels: StatsPage.weekdays;
+                            today: StatsPage.hub.today;
+                        }
+                    }
+                }
+                Rise {
+                    width: (tiles.width - 36px) / 4;
+                    index: 3;
+                    play: StatsPage.reveal;
+                    Tile {
+                        title: "Tunnels";
+                        icon: Icons.tunnel;
+                        clicked => {
+                            StatsPage.go("tunnels");
+                        }
+                        if !StatsPage.hub.tested: Sub {
+                            text: "No speed tests yet";
+                        }
+                        if StatsPage.hub.tested: Num {
+                            parts: [{ value: StatsPage.hub.best, unit: "Mbps" }];
+                            size: 28px;
+                        }
+                        if StatsPage.hub.tested: Caption {
+                            text: StatsPage.hub.best-line;
+                            font-size: 12px;
+                            overflow: elide;
+                        }
+                        for bar in StatsPage.hub.fastest: HorizontalLayout {
+                            spacing: 6px;
+                            cross-axis-alignment: center;
+                            Code {
+                                width: 28px;
+                                text: bar.code;
+                                color: Ink.dim;
+                                vertical-alignment: center;
+                            }
+                            Meter {
+                                horizontal-stretch: 1;
+                                frac: bar.frac;
+                                color: StatsPage.ink(bar.hue);
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                height: 14px;
+            }
+            // When, and through which exit: the period's data per hour or day, each bar in its exits' colours.
+            Card {
+                title: "Data · by exit";
+                more => {
+                    StatsPage.go("flows");
+                }
+                if StatsPage.empty: Sub {
+                    text: "No data in this period yet.";
+                }
+                if !StatsPage.empty: HorizontalLayout {
+                    spacing: 14px;
+                    alignment: start;
+                    for key in StatsPage.hub.legend: HorizontalLayout {
+                        spacing: 6px;
+                        cross-axis-alignment: center;
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: StatsPage.ink(key.hue);
+                        }
+                        Caption {
+                            text: key.name;
+                        }
+                    }
+                }
+                if !StatsPage.empty: StackedBars {
+                    columns: StatsPage.hub.columns;
+                    labels: StatsPage.labels;
+                    max-value: StatsPage.cap;
+                    scale: StatsPage.scale;
+                    summary: StatsPage.hub.summary;
+                    selected: StatsPage.selected;
+                    plot-height: 170px;
+                }
+            }
+            Rectangle {
+                height: 14px;
+            }
+            cards := HorizontalLayout {
+                spacing: 14px;
+                cross-axis-alignment: start;
+                Card {
+                    width: (cards.width - 14px) * 1.2 / 2.2;
+                    title: "Apps · by data";
+                    more => {
+                        StatsPage.go("flows");
+                    }
+                    if StatsPage.hub.apps.length == 0: Sub {
+                        text: "No data in this period yet.";
+                    }
+                    for app in StatsPage.hub.apps: HorizontalLayout {
+                        height: 34px;
+                        spacing: 12px;
+                        cross-axis-alignment: center;
+                        Sub {
+                            width: 150px;
+                            text: app.name;
+                            color: Ink.text;
+                            overflow: elide;
+                            vertical-alignment: center;
+                        }
+                        Chip {
+                            code: app.code;
+                            hue: app.hue;
+                        }
+                        Meter {
+                            horizontal-stretch: 1;
+                            frac: app.frac;
+                            color: StatsPage.ink(app.hue);
+                        }
+                        Small {
+                            width: 72px;
+                            text: app.bytes;
+                            color: Ink.text;
+                            horizontal-alignment: right;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                Card {
+                    horizontal-stretch: 1;
+                    title: "Exits";
+                    more => {
+                        StatsPage.go("tunnels");
+                    }
+                    if StatsPage.hub.exits.length == 0: Sub {
+                        text: "No data in this period yet.";
+                    }
+                    for exit in StatsPage.hub.exits: HorizontalLayout {
+                        height: 34px;
+                        spacing: 12px;
+                        cross-axis-alignment: center;
+                        Chip {
+                            code: exit.code;
+                            hue: exit.hue;
+                        }
+                        Sub {
+                            horizontal-stretch: 1;
+                            text: exit.name;
+                            color: Ink.text;
+                            overflow: elide;
+                            vertical-alignment: center;
+                        }
+                        Small {
+                            text: exit.apps;
+                            vertical-alignment: center;
+                        }
+                        Small {
+                            width: 72px;
+                            text: exit.bytes;
+                            color: Ink.text;
+                            horizontal-alignment: right;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---- sections --------------------------------------------------------------------------------------------------------
+
+component UsageSection inherits Section {
+    overline: StatsPage.range;
+    title: "Usage";
+    picker: true;
+    Hero {
+        over: StatsPage.usage.over;
+        parts: [StatsPage.usage.value];
+        sub: StatsPage.usage.sub;
+        trailing: StatsPage.usage.trailing;
+        // How much, when: neutral bars (which exit is App flows' subject, in the exits' colours).
+        StackedBars {
+            columns: StatsPage.usage.columns;
+            labels: StatsPage.labels;
+            max-value: StatsPage.cap;
+            scale: StatsPage.scale;
+            summary: StatsPage.usage.summary;
+            selected: StatsPage.selected;
+        }
+    }
+    SectionLabel {
+        text: StatsPage.usage.label;
+    }
+    if StatsPage.usage.providers.length == 0: Empty {
+        text: "No data in this period yet.";
+    }
+    for share[i] in StatsPage.usage.providers: GroupRow {
+        i: i;
+        n: StatsPage.usage.providers.length;
+        title: share.name;
+        VerticalLayout {
+            width: 150px;
+            spacing: 8px;
+            alignment: center;
+            Code {
+                text: share.value;
+                font-size: 14px;
+                horizontal-alignment: right;
+            }
+            Meter {
+                frac: share.frac;
+                color: StatsPage.ink(-4);
+            }
+        }
+    }
+    CaptionRow {
+        text: "Data that passes through unbraid. Apps you set to Direct skip it and aren't counted, unless connections without VPN are blocked or they pass through for the Protection filter. Apps that follow a Direct default route are counted. By exit and app: App flows.";
+    }
+    Links {
+        LinkButton {
+            icon: Icons.flows;
+            text: "App flows";
+            clicked => {
+                StatsPage.go("flows");
+            }
+        }
+        LinkButton {
+            icon: Icons.tunnel;
+            text: "Tunnels";
+            clicked => {
+                StatsPage.go("tunnels");
+            }
+        }
+    }
+}
+
+component LiveSection inherits Section {
+    overline: StatsPage.live.overline;
+    title: "Live";
+    if StatsPage.live.empty != "": Empty {
+        text: StatsPage.live.empty;
+    }
+    if StatsPage.live.empty == "": Hero {
+        over: "Download · now";
+        parts: [StatsPage.live.now];
+        sub: StatsPage.live.sub;
+        LiveArea {
+            series: StatsPage.live.series;
+            cap: StatsPage.live.cap;
+            unit: "Mbps";
+            summary: StatsPage.live.summary;
+        }
+        HorizontalLayout {
+            padding-right: 48px;
+            Code {
+                horizontal-stretch: 1;
+                text: "−60 s";
+                color: Ink.dim;
+            }
+            Code {
+                horizontal-stretch: 1;
+                text: "−30 s";
+                color: Ink.dim;
+                horizontal-alignment: center;
+            }
+            Code {
+                horizontal-stretch: 1;
+                text: "now";
+                color: Ink.dim;
+                horizontal-alignment: right;
+            }
+        }
+    }
+    if StatsPage.live.empty == "": SectionLabel {
+        text: "Per exit · now";
+    }
+    for row[i] in StatsPage.live.rows: GroupRow {
+        i: i;
+        n: StatsPage.live.rows.length;
+        label: row.name;
+        Chip {
+            code: row.code;
+            hue: row.hue;
+        }
+        RowText {
+            title: row.name;
+            sub: row.via;
+        }
+        Num {
+            parts: [row.now];
+            size: 18px;
+        }
+    }
+    if StatsPage.live.empty == "": HorizontalLayout {
+        padding: Metrics.gutter;
+        Rectangle {
+            height: 48px;
+            border-radius: 24px;
+            background: Ink.accent-container;
+            HorizontalLayout {
+                alignment: center;
+                cross-axis-alignment: center;
+                Icon {
+                    icon: Icons.speed;
+                    size: 20px;
+                    tint: Ink.accent;
+                }
+                Body {
+                    text: "  Test an exit's speed";
+                    vertical-alignment: center;
+                    accessible-role: none;
+                }
+            }
+            Tappable {
+                border-radius: 24px;
+                accessible-role: button;
+                accessible-label: "Test an exit's speed";
+                accessible-action-default => {
+                    StatsPage.go("speed");
+                }
+                clicked => {
+                    StatsPage.go("speed");
+                }
+            }
+        }
+    }
+}
+
+// One exit of App flows as a lane: tap to filter the list to it (again for all).
+component LaneCard {
+    in property <Lane> lane;
+    in property <int> i;
+    in property <int> n;
+    callback clicked();
+    private property <color> ink: StatsPage.ink(self.lane.hue);
+    private property <length> top-r: self.n == 1 || self.i == 0 ? 22px : 6px;
+    private property <length> bottom-r: self.n == 1 || self.i == self.n - 1 ? 22px : 6px;
+    // The bar grows to its length once.
+    private property <float> grow;
+    init => {
+        self.grow = 1;
+    }
+    animate grow {
+        duration: Motion.slow-spatial;
+        easing: spring(0);
+    }
+    min-height: body.min-height;
+    preferred-height: body.preferred-height;
+    squish := Squish {
+        pressed: tap.pressed;
+    }
+    Rectangle {
+        x: Metrics.gutter + (1 - squish.scale) * (root.width - 2 * Metrics.gutter) / 2;
+        y: 1px + (1 - squish.scale) * (root.height - 2px) / 2;
+        width: (root.width - 2 * Metrics.gutter) * squish.scale;
+        height: (root.height - 2px) * squish.scale;
+        background: root.lane.selected ? Ink.surface-high : Ink.surface;
+        border-width: root.lane.selected ? 1.5px : 0;
+        border-color: root.ink;
+        border-top-left-radius: root.top-r;
+        border-top-right-radius: root.top-r;
+        border-bottom-left-radius: root.bottom-r;
+        border-bottom-right-radius: root.bottom-r;
+        tap := Tappable {
+            border-radius: 6px;
+            accessible-role: button;
+            accessible-label: root.lane.name;
+            accessible-description: root.lane.apps + ", " + root.lane.bytes;
+            accessible-checkable: true;
+            accessible-checked: root.lane.selected;
+            accessible-action-default => {
+                root.clicked();
+            }
+            clicked => {
+                root.clicked();
+            }
+        }
+    }
+    body := VerticalLayout {
+        padding-left: Metrics.gutter + 16px;
+        padding-right: Metrics.gutter + 16px;
+        padding-top: 15px;
+        padding-bottom: 15px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 10px;
+            cross-axis-alignment: center;
+            Chip {
+                code: root.lane.code;
+                hue: root.lane.hue;
+            }
+            Body {
+                horizontal-stretch: 1;
+                text: root.lane.name;
+                overflow: elide;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            Caption {
+                text: root.lane.apps;
+                font-size: 12px;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            Code {
+                text: root.lane.bytes;
+                font-size: 15px;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            Code {
+                width: 34px;
+                text: root.lane.pct;
+                color: Ink.dim;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+        }
+        // Segments: the five biggest apps, fading, then the rest; the bar's length is the exit's data.
+        Rectangle {
+            height: 14px;
+            Rectangle {
+                x: 0;
+                width: parent.width * root.lane.frac * root.grow;
+                HorizontalLayout {
+                    spacing: 2px;
+                    for segment[j] in root.lane.segments: Rectangle {
+                        horizontal-stretch: segment.weight;
+                        background: root.ink.with-alpha(segment.alpha);
+                        // The bar's own rounded ends.
+                        border-top-left-radius: j == 0 ? 7px : 0;
+                        border-bottom-left-radius: j == 0 ? 7px : 0;
+                        border-top-right-radius: j == root.lane.segments.length - 1 ? 7px : 0;
+                        border-bottom-right-radius: j == root.lane.segments.length - 1 ? 7px : 0;
+                    }
+                }
+            }
+        }
+        // One line: the five apps by name, then the rest in one figure. It scrolls sideways if it doesn't fit.
+        names := Flickable {
+            height: line.preferred-height;
+            content-width: line.preferred-width;
+            line := HorizontalLayout {
+                spacing: 12px;
+                alignment: start;
+                for named in root.lane.names: HorizontalLayout {
+                    Caption {
+                        text: named.name;
+                        font-size: 12px;
+                        color: Ink.text;
+                    }
+                    Caption {
+                        text: " " + named.bytes;
+                        font-size: 12px;
+                    }
+                }
+                if root.lane.rest != "": Caption {
+                    text: root.lane.rest;
+                    font-size: 12px;
+                }
+            }
+        }
+    }
+}
+
+// A filter pill over the app list: the exit's code in its colour, its name and app count.
+component FilterPill inherits Rectangle {
+    in property <Pill> pill;
+    callback clicked();
+    private property <color> ink: StatsPage.ink(self.pill.hue);
+    height: 36px;
+    border-radius: 18px;
+    background: self.pill.on ? self.ink : Ink.surface-high;
+    animate background {
+        duration: Motion.fast-effects;
+        easing: spring(0);
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 6px;
+        if root.pill.code != "": Code {
+            text: root.pill.code;
+            color: root.pill.on ? Ink.ground : root.ink;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        Sub {
+            text: root.pill.text;
+            font-weight: 500;
+            color: root.pill.on ? Ink.ground : Ink.text;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    Tappable {
+        border-radius: 18px;
+        accessible-role: radio-button;
+        accessible-label: root.pill.text;
+        accessible-checkable: true;
+        accessible-checked: root.pill.on;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component FlowsSection inherits Section {
+    overline: StatsPage.range;
+    title: "App flows";
+    sub: StatsPage.flows.sub;
+    picker: true;
+    if StatsPage.flows.empty: Empty {
+        text: "No data in this period yet.";
+    }
+    if !StatsPage.flows.empty: SectionLabel {
+        text: "Exits · data and their apps";
+    }
+    // The exits' shares of all data, as one thin bar.
+    if !StatsPage.flows.empty: HorizontalLayout {
+        padding-left: Metrics.gutter;
+        padding-right: Metrics.gutter;
+        padding-bottom: 10px;
+        Ends {
+            parts: StatsPage.flows.share;
+        }
+    }
+    for lane[i] in StatsPage.flows.lanes: LaneCard {
+        lane: lane;
+        i: i;
+        n: StatsPage.flows.lanes.length;
+        clicked => {
+            StatsPage.filter-flows(lane.selected ? "" : lane.id);
+        }
+    }
+    // The list: every app by data, filtered by exit; long lists open on request.
+    if !StatsPage.flows.empty: SectionLabel {
+        text: "Apps · by data";
+    }
+    if !StatsPage.flows.empty: pills := Flickable {
+        height: 36px + 10px;
+        content-width: row.preferred-width;
+        row := HorizontalLayout {
+            padding-left: Metrics.gutter;
+            padding-right: Metrics.gutter;
+            padding-bottom: 10px;
+            spacing: 6px;
+            alignment: start;
+            for pill in StatsPage.flows.pills: FilterPill {
+                pill: pill;
+                clicked => {
+                    StatsPage.filter-flows(pill.id);
+                }
+            }
+        }
+    }
+    for app[i] in StatsPage.flows.rows: GroupRow {
+        i: i;
+        n: StatsPage.flows.rows.length;
+        label: app.name;
+        AppIcon {
+            icon: StatsPage.icon(app.pkg);
+            letter: app.letter;
+            size: 32px;
+        }
+        RowText {
+            title: app.name;
+        }
+        VerticalLayout {
+            width: 150px;
+            spacing: 8px;
+            alignment: center;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+                cross-axis-alignment: center;
+                Chip {
+                    code: app.code;
+                    hue: app.hue;
+                }
+                Code {
+                    text: app.bytes;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                }
+            }
+            Meter {
+                frac: app.frac;
+                color: StatsPage.ink(app.hue);
+            }
+        }
+    }
+    if StatsPage.flows.more != "": Links {
+        LinkButton {
+            icon: Icons.apps;
+            text: StatsPage.flows.more;
+            clicked => {
+                StatsPage.toggle-all-flows();
+            }
+        }
+    }
+}
+
+component JournalSection inherits Section {
+    overline: "Last 13 weeks";
+    title: "Journal";
+    Hero {
+        over: "This week";
+        parts: StatsPage.journal.week;
+        sub: StatsPage.journal.sub;
+        Heatmap {
+            hours: StatsPage.journal.heat;
+            selected: StatsPage.journal.index;
+            weekdays: StatsPage.weekdays;
+            months: StatsPage.journal.months;
+            summary: "Hours connected per day, last 13 weeks";
+        }
+    }
+    HorizontalLayout {
+        padding-left: Metrics.gutter;
+        padding-right: Metrics.gutter;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        Rectangle {
+            height: 48px;
+            border-radius: 24px;
+            background: Ink.surface;
+            HorizontalLayout {
+                IconTap {
+                    icon: Icons.chevron-left;
+                    label: "Previous day";
+                    clicked => {
+                        if StatsPage.journal.has-prev {
+                            StatsPage.pick-day(StatsPage.journal.day - 1);
+                        }
+                    }
+                }
+                Body {
+                    horizontal-stretch: 1;
+                    text: StatsPage.journal.date;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                IconTap {
+                    icon: Icons.chevron;
+                    label: "Next day";
+                    tint: StatsPage.journal.has-next ? Ink.text : Ink.faint;
+                    clicked => {
+                        if StatsPage.journal.has-next {
+                            StatsPage.pick-day(StatsPage.journal.day + 1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: Metrics.gutter;
+        padding-right: Metrics.gutter;
+        Rectangle {
+            border-radius: 24px;
+            background: Ink.surface;
+            VerticalLayout {
+                padding: 16px;
+                spacing: 8px;
+                Timeline {
+                    spans: StatsPage.journal.spans;
+                    summary: StatsPage.journal.summary;
+                }
+                HorizontalLayout {
+                    alignment: space-between;
+                    for hour in ["00", "06", "12", "18", "24"]: Code {
+                        text: hour;
+                        color: Ink.dim;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 16px;
+                    alignment: start;
+                    for key in [{ ink: Ink.good, text: "Connected" }, { ink: Ink.accent, text: "Paused" }, { ink: Ink.surface-top, text: "Off" }]: HorizontalLayout {
+                        spacing: 6px;
+                        cross-axis-alignment: center;
+                        Rectangle {
+                            width: 10px;
+                            height: 10px;
+                            border-radius: 5px;
+                            background: key.ink;
+                        }
+                        Caption {
+                            text: key.text;
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    HorizontalLayout {
+        padding: Metrics.gutter;
+        spacing: 8px;
+        for fact in StatsPage.journal.facts: Rectangle {
+            horizontal-stretch: 1;
+            min-width: 0;
+            preferred-width: 0;
+            border-radius: 20px;
+            background: Ink.surface;
+            VerticalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                spacing: 2px;
+                Num {
+                    parts: fact.parts;
+                    size: 20px;
+                }
+                Caption {
+                    text: fact.label;
+                    font-size: 12px;
+                    overflow: elide;
+                }
+            }
+        }
+    }
+}
+
+component TunnelsSection inherits Section {
+    overline: StatsPage.range;
+    title: "Tunnels";
+    picker: true;
+    if StatsPage.tunnels.tested: Hero {
+        over: "Fastest speed test";
+        parts: [{ value: StatsPage.tunnels.best, unit: "Mbps" }];
+        sub: StatsPage.tunnels.sub;
+    }
+    if !StatsPage.tunnels.tested: Empty {
+        text: "No speed tests yet. Run one to see what each exit can do.";
+    }
+    SectionLabel {
+        text: "Per exit · Mbps";
+    }
+    for row[i] in StatsPage.tunnels.rows: GroupRow {
+        i: i;
+        n: StatsPage.tunnels.rows.length;
+        kind: RowKind.button;
+        label: "Open " + row.name;
+        clicked => {
+            StatsPage.go("tunnel:" + row.id);
+        }
+        Chip {
+            code: row.code;
+            hue: row.hue;
+        }
+        RowText {
+            title: row.name;
+            sub: row.via;
+        }
+        VerticalLayout {
+            width: 168px;
+            spacing: 4px;
+            alignment: center;
+            if !row.tested: Code {
+                text: "—";
+                font-size: 16px;
+                color: Ink.dim;
+                horizontal-alignment: right;
+            }
+            if row.tested: HorizontalLayout {
+                alignment: end;
+                Code {
+                    text: "test ";
+                    font-size: 11px;
+                    color: Ink.dim;
+                    vertical-alignment: bottom;
+                }
+                Code {
+                    text: row.test;
+                }
+            }
+            if row.tested: Meter {
+                frac: row.frac;
+                color: StatsPage.ink(row.hue);
+            }
+        }
+    }
+    CaptionRow {
+        text: "Each exit's fastest speed test in this period. Download (↓) and upload (↑) are measured apart.";
+    }
+    Links {
+        LinkButton {
+            icon: Icons.speed;
+            text: "Speed test";
+            clicked => {
+                StatsPage.go("speed");
+            }
+        }
+    }
+}
+
+component TunnelSection inherits Section {
+    overline: StatsPage.tunnel.overline;
+    title: StatsPage.tunnel.title;
+    picker: true;
+    if StatsPage.tunnel.tested: Hero {
+        over: "Fastest speed test";
+        parts: [{ value: StatsPage.tunnel.best, unit: "Mbps" }];
+        sub: StatsPage.tunnel.sub;
+    }
+    if !StatsPage.tunnel.tested: Empty {
+        text: "No speed test of this exit in this period yet.";
+    }
+    SectionLabel {
+        text: "Servers · share of this exit's data";
+    }
+    for server[i] in StatsPage.tunnel.servers: GroupRow {
+        i: i;
+        n: StatsPage.tunnel.servers.length;
+        title: server.name;
+        HorizontalLayout {
+            width: 150px;
+            spacing: 8px;
+            cross-axis-alignment: center;
+            Meter {
+                horizontal-stretch: 1;
+                frac: server.frac;
+                color: StatsPage.ink(StatsPage.tunnel.hue);
+            }
+            Code {
+                text: server.pct;
+                font-size: 14px;
+                vertical-alignment: center;
+            }
+        }
+    }
+    Links {
+        padding-top: 16px;
+        LinkButton {
+            icon: Icons.flows;
+            text: "Apps on this exit";
+            clicked => {
+                StatsPage.go("flows");
+            }
+        }
+        LinkButton {
+            icon: Icons.speed;
+            text: "Speed test";
+            clicked => {
+                StatsPage.go("speed");
+            }
+        }
+    }
+}
+
+// History's three number columns, right-aligned so heads and values line up.
+component Cols inherits HorizontalLayout {
+    in property <string> down;
+    in property <string> up;
+    in property <string> ping;
+    in property <length> size: 14px;
+    in property <bool> strong;
+    Code {
+        width: 56px;
+        text: root.down;
+        font-size: root.strong ? root.size + 2px : root.size;
+        font-weight: root.strong ? 500 : 400;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+    Code {
+        width: 56px;
+        text: root.up;
+        font-size: root.size;
+        font-weight: 400;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+    Code {
+        width: 44px;
+        text: root.ping;
+        font-size: root.size;
+        font-weight: 400;
+        color: Ink.dim;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+}
+
+component HistorySection inherits Section {
+    overline: StatsPage.history.overline;
+    title: "History";
+    if StatsPage.history.tested: Hero {
+        over: "Best download";
+        parts: [{ value: StatsPage.history.best, unit: "Mbps" }];
+        sub: StatsPage.history.sub;
+    }
+    if !StatsPage.history.tested: Empty {
+        text: "No speed tests yet.";
+    }
+    // Column heads over the three numbers, aligned with the rows' first line.
+    if StatsPage.history.rows.length > 0: HorizontalLayout {
+        padding-left: 24px;
+        padding-right: Metrics.gutter + 16px;
+        padding-top: 20px;
+        padding-bottom: 8px;
+        Overline {
+            horizontal-stretch: 1;
+            text: "ALL TESTS";
+            vertical-alignment: center;
+        }
+        for head[k] in ["Mbps", "Mbps", "ping"]: HorizontalLayout {
+            width: k == 2 ? 44px : 56px;
+            alignment: end;
+            cross-axis-alignment: center;
+            if k < 2: Icon {
+                icon: k == 0 ? Icons.down : Icons.up;
+                size: 14px;
+                tint: Ink.dim;
+            }
+            Small {
+                text: head;
+            }
+        }
+    }
+    // Two lines: when and the numbers, then the whole VPN server name across the row, never cut short.
+    for test[i] in StatsPage.history.rows: HorizontalLayout {
+        padding-left: Metrics.gutter;
+        padding-right: Metrics.gutter;
+        padding-top: 1px;
+        padding-bottom: 1px;
+        Rectangle {
+            property <length> top-r: StatsPage.history.rows.length == 1 || i == 0 ? 22px : 6px;
+            property <length> bottom-r: StatsPage.history.rows.length == 1 || i == StatsPage.history.rows.length - 1 ? 22px : 6px;
+            background: Ink.surface;
+            border-top-left-radius: self.top-r;
+            border-top-right-radius: self.top-r;
+            border-bottom-left-radius: self.bottom-r;
+            border-bottom-right-radius: self.bottom-r;
+            accessible-role: text;
+            accessible-label: test.when + ", " + test.down + " Mbps down, " + test.up + " Mbps up, " + test.line;
+            VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                spacing: 6px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    cross-axis-alignment: center;
+                    Chip {
+                        code: test.code;
+                        hue: test.hue;
+                    }
+                    Body {
+                        horizontal-stretch: 1;
+                        text: test.when;
+                        overflow: elide;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                    Cols {
+                        down: test.down;
+                        up: test.up;
+                        ping: test.ping;
+                        strong: true;
+                        accessible-role: none;
+                    }
+                }
+                Caption {
+                    text: test.line;
+                    wrap: word-wrap;
+                    accessible-role: none;
+                }
+                for member in test.members: HorizontalLayout {
+                    spacing: 10px;
+                    cross-axis-alignment: center;
+                    Chip {
+                        code: member.code;
+                        hue: member.hue;
+                    }
+                    Caption {
+                        horizontal-stretch: 1;
+                        text: member.name;
+                        overflow: elide;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                    Cols {
+                        down: member.down;
+                        up: member.up;
+                        ping: member.ping;
+                        size: 13px;
+                        accessible-role: none;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---- the speed test ---------------------------------------------------------------------------------------------------
+
+// An exit's chip above the test, or every route's ("ALL" with a stripe of their colours).
+component ExitChip inherits Rectangle {
+    in property <string> code;
+    in property <string> text;
+    in property <color> ink;
+    in property <bool> on;
+    in property <bool> busy;
+    in property <[int]> stripe;
+    callback clicked();
+    height: 40px;
+    border-radius: 20px;
+    horizontal-stretch: 0;
+    background: self.on ? self.ink : Ink.surface-high;
+    animate background {
+        duration: Motion.fast-effects;
+        easing: spring(0);
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 16px;
+        spacing: 8px;
+        cross-axis-alignment: center;
+        if root.stripe.length > 0: HorizontalLayout {
+            width: 22px;
+            height: 8px;
+            spacing: 1px;
+            for hue[j] in root.stripe: Rectangle {
+                horizontal-stretch: 1;
+                background: StatsPage.ink(hue);
+                border-top-left-radius: j == 0 ? 4px : 0;
+                border-bottom-left-radius: j == 0 ? 4px : 0;
+                border-top-right-radius: j == root.stripe.length - 1 ? 4px : 0;
+                border-bottom-right-radius: j == root.stripe.length - 1 ? 4px : 0;
+            }
+        }
+        Code {
+            text: root.code;
+            color: root.on ? Ink.ground : root.stripe.length > 0 ? Ink.text : root.ink;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        Sub {
+            text: root.text;
+            font-weight: 500;
+            color: root.on ? Ink.ground : root.busy ? Ink.dim : Ink.text;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    Tappable {
+        border-radius: 20px;
+        enabled: !root.busy;
+        accessible-role: radio-button;
+        accessible-label: root.text;
+        accessible-checkable: true;
+        accessible-checked: root.on;
+        accessible-enabled: !root.busy;
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A figure card of the speed test; the one being measured is outlined in [ink].
+component FigureCard inherits Rectangle {
+    in property <SpeedCard> card;
+    in property <string> icon;
+    in property <color> ink;
+    horizontal-stretch: 1;
+    min-width: 0;
+    preferred-width: 0;
+    border-radius: 20px;
+    border-width: self.card.active ? 2px : 1px;
+    border-color: self.card.active ? self.ink : Ink.line;
+    animate border-color {
+        duration: Motion.fast-effects;
+        easing: spring(0);
+    }
+    accessible-role: text;
+    accessible-label: self.card.title + " " + (self.card.value == "" ? "not measured" : self.card.value + " " + self.card.unit);
+    VerticalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        HorizontalLayout {
+            spacing: 6px;
+            cross-axis-alignment: center;
+            Icon {
+                icon: root.icon;
+                size: 16px;
+                tint: Ink.dim;
+            }
+            Caption {
+                text: root.card.title;
+                font-size: 12px;
+                accessible-role: none;
+            }
+        }
+        HorizontalLayout {
+            padding-top: 4px;
+            Code {
+                text: root.card.value == "" ? "—" : root.card.value;
+                font-size: 22px;
+                color: root.card.value == "" ? Ink.dim : Ink.text;
+                accessible-role: none;
+            }
+        }
+        Caption {
+            text: root.card.unit;
+            font-size: 12px;
+            overflow: elide;
+            accessible-role: none;
+        }
+    }
+}
+
+// The dial while measuring, its reading in its opening: the needle and the number glide between readings.
+component Gauging {
+    in property <Gauge> gauge;
+    in property <color> ink;
+    in property <[float]> ticks: Charts.ticks;
+    // A combined run: Gbps from 1000 Mbps, and how many exits.
+    in property <int> together;
+    private property <float> m: self.gauge.mbps;
+    animate m {
+        duration: Motion.reduced ? 0ms : 993ms;
+        easing: spring(0);
+    }
+    height: 300px;
+    HorizontalLayout {
+        alignment: center;
+        Dial {
+            mbps: root.m;
+            color: root.ink;
+            label: root.gauge.label;
+            ticks: root.ticks;
+        }
+    }
+    VerticalLayout {
+        alignment: end;
+        padding-bottom: 20px;
+        Code {
+            text: root.together > 0 ? (root.m >= 1000 ? (root.m / 1000).to-fixed(2) : "\{Math.floor(root.m)}") : (root.m < 100 ? root.m.to-fixed(1) : "\{Math.floor(root.m)}");
+            font-size: 30px;
+            horizontal-alignment: center;
+            accessible-role: none;
+        }
+        HorizontalLayout {
+            alignment: center;
+            cross-axis-alignment: center;
+            Icon {
+                icon: root.gauge.upload ? Icons.up : Icons.down;
+                size: 16px;
+                tint: root.together > 0 ? Ink.text : root.ink;
+            }
+            Caption {
+                text: root.together > 0 ? " \{root.m >= 1000 ? "Gbps" : "Mbps"} · \{root.together} exits together" : " Mbps · \{root.gauge.upload ? "upload" : "download"}";
+                font-size: 12px;
+                accessible-role: none;
+            }
+        }
+    }
+}
+
+// The bar under a test's dial (its 20 seconds) and the line below it: the phase, and Cancel.
+component Progress inherits VerticalLayout {
+    in property <Gauge> gauge;
+    in property <color> ink;
+    private property <float> p: self.gauge.progress;
+    animate p {
+        duration: Motion.reduced ? 0ms : 300ms;
+    }
+    padding-left: 24px;
+    padding-right: 24px;
+    padding-top: 8px;
+    // shortcut: a straight bar where Material's is wavy; draw the wave if it's missed.
+    Rectangle {
+        height: 4px;
+        border-radius: 2px;
+        background: Ink.surface-top;
+        accessible-role: progress-indicator;
+        accessible-value: "\{Math.round(root.p * 100)} %";
+        Rectangle {
+            x: 0;
+            width: parent.width * root.p;
+            border-radius: 2px;
+            background: root.ink;
+        }
+    }
+    HorizontalLayout {
+        Caption {
+            horizontal-stretch: 1;
+            text: root.gauge.status;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+        Secondary {
+            text: "Cancel";
+            color: Ink.text;
+            clicked => {
+                StatsPage.cancel-test();
+            }
+        }
+    }
+}
+
+// Where the test runs, as Ookla shows it: the server's place, and what it goes through.
+component ServerBox inherits HorizontalLayout {
+    in property <ServerCard> server;
+    padding-left: Metrics.gutter;
+    padding-right: Metrics.gutter;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    Rectangle {
+        border-radius: 20px;
+        background: Ink.surface;
+        accessible-role: text;
+        accessible-label: "Test server, M-Lab: " + root.server.place + ". " + root.server.line;
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 12px;
+            padding-bottom: 12px;
+            spacing: 12px;
+            cross-axis-alignment: center;
+            Icon {
+                icon: Icons.speed;
+                tint: Ink.dim;
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                Overline {
+                    text: "TEST SERVER · M-LAB";
+                    accessible-role: none;
+                }
+                Body {
+                    text: root.server.place;
+                    wrap: word-wrap;
+                    accessible-role: none;
+                }
+                Caption {
+                    text: root.server.line;
+                    font-size: 12px;
+                    accessible-role: none;
+                }
+            }
+        }
+    }
+}
+
+// The GO button: Material's nine-sided cookie in the exit's colour; while a server is found it turns round with a
+// loader, and a success blooms once.
+component GoCookie {
+    in property <GoButton> go;
+    callback clicked();
+    private property <color> ink: StatsPage.ink(self.go.hue);
+    // GO → AGAIN springs smaller.
+    private property <length> side: self.go.size * 1px;
+    animate side {
+        duration: Motion.spatial;
+        easing: spring(0.2);
+    }
+    private property <float> ring: self.go.bloom ? 1 : 0;
+    animate ring {
+        duration: Motion.reduced ? 0ms : 444ms;
+    }
+    private property <int> turn;
+    width: self.side;
+    height: self.side + 16px;
+    if root.go.bloom && root.ring < 1: Rectangle {
+        x: -root.side * 0.11 * root.ring;
+        y: 16px - root.side * 0.11 * root.ring;
+        width: root.side * (1 + 0.22 * root.ring);
+        height: self.width;
+        border-radius: self.width / 2;
+        background: root.ink;
+        opacity: 0.7 * (1 - root.ring);
+    }
+    if !root.go.working: Path {
+        y: 16px;
+        width: root.side;
+        height: root.side;
+        commands: Shapes.cookie;
+        fill: root.ink;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        accessible-role: none;
+    }
+    if root.go.working: Rectangle {
+        y: 16px;
+        width: root.side;
+        height: root.side;
+        border-radius: root.side / 2;
+        background: root.ink;
+        Path {
+            width: root.side * 0.4;
+            height: root.side * 0.4;
+            commands: Shapes.cookie-turns[root.turn];
+            fill: Ink.ground;
+            viewbox-width: 100;
+            viewbox-height: 100;
+            accessible-role: none;
+        }
+    }
+    if !root.go.working: Text {
+        y: 16px;
+        width: root.side;
+        height: root.side;
+        text: root.go.text;
+        font-family: Type.display;
+        font-weight: 900;
+        font-size: root.side * (root.go.text == "GO" ? 0.3 : 0.2);
+        color: Ink.ground;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+    Timer {
+        interval: 60ms;
+        running: root.go.working && !Motion.reduced;
+        triggered => {
+            root.turn = Math.mod(root.turn + 1, Shapes.cookie-turns.length);
+        }
+    }
+    Tappable {
+        y: 16px;
+        width: root.side;
+        height: root.side;
+        border-radius: root.side / 2;
+        enabled: !root.go.working;
+        ring: Ink.text;
+        accessible-role: button;
+        accessible-label: root.go.label;
+        accessible-enabled: !root.go.working;
+        accessible-description: root.go.working ? "Working" : "";
+        accessible-action-default => {
+            root.clicked();
+        }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A centred line of the test's words.
+component Note inherits HorizontalLayout {
+    in property <string> text;
+    in property <color> ink: Ink.dim;
+    padding-left: 24px;
+    padding-right: 24px;
+    padding-top: 16px;
+    padding-bottom: 16px;
+    Caption {
+        text: root.text;
+        font-size: 12px;
+        color: root.ink;
+        wrap: word-wrap;
+        horizontal-alignment: center;
+    }
+}
+
+// A checkbox, as Material's: the text's ink when ticked, its mark in the ground's.
+component Tick inherits Rectangle {
+    in property <bool> on;
+    width: 18px;
+    height: 18px;
+    border-radius: 2px;
+    background: self.on ? Ink.text : transparent;
+    border-width: self.on ? 0 : 2px;
+    border-color: Ink.dim;
+    if root.on: Icon {
+        icon: Icons.check;
+        size: 16px;
+        tint: Ink.ground;
+    }
+}
+
+// A radio button, as Material's.
+component Radio inherits Rectangle {
+    in property <bool> on;
+    width: 20px;
+    height: 20px;
+    border-radius: 10px;
+    border-width: 2px;
+    border-color: self.on ? Ink.text : Ink.dim;
+    if root.on: Rectangle {
+        width: 10px;
+        height: 10px;
+        border-radius: 5px;
+        background: Ink.text;
+    }
+}
+
+// The corners of row [i] of [n] in a segmented group.
+component Segmented inherits Rectangle {
+    in property <int> i;
+    in property <int> n: 1;
+    border-top-left-radius: self.n == 1 || self.i == 0 ? 22px : 6px;
+    border-top-right-radius: self.border-top-left-radius;
+    border-bottom-left-radius: self.n == 1 || self.i == self.n - 1 ? 22px : 6px;
+    border-bottom-right-radius: self.border-bottom-left-radius;
+}
+
+// Every routed exit at once: tick them, GO finds a test server for each, then all download and upload together.
+component TogetherPart inherits VerticalLayout {
+    in property <Together> all;
+    // GO and AGAIN: M-Lab's terms first if they aren't agreed yet.
+    callback begin();
+    alignment: start;
+    HorizontalLayout {
+        padding-left: Metrics.gutter;
+        padding-right: Metrics.gutter;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 8px;
+        for card[k] in root.all.cards: FigureCard {
+            card: card;
+            icon: k == 0 ? Icons.down : k == 1 ? Icons.up : Icons.routes;
+            ink: Ink.text;
+        }
+    }
+    if root.all.measuring: Gauging {
+        gauge: root.all.gauge;
+        ink: Ink.text;
+        ticks: Charts.combined-ticks;
+        together: root.all.exits;
+    }
+    if root.all.measuring: Progress {
+        gauge: root.all.gauge;
+        ink: Ink.text;
+    }
+    // Each exit's plain linear share of the total now.
+    if root.all.measuring: VerticalLayout {
+        padding-left: Metrics.gutter;
+        padding-right: Metrics.gutter;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 2px;
+        for bar[i] in root.all.bars: Segmented {
+            i: i;
+            n: root.all.bars.length;
+            background: Ink.surface;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 8px;
+                padding-bottom: 8px;
+                spacing: 10px;
+                cross-axis-alignment: center;
+                Chip {
+                    code: bar.code;
+                    hue: bar.hue;
+                }
+                if bar.stopped: Caption {
+                    horizontal-stretch: 1;
+                    text: "Stopped";
+                    color: Ink.bad;
+                }
+                if !bar.stopped: Meter {
+                    horizontal-stretch: 1;
+                    frac: bar.frac;
+                    color: StatsPage.ink(bar.hue);
+                }
+                Code {
+                    width: 44px;
+                    text: bar.now;
+                    font-size: 14px;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+    }
+    if root.all.finished && root.all.error != "": HorizontalLayout {
+        padding-left: 24px;
+        padding-right: 24px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        Sub {
+            text: root.all.error;
+            color: Ink.bad;
+            wrap: word-wrap;
+        }
+    }
+    if root.all.done: VerticalLayout {
+        padding-left: 24px;
+        padding-right: 24px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 8px;
+        HorizontalLayout {
+            Caption {
+                horizontal-stretch: 1;
+                text: "Each exit's share of the download";
+                font-size: 12px;
+            }
+            Caption {
+                text: root.all.window;
+                font-size: 12px;
+            }
+        }
+        Ends {
+            parts: root.all.share;
+        }
+    }
+    // A finished run's exits: download, upload and ping with the M-Lab server each used; one that stopped, in red.
+    if root.all.finished: HorizontalLayout {
+        padding-left: 24px;
+        padding-right: Metrics.gutter + 16px;
+        padding-top: 12px;
+        padding-bottom: 8px;
+        Overline {
+            horizontal-stretch: 1;
+            text: "EACH EXIT";
+            vertical-alignment: center;
+        }
+        for head[k] in ["", "", "ms"]: HorizontalLayout {
+            width: k == 2 ? 44px : 56px;
+            alignment: end;
+            cross-axis-alignment: center;
+            if k < 2: Icon {
+                icon: k == 0 ? Icons.down : Icons.up;
+                size: 14px;
+                tint: Ink.dim;
+            }
+            if k == 2: Small {
+                text: head;
+            }
+        }
+    }
+    if root.all.finished: VerticalLayout {
+        padding-left: Metrics.gutter;
+        padding-right: Metrics.gutter;
+        spacing: 2px;
+        for leg[i] in root.all.results: Segmented {
+            i: i;
+            n: root.all.results.length;
+            background: leg.failed ? transparent : Ink.surface;
+            border-width: leg.failed ? 1px : 0;
+            border-color: Ink.bad.with-alpha(0.4);
+            accessible-role: text;
+            accessible-label: leg.name + ", " + leg.line + (leg.failed ? "" : ", " + leg.down + " Mbps down, " + leg.up + " up, ping " + leg.ping);
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 10px;
+                cross-axis-alignment: center;
+                Chip {
+                    code: leg.code;
+                    hue: leg.hue;
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    Body {
+                        text: leg.name;
+                        overflow: elide;
+                        accessible-role: none;
+                    }
+                    Caption {
+                        text: leg.line;
+                        font-size: 12px;
+                        color: leg.failed ? Ink.bad : Ink.dim;
+                        accessible-role: none;
+                    }
+                }
+                if !leg.failed: Cols {
+                    down: leg.down;
+                    up: leg.up;
+                    ping: leg.ping;
+                    size: 13px;
+                    strong: true;
+                    accessible-role: none;
+                }
+            }
+        }
+    }
+    // Pick the exits (a test server for each is found after GO), or watch them being found.
+    if !root.all.measuring && !root.all.finished: HorizontalLayout {
+        padding-left: 24px;
+        padding-right: 24px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        Overline {
+            text: root.all.heading.to-uppercase();
+        }
+    }
+    if !root.all.measuring && !root.all.finished: VerticalLayout {
+        padding-left: Metrics.gutter;
+        padding-right: Metrics.gutter;
+        spacing: 2px;
+        for pick[i] in root.all.picks: Segmented {
+            i: i;
+            n: root.all.picks.length + root.all.nodes.length;
+            background: Ink.surface;
+            min-height: max(52px, pick-row.min-height);
+            pick-row := HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 12px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 12px;
+                cross-axis-alignment: center;
+                Chip {
+                    code: pick.code;
+                    hue: pick.hue;
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    Body {
+                        text: pick.name;
+                        overflow: elide;
+                        accessible-role: none;
+                    }
+                    Caption {
+                        text: pick.sub;
+                        font-size: 12px;
+                        overflow: elide;
+                        accessible-role: none;
+                    }
+                }
+                if !root.all.working: Tick {
+                    on: pick.on;
+                }
+                if root.all.working: Caption {
+                    text: pick.state;
+                    font-size: 12px;
+                    color: pick.tone == 1 ? Ink.accent : pick.tone == 2 ? Ink.text : Ink.dim;
+                    vertical-alignment: center;
+                    accessible-role: none;
+                }
+                if root.all.working && pick.tone == 2: Icon {
+                    icon: Icons.check-circle;
+                    size: 20px;
+                    tint: Ink.good;
+                }
+            }
+            if !root.all.working: Tappable {
+                border-radius: 6px;
+                accessible-role: checkbox;
+                accessible-label: pick.name;
+                accessible-description: pick.sub;
+                accessible-checkable: true;
+                accessible-checked: pick.on;
+                accessible-action-default => {
+                    StatsPage.tick(pick.id, !pick.on);
+                }
+                clicked => {
+                    StatsPage.tick(pick.id, !pick.on);
+                }
+            }
+        }
+        for node[k] in root.all.nodes: Segmented {
+            i: root.all.picks.length + k;
+            n: root.all.picks.length + root.all.nodes.length;
+            border-width: 1px;
+            border-color: Ink.line;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 8px;
+                padding-bottom: 8px;
+                spacing: 12px;
+                cross-axis-alignment: center;
+                CodeChip {
+                    code: node.code;
+                    color: Ink.faint;
+                    filled: false;
+                }
+                VerticalLayout {
+                    Body {
+                        text: node.name;
+                        color: Ink.dim;
+                    }
+                    Caption {
+                        text: "Can't join: Tailscale has one exit node at a time";
+                        font-size: 12px;
+                    }
+                }
+            }
+        }
+    }
+    HorizontalLayout {
+        alignment: center;
+        GoCookie {
+            go: root.all.go;
+            clicked => {
+                if root.all.finished || root.all.start.length >= 2 {
+                    root.begin();
+                }
+            }
+        }
+    }
+    if root.all.note != "": Note {
+        text: root.all.note;
+    }
+    if root.all.working: HorizontalLayout {
+        alignment: center;
+        Secondary {
+            text: "Cancel";
+            color: Ink.text;
+            clicked => {
+                StatsPage.cancel-test();
+            }
+        }
+    }
+    if root.all.finished: HorizontalLayout {
+        alignment: center;
+        LinkButton {
+            icon: Icons.history;
+            text: "History";
+            clicked => {
+                StatsPage.go("history");
+            }
+        }
+    }
+}
+
+// M-Lab's terms, agreed once before the first test (measurementlab.net/aup: informed consent, published results).
+component MlabConsent inherits BottomSheet {
+    callback accept();
+    label: "Speed tests use M-Lab";
+    VerticalLayout {
+        padding-left: 24px;
+        padding-right: 24px;
+        padding-bottom: 24px;
+        spacing: 16px;
+        Title {
+            text: "Speed tests use M-Lab";
+            font-size: 24px;
+            font-weight: 500;
+        }
+        for line in [
+            { icon: Icons.speed, text: "Measurement Lab (M-Lab) is an open platform run by researchers. A test asks for one of its servers in the exit's country; for your own servers and Tailscale nodes M-Lab picks a nearby one. Ten seconds each way." },
+            { icon: Icons.history, text: "M-Lab publishes every test's results openly and keeps them, with the public IP address of the exit you test: a VPN server's, or your home's for a home or Tailscale exit." },
+            { icon: Icons.block, text: StatsPage.speed.terms },
+        ]: HorizontalLayout {
+            spacing: 16px;
+            Icon {
+                icon: line.icon;
+                tint: Ink.dim;
+            }
+            Sub {
+                horizontal-stretch: 1;
+                text: line.text;
+                color: Ink.text;
+                wrap: word-wrap;
+            }
+        }
+        HorizontalLayout {
+            alignment: start;
+            LinkButton {
+                icon: Icons.external;
+                text: "M-Lab privacy policy";
+                clicked => {
+                    StatsPage.privacy();
+                }
+            }
+        }
+        HorizontalLayout {
+            padding-top: 8px;
+            SheetButtons {
+                no: "Not now";
+                yes: "Agree and test";
+                no-clicked => {
+                    root.close();
+                }
+                yes-clicked => {
+                    root.accept();
+                }
+            }
+        }
+    }
+}
+
+// Before a combined run, only when something needs a decision: an exit without an M-Lab server in its country (via the
+// nearest one, together with the others, or left out), one M-Lab limits or can't reach (left out), and the data it may
+// use on a metered network. Nothing has been sent yet.
+component BeforeTogether inherits BottomSheet {
+    in property <Together> all;
+    label: "Before the test";
+    close => {
+        StatsPage.cancel-test();
+    }
+    VerticalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-bottom: 24px;
+        spacing: 14px;
+        for d in root.all.decisions: VerticalLayout {
+            spacing: 14px;
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 10px;
+                cross-axis-alignment: center;
+                Chip {
+                    code: d.code;
+                    hue: d.hue;
+                }
+                Title {
+                    horizontal-stretch: 1;
+                    text: d.title;
+                    font-size: 22px;
+                    font-weight: 500;
+                    wrap: word-wrap;
+                }
+            }
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                Sub {
+                    text: d.text;
+                    color: Ink.text;
+                    wrap: word-wrap;
+                }
+            }
+            if d.choice: VerticalLayout {
+                spacing: 2px;
+                for option[k] in [{ via: true, title: d.via, sub: "Runs with the others, at the same time" }, { via: false, title: d.out, sub: "The others run together" }]: Segmented {
+                    property <bool> on: d.via-on == option.via;
+                    i: k;
+                    n: 2;
+                    background: Ink.surface-high;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        padding-top: 10px;
+                        padding-bottom: 10px;
+                        spacing: 12px;
+                        cross-axis-alignment: center;
+                        Radio {
+                            on: d.via-on == option.via;
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            Body {
+                                text: option.title;
+                                accessible-role: none;
+                            }
+                            Caption {
+                                text: option.sub;
+                                font-size: 12px;
+                                accessible-role: none;
+                            }
+                        }
+                    }
+                    Tappable {
+                        border-radius: 6px;
+                        accessible-role: radio-button;
+                        accessible-label: option.title;
+                        accessible-checkable: true;
+                        accessible-checked: d.via-on == option.via;
+                        accessible-action-default => {
+                            StatsPage.decide(d.exit, option.via);
+                        }
+                        clicked => {
+                            StatsPage.decide(d.exit, option.via);
+                        }
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            Caption {
+                text: root.all.cost;
+                wrap: word-wrap;
+            }
+        }
+        SheetButtons {
+            no: "Cancel";
+            yes: root.all.yes;
+            enabled: root.all.can-go;
+            no-clicked => {
+                StatsPage.cancel-test();
+            }
+            yes-clicked => {
+                StatsPage.go-together();
+            }
+        }
+    }
+}
+
+// The speed test, for one exit or every routed one together. Leaving it stops a test (the window's part).
+component SpeedSection inherits Rectangle {
+    // M-Lab's sheet is open, for one exit's test or for all together; the node prompt is open.
+    private property <bool> asking;
+    private property <bool> asking-all;
+    private property <bool> confirming;
+    private property <SpeedView> view: StatsPage.speed;
+    private property <color> ink: StatsPage.ink(self.view.hue);
+    private property <bool> idle: !self.view.measuring && self.view.preparing == "";
+
+    function test-now() {
+        StatsPage.start-test(root.view.exit, false);
+    }
+    // Testing another exit node moves the apps on your Tailscale route to it meanwhile: ask first.
+    function test-exit() {
+        if root.view.ask {
+            root.confirming = true;
+        } else {
+            root.test-now();
+        }
+    }
+
+    Section {
+        overline: root.view.overline;
+        title: "Speed test";
+        if root.view.empty: Empty {
+            text: "Connect to test an exit's speed.";
+        }
+        if !root.view.empty: chips := Flickable {
+            height: 40px;
+            content-width: chip-row.preferred-width;
+            chip-row := HorizontalLayout {
+                padding-left: Metrics.gutter;
+                padding-right: Metrics.gutter;
+                spacing: 8px;
+                alignment: start;
+                // The text's ink, not an exit's colour: all of them; a stripe of their colours names them.
+                if root.view.all-chip: ExitChip {
+                    code: "ALL";
+                    text: root.view.all-text;
+                    ink: Ink.text;
+                    on: root.view.all-on;
+                    busy: root.view.busy;
+                    stripe: root.view.all-hues;
+                    clicked => {
+                        StatsPage.choose("all");
+                    }
+                }
+                for choice in root.view.choices: ExitChip {
+                    code: choice.code;
+                    text: choice.name;
+                    ink: StatsPage.ink(choice.hue);
+                    on: choice.on;
+                    busy: root.view.busy;
+                    clicked => {
+                        StatsPage.choose(choice.id);
+                    }
+                }
+            }
+        }
+        if !root.view.empty && root.view.all-on: TogetherPart {
+            all: root.view.together;
+            begin => {
+                if StatsPage.mlab-consent {
+                    StatsPage.start-all();
+                } else {
+                    root.asking-all = true;
+                }
+            }
+        }
+        // Ping, then the two speeds, as Ookla orders them; the card being measured is outlined in the exit's colour.
+        if !root.view.empty && !root.view.all-on: HorizontalLayout {
+            padding-left: Metrics.gutter;
+            padding-right: Metrics.gutter;
+            padding-top: 12px;
+            padding-bottom: 12px;
+            spacing: 8px;
+            for card[k] in root.view.cards: FigureCard {
+                card: card;
+                icon: k == 0 ? Icons.clock : k == 1 ? Icons.down : Icons.up;
+                ink: root.ink;
+            }
+        }
+        if !root.view.empty && !root.view.all-on && root.view.measuring: VerticalLayout {
+            padding-top: 8px;
+            Gauging {
+                gauge: root.view.gauge;
+                ink: root.ink;
+            }
+            Progress {
+                gauge: root.view.gauge;
+                ink: root.ink;
+            }
+        }
+        if !root.view.empty && !root.view.all-on && !root.view.measuring && root.view.error != "": HorizontalLayout {
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            Sub {
+                text: root.view.error;
+                color: Ink.bad;
+                wrap: word-wrap;
+            }
+        }
+        if !root.view.empty && !root.view.all-on && !root.view.measuring && root.view.missing != "": VerticalLayout {
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 8px;
+            Sub {
+                text: root.view.missing;
+                color: Ink.text;
+                wrap: word-wrap;
+                horizontal-alignment: center;
+            }
+            HorizontalLayout {
+                alignment: center;
+                LinkButton {
+                    icon: Icons.speed;
+                    text: "Test with the nearest server";
+                    clicked => {
+                        StatsPage.start-test(root.view.exit, true);
+                    }
+                }
+            }
+        }
+        // GO stays while a server is found (round, with a loader); the dial takes over while measuring.
+        if !root.view.empty && !root.view.all-on && !root.view.measuring: HorizontalLayout {
+            alignment: center;
+            padding-top: 8px;
+            GoCookie {
+                go: root.view.go;
+                clicked => {
+                    if StatsPage.mlab-consent {
+                        root.test-exit();
+                    } else {
+                        root.asking = true;
+                    }
+                }
+            }
+        }
+        if !root.view.empty && !root.view.all-on && root.view.preparing != "": HorizontalLayout {
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-top: 16px;
+            Caption {
+                horizontal-stretch: 1;
+                text: root.view.preparing;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+            Secondary {
+                text: "Cancel";
+                color: Ink.text;
+                clicked => {
+                    StatsPage.cancel-test();
+                }
+            }
+        }
+        if !root.view.empty && !root.view.all-on && root.view.server-shown: ServerBox {
+            server: root.view.server;
+        }
+        if !root.view.empty && !root.view.all-on && root.idle: Note {
+            text: root.view.note;
+        }
+        if !root.view.empty && !root.view.all-on && root.idle: HorizontalLayout {
+            alignment: center;
+            LinkButton {
+                icon: Icons.history;
+                text: "History";
+                clicked => {
+                    StatsPage.go("history");
+                }
+            }
+        }
+    }
+    // What opens over the page covers the whole window, the sidebar too.
+    if root.asking || root.asking-all: MlabConsent {
+        x: -root.absolute-position.x;
+        y: -root.absolute-position.y;
+        width: root.absolute-position.x + root.width;
+        height: root.absolute-position.y + root.height;
+        close => {
+            root.asking = false;
+            root.asking-all = false;
+        }
+        accept => {
+            StatsPage.agree-mlab();
+            if root.asking-all {
+                StatsPage.start-all();
+            } else {
+                root.test-exit();
+            }
+            root.asking = false;
+            root.asking-all = false;
+        }
+    }
+    if root.view.all-on && root.view.together.deciding: BeforeTogether {
+        x: -root.absolute-position.x;
+        y: -root.absolute-position.y;
+        width: root.absolute-position.x + root.width;
+        height: root.absolute-position.y + root.height;
+        all: root.view.together;
+    }
+    if root.confirming: Prompt {
+        x: -root.absolute-position.x;
+        y: -root.absolute-position.y;
+        width: root.absolute-position.x + root.width;
+        height: root.absolute-position.y + root.height;
+        title: root.view.ask-title;
+        confirm: "Test";
+        confirmed => {
+            root.confirming = false;
+            root.test-now();
+        }
+        dismissed => {
+            root.confirming = false;
+        }
+        Sub {
+            text: root.view.ask-text;
+            color: Ink.text;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// ---- off, and the consent ---------------------------------------------------------------------------------------------
+
+// Statistics off: what they are, and the way to turn them on; or, with some kept, the way to see those.
+component OffPage inherits Screen {
+    callback turn-on();
+    callback view();
+    overline: StatsPage.off.overline;
+    title: "Stats";
+    VerticalLayout {
+        padding-left: 24px;
+        padding-right: 24px;
+        padding-top: 16px;
+        padding-bottom: 16px;
+        spacing: 16px;
+        alignment: start;
+        HorizontalLayout {
+            alignment: start;
+            Rectangle {
+                width: 64px;
+                height: 64px;
+                border-radius: 22px;
+                background: Ink.surface-top;
+                Icon {
+                    icon: Icons.stats;
+                    size: 32px;
+                    tint: Ink.text;
+                }
+            }
+        }
+        Title {
+            text: StatsPage.off.title;
+            font-size: 28px;
+            font-weight: 500;
+            wrap: word-wrap;
+        }
+        Body {
+            text: StatsPage.off.text;
+            font-weight: 400;
+            color: Ink.dim;
+            wrap: word-wrap;
+        }
+        for line in [{ icon: Icons.phone, text: "Kept only on this computer" }, { icon: Icons.block, text: "No browsing destinations" }, { icon: Icons.delete-forever, text: "Delete it any time in Settings" }]: HorizontalLayout {
+            spacing: 12px;
+            cross-axis-alignment: center;
+            Icon {
+                icon: line.icon;
+                size: 20px;
+                tint: Ink.dim;
+            }
+            Sub {
+                text: line.text;
+                color: Ink.text;
+            }
+        }
+        HorizontalLayout {
+            alignment: start;
+            Rectangle {
+                height: 48px;
+                border-radius: 24px;
+                background: Ink.accent;
+                HorizontalLayout {
+                    padding-left: 18px;
+                    padding-right: 24px;
+                    spacing: 8px;
+                    cross-axis-alignment: center;
+                    Icon {
+                        icon: Icons.stats;
+                        size: 20px;
+                        tint: Ink.on-accent;
+                    }
+                    Body {
+                        text: StatsPage.off.button;
+                        color: Ink.on-accent;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                }
+                Tappable {
+                    border-radius: 24px;
+                    ring: Ink.text;
+                    accessible-role: button;
+                    accessible-label: StatsPage.off.button;
+                    accessible-action-default => {
+                        root.turn-on();
+                    }
+                    clicked => {
+                        root.turn-on();
+                    }
+                }
+            }
+        }
+        if StatsPage.off.saved: HorizontalLayout {
+            alignment: start;
+            LinkButton {
+                icon: Icons.history;
+                text: "View saved statistics";
+                clicked => {
+                    root.view();
+                }
+            }
+        }
+    }
+}
+
+// What turning statistics on means, before anything is recorded.
+component StatsConsent inherits BottomSheet {
+    callback accept();
+    label: "Keep statistics?";
+    VerticalLayout {
+        padding-left: 24px;
+        padding-right: 24px;
+        padding-bottom: 24px;
+        spacing: 16px;
+        Title {
+            text: "Keep statistics?";
+            font-size: 24px;
+            font-weight: 500;
+        }
+        for line in [
+            { icon: Icons.phone, text: "Statistics stay on this computer. They are never uploaded." },
+            { icon: Icons.clock, text: "Kept as hourly sums for a week and daily sums for about a year, with your last 100 speed tests." },
+            { icon: Icons.block, text: "Only apps, exits, bytes, times, speeds and speed-test exit IPs. No browsing destinations, ever." },
+            { icon: Icons.delete-forever, text: "Turn off or delete everything in Settings at any time." },
+        ]: HorizontalLayout {
+            spacing: 16px;
+            Icon {
+                icon: line.icon;
+                size: 24px;
+                tint: Ink.dim;
+            }
+            Sub {
+                horizontal-stretch: 1;
+                text: line.text;
+                color: Ink.text;
+                wrap: word-wrap;
+            }
+        }
+        HorizontalLayout {
+            padding-top: 8px;
+            SheetButtons {
+                no: "Not now";
+                yes: "Turn on";
+                no-clicked => {
+                    root.close();
+                }
+                yes-clicked => {
+                    root.accept();
+                }
+            }
+        }
+    }
+}
+
+// ---- the page --------------------------------------------------------------------------------------------------------
+
+export component StatsScreen inherits Rectangle {
+    // The saved statistics were opened while recording is off.
+    private property <bool> view-saved;
+    // The consent sheet is open.
+    private property <bool> asking;
+    background: Ink.ground;
+    if !StatsPage.recording && !root.view-saved: OffPage {
+        turn-on => {
+            root.asking = true;
+        }
+        view => {
+            root.view-saved = true;
+        }
+    }
+    if StatsPage.recording || root.view-saved: Rectangle {
+        if StatsPage.section == "": Hub { }
+        if StatsPage.loaded && StatsPage.section == "usage": UsageSection { }
+        if StatsPage.loaded && StatsPage.section == "live": LiveSection { }
+        if StatsPage.loaded && StatsPage.section == "flows": FlowsSection { }
+        if StatsPage.loaded && StatsPage.section == "journal": JournalSection { }
+        if StatsPage.loaded && StatsPage.section == "tunnels": TunnelsSection { }
+        if StatsPage.loaded && StatsPage.tunnel.id != "": TunnelSection { }
+        if StatsPage.loaded && StatsPage.section == "history": HistorySection { }
+        if StatsPage.loaded && StatsPage.section == "speed": SpeedSection { }
+    }
+    // What opens over the page covers the whole window, the sidebar too.
+    if root.asking: StatsConsent {
+        x: -root.absolute-position.x;
+        y: -root.absolute-position.y;
+        width: root.absolute-position.x + root.width;
+        height: root.absolute-position.y + root.height;
+        close => {
+            root.asking = false;
+        }
+        accept => {
+            root.asking = false;
+            StatsPage.turn-on();
+        }
+    }
+}
