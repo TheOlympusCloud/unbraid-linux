@@ -70,7 +70,7 @@ macro_rules! same {
         }
     };
 }
-same!(act: Act => SettingsAct [None, Open, Pick, Url, Dialog, Advanced, Tailscale, TsLogin, Suffix, Lan, HomeConfig, Opt, Filter, FilterRoutes, FilterDirect, Outside, Through, Stats, Login, Connect, Minimised, CloseToTray, RememberWindow, Theme, Tour, AddProvider, ImportFile, Shadowsocks, SaveFilter, SignOutTailscale, TsServer, SendFiles, CancelSend, Subnets, DeleteStats, Limit, SignOut, RenameServer, RemoveServer]);
+same!(act: Act => SettingsAct [None, Open, Pick, Url, Dialog, Advanced, Tailscale, TsLogin, Suffix, Lan, HomeConfig, Opt, Filter, FilterRoutes, FilterDirect, Outside, Through, Stats, Login, Connect, Minimised, CloseToTray, RememberWindow, Theme, Tour, AddProvider, ImportFile, Shadowsocks, SaveFilter, SignOutTailscale, TsServer, TsDomains, SendFiles, CancelSend, Subnets, DeleteStats, Limit, SignOut, RenameServer, RemoveServer]);
 same!(end: End => SettingsEnd [None, Chevron, Dot, Toggle, Radio, External, Delete, Mark, Keys, Remove, Expand]);
 same!(glyph: Glyph => SettingsGlyph [None, VpnKey, Hub, Home, Tunnel, Shield, Layers, Stats, Bolt, Info, File, Phone, Dns, Lan, Router, Power, Routes, Sliders]);
 same!(tone: Tone => SettingsTone [Good, Warn, Bad, Idle]);
@@ -374,12 +374,14 @@ fn provider_page() {
     assert_eq!(1, *backs.borrow(), "Esc on a page with Back goes back");
 }
 
-/// Local & home access: Advanced settings opens in place, and closes again.
+/// Local & home access: Advanced settings opens in place, home subnets and domains through Tailscale under it, and
+/// closes again.
 #[test]
 fn advanced_settings_open() {
     headless();
     let mut world = World::new().at(&["local"]);
     world.setup.home.subnets = vec!["192.168.178.0/24".into()];
+    world.setup.home.domains = vec!["corp.example.com".into(), "internal".into()];
     let shot = world.shot(false, true);
     let closed = shoot(&shot, 1280, 800, Duration::from_secs(20));
     let v = world.view();

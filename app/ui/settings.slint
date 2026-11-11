@@ -13,7 +13,7 @@ import { ImporterPage } from "importer.slint";
 export enum SettingsAct {
     none, open, pick, url, dialog, advanced, tailscale, ts-login, suffix, lan, home-config, opt, filter, filter-routes,
     filter-direct, outside, through, stats, login, connect, minimised, close-to-tray, remember-window, theme, tour,
-    add-provider, import-file, shadowsocks, save-filter, sign-out-tailscale, ts-server, send-files, cancel-send, subnets,
+    add-provider, import-file, shadowsocks, save-filter, sign-out-tailscale, ts-server, ts-domains, send-files, cancel-send, subnets,
     delete-stats, limit, sign-out, rename-server, remove-server
 }
 
@@ -163,6 +163,7 @@ export global SettingsPage {
     callback send-files(id: string);
     callback cancel-send();
     callback set-subnets(text: string);
+    callback set-ts-domains(text: string);
     // The user's own limit for [provider], as typed ("" for the provider's).
     callback set-limit(provider: string, text: string);
     callback sign-out(provider: string);
@@ -249,6 +250,8 @@ export global SettingsPage {
             self.cancel-send();
         } else if r.act == SettingsAct.subnets {
             self.set-subnets(a);
+        } else if r.act == SettingsAct.ts-domains {
+            self.set-ts-domains(a);
         } else if r.act == SettingsAct.delete-stats {
             self.delete-stats();
         } else if r.act == SettingsAct.limit {

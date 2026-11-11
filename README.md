@@ -157,6 +157,15 @@ there gets a number, so nothing is overwritten), and a notification says so. Onl
 or those your tailnet's access rules allow, and the tailnet must allow sending files at all: on Tailscale, turn on Send
 Files in the admin console.
 
+### Domains through Tailscale
+
+Names that only your tailnet knows, such as a company's internal domain behind a subnet router or the domain of your own
+servers, can go through Tailscale: list them under Settings, Local & home access, Advanced, Domains through Tailscale
+(for example `corp.example.com, internal`). Their lookups, subdomains included, go to your tailnet's DNS: MagicDNS, and
+the nameserver the Tailscale admin console sets for that domain (split DNS). Their connections go through Tailscale,
+whichever app makes them. It needs Reach your tailnet on, and what the names point to must be reachable over the
+tailnet: a device on it, a subnet router, or an exit node. Other names keep each app's own route and DNS.
+
 ## Build
 
 You need Rust 1.99 or later and Go 1.26 (Go fetches the exact toolchain itself through `GOTOOLCHAIN`). The packages
