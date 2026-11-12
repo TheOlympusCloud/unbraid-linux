@@ -234,6 +234,11 @@ fn a_welcome_terms_and_sign_in() {
     win.w.set_intro_on(true);
     click(&win.w, 873.0, 738.0); // where the welcome's Next is
     assert!(!win.w.get_intro_on(), "a click skips it");
+    // Closing the window to the tray hides it, and ends the film with it: none plays on with no window.
+    win.w.set_intro_on(true);
+    win.hide();
+    assert!(!win.w.get_intro_on(), "hiding the window ends the introduction");
+    win.show();
     click(&win.w, 873.0, 738.0); // Next
     shot(&win, "2-welcome-routes", 1280, 800);
     click(&win.w, 873.0, 736.0); // Next

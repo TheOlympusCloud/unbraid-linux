@@ -623,6 +623,8 @@ impl Win {
     }
 
     pub fn hide(&self) {
+        // The introduction ends with the window: it never plays on, or sounds, with none on screen.
+        intro::end(self);
         self.save_place();
         VISIBLE.store(false, Ordering::SeqCst);
         let _ = self.w.hide();
