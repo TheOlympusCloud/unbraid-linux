@@ -1,6 +1,5 @@
-// The welcome, before anything else: the idea, the four places, then the terms. Someone updating from before the
-// terms gets only the terms, as "One thing first". Close skips to the terms, which can't be skipped. The window shows
-// it in a card in the middle, as wide as reading wants.
+// The welcome, before anything else on a new install: the idea, the four places, then what to know before starting.
+// Close skips to that last page. The window shows it in a card in the middle, as wide as reading wants.
 
 import { Ink, Overline, Small, Title, Sub, Caption, Headline } from "theme.slint";
 import { Icons, Icon } from "icons.slint";
@@ -25,13 +24,10 @@ export struct Strand {
 }
 
 export global WelcomePage {
-    // A new install: the idea and the four places first, with Skip, Back and the steps.
-    in property <bool> fresh: true;
-    // The idea, the four places, the terms.
+    // The idea, the four places, what to know before starting.
     in property <[WelcomeStep]> steps;
     in property <[Strand]> strands;
-    callback accept();
-    callback open-terms();
+    callback done();
     callback open-privacy();
 }
 
@@ -332,8 +328,8 @@ component WebLink inherits Rectangle {
     }
 }
 
-// One thing the terms say: its icon on a tile, then the sentence.
-component TermsLine inherits HorizontalLayout {
+// One thing to know: its icon on a tile, then the sentence.
+component Fact inherits HorizontalLayout {
     in property <string> icon;
     in property <string> text;
     spacing: 14px;
@@ -359,103 +355,28 @@ component TermsLine inherits HorizontalLayout {
     }
 }
 
-// Mandatory: accept the terms and acknowledge the privacy policy. The disclosures, which have their own sheets, stay
-// apart.
-component Terms inherits VerticalLayout {
-    in property <string> lead;
-    in property <bool> agreed;
-    callback toggle();
-    if root.lead != "": Lead {
-        text: root.lead;
-    }
-    if root.lead != "": Rectangle {
-        height: 24px;
-    }
+// What to know before starting, and the privacy policy. Nothing to accept: the disclosures have their own sheets.
+component Facts inherits VerticalLayout {
     VerticalLayout {
         spacing: 16px;
-        TermsLine {
+        Fact {
             icon: Icons.vpn-key;
             text: "You bring your own VPN accounts and servers. Their own terms still apply.";
         }
-        TermsLine {
+        Fact {
             icon: Icons.block;
             text: "unbraid has no servers and collects nothing.";
         }
-        TermsLine {
+        Fact {
             icon: Icons.file;
             text: "Free and open source under the GPL v3, with no warranty.";
         }
     }
     Rectangle {
-        height: 20px;
-    }
-    Rectangle {
-        height: 1px;
-        background: Ink.line;
-    }
-    Rectangle {
-        height: 8px;
-    }
-    Rectangle {
-        min-height: 56px;
-        border-radius: 16px;
-        forward-focus: tap;
-        HorizontalLayout {
-            padding-top: 8px;
-            padding-bottom: 8px;
-            spacing: 14px;
-            cross-axis-alignment: center;
-            Rectangle {
-                width: 24px;
-                height: 24px;
-                border-radius: 7px;
-                background: root.agreed ? Ink.accent : transparent;
-                border-width: root.agreed ? 0 : 2px;
-                border-color: Ink.dim;
-                if root.agreed: Icon {
-                    x: 2px;
-                    y: 2px;
-                    icon: Icons.check;
-                    size: 20px;
-                    tint: Ink.on-accent;
-                }
-            }
-            Sub {
-                horizontal-stretch: 1;
-                text: "I accept the Terms of use and have read the Privacy policy";
-                font-size: 15px;
-                // 22 px lines when it wraps.
-                line-height-factor: (22 - 0.01) / (15 * 1.275);
-                color: Ink.text;
-                wrap: word-wrap;
-                accessible-role: none;
-            }
-        }
-        tap := Tappable {
-            border-radius: parent.border-radius;
-            accessible-role: checkbox;
-            accessible-label: "I accept the Terms of use and have read the Privacy policy";
-            accessible-checkable: true;
-            accessible-checked: root.agreed;
-            accessible-action-default => {
-                root.toggle();
-            }
-            clicked => {
-                root.toggle();
-            }
-        }
+        height: 24px;
     }
     HorizontalLayout {
-        padding-left: 38px;
-        padding-top: 4px;
-        spacing: 8px;
         alignment: start;
-        WebLink {
-            text: "Terms of use";
-            clicked => {
-                WelcomePage.open-terms();
-            }
-        }
         WebLink {
             text: "Privacy policy";
             clicked => {
@@ -463,23 +384,11 @@ component Terms inherits VerticalLayout {
             }
         }
     }
-    Rectangle {
-        height: 10px;
-    }
-    HorizontalLayout {
-        padding-left: 38px;
-        Caption {
-            text: "Needed to use unbraid. Both open in your browser.";
-            wrap: word-wrap;
-        }
-    }
 }
 
 // One page, scrolling on a short window; it fades in as it comes.
 component WelcomeBody inherits Rectangle {
     in property <int> page;
-    in property <bool> agreed;
-    callback toggle();
     private property <WelcomeStep> step: WelcomePage.steps[self.page];
     private property <float> shown;
     init => {
@@ -532,26 +441,19 @@ component WelcomeBody inherits Rectangle {
                 }
                 Places { }
             }
-            if root.page == 2: Terms {
-                lead: root.step.lead;
-                agreed: root.agreed;
-                toggle => {
-                    root.toggle();
-                }
-            }
+            if root.page == 2: Facts { }
         }
     }
 }
 
 // The welcome, filling the window's card. Esc steps back a page.
 export component WelcomeScreen inherits FocusScope {
-    private property <int> page: WelcomePage.fresh ? 0 : 2;
-    private property <bool> agreed;
+    private property <int> page;
     init => {
         self.focus();
     }
     key-pressed(event) => {
-        if event.text == Key.Escape && WelcomePage.fresh && self.page > 0 {
+        if event.text == Key.Escape && self.page > 0 {
             self.page -= 1;
             return accept;
         }
@@ -564,7 +466,7 @@ export component WelcomeScreen inherits FocusScope {
             padding-top: 4px;
             alignment: start;
             cross-axis-alignment: center;
-            if WelcomePage.fresh && root.page < 2: IconTap {
+            if root.page < 2: IconTap {
                 icon: Icons.close;
                 label: "Skip the introduction";
                 clicked => {
@@ -583,10 +485,6 @@ export component WelcomeScreen inherits FocusScope {
         if root.page == 2: WelcomeBody {
             vertical-stretch: 1;
             page: 2;
-            agreed: root.agreed;
-            toggle => {
-                root.agreed = !root.agreed;
-            }
         }
         HorizontalLayout {
             padding-left: 24px;
@@ -595,15 +493,12 @@ export component WelcomeScreen inherits FocusScope {
             padding-bottom: 16px;
             spacing: 8px;
             cross-axis-alignment: center;
-            if WelcomePage.fresh: Progress {
+            Progress {
                 horizontal-stretch: 1;
                 n: 3;
                 at: root.page;
             }
-            if !WelcomePage.fresh: Rectangle {
-                horizontal-stretch: 1;
-            }
-            if WelcomePage.fresh && root.page > 0: IconTap {
+            if root.page > 0: IconTap {
                 icon: Icons.back;
                 label: "Back";
                 fill: Ink.surface-high;
@@ -618,10 +513,9 @@ export component WelcomeScreen inherits FocusScope {
                 }
             }
             if root.page == 2: NextPill {
-                text: "Accept and continue";
-                enabled: root.agreed;
+                text: "Get started";
                 clicked => {
-                    WelcomePage.accept();
+                    WelcomePage.done();
                 }
             }
         }

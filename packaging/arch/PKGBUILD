@@ -1,7 +1,7 @@
 # Packages the tree packaging/build.sh stages: the app and its engine, both native programs.
 pkgname=unbraid
 pkgver=@VERSION@
-pkgrel=1
+pkgrel=@PKGREL@
 pkgdesc='Split tunneling VPN client: every app its own exit'
 arch=('x86_64')
 url='https://github.com/TheOlympusCloud/unbraid-linux'

@@ -16,9 +16,11 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
-pub const PRIVACY: &str = "https://unbraid.app/privacy";
-pub const TERMS_URL: &str = "https://unbraid.app/terms";
-const SOURCE: &str = "https://github.com/quiet-crafts/unbraid";
+/// This port's own source: the code this build is made from, as the GPL asks.
+const SOURCE: &str = "https://github.com/TheOlympusCloud/unbraid-linux";
+/// This port's privacy policy, beside its source.
+pub const PRIVACY: &str = "https://github.com/TheOlympusCloud/unbraid-linux/blob/main/PRIVACY.md";
+const GPL: &str = "https://www.gnu.org/licenses/gpl-3.0.html";
 
 /// The file choosers' titles: the home tunnel's config.
 pub const PICK_HOME_CONFIG: &str = "Choose your router's WireGuard config";
@@ -1239,7 +1241,7 @@ fn legal_page() -> Vec<Group> {
                     .icon(Glyph::File)
                     .end(End::Chevron),
                 link("Source code", SOURCE),
-                link("Terms of use", TERMS_URL),
+                link("GNU GPL v3.0", GPL),
                 link("Privacy policy", PRIVACY),
             ],
         ),
@@ -1334,7 +1336,6 @@ fn about_page(i: &Inputs) -> Vec<Group> {
             row("Privacy policy", "No analytics, no ads, no account with us").act(Act::Url, PRIVACY).end(End::External),
         ),
         key,
-        Some(link("Terms of use", TERMS_URL)),
     ];
     vec![
         group("", first.into_iter().flatten().collect()),
@@ -1917,6 +1918,25 @@ mod tests {
             notices.licences.iter().all(|l| l.title.is_empty() != l.text.is_empty()),
             "each line is a title or a paragraph"
         );
+    }
+
+    /// Legal leads to this port's own source and privacy policy, and to the GPL; the only links to Quiet Crafts are
+    /// About's credits and their donation page.
+    #[test]
+    fn links_lead_to_this_port() {
+        let legal = World::new().at(&["legal"]).view();
+        let links: Vec<_> = legal.groups[0].rows[1..].iter().map(|r| (r.title.as_str(), r.arg.as_str())).collect();
+        assert_eq!(vec![("Source code", SOURCE), ("GNU GPL v3.0", GPL), ("Privacy policy", PRIVACY)], links);
+        assert!(PRIVACY.starts_with(SOURCE));
+        let about = World::new().at(&["about"]).view();
+        assert!(about.groups[0].rows.iter().any(|r| r.title == "Privacy policy" && r.arg == PRIVACY));
+        let theirs: Vec<_> = [&legal, &about]
+            .iter()
+            .flat_map(|v| v.groups.iter().flat_map(|g| &g.rows))
+            .filter(|r| r.arg.contains("unbraid.app") || r.arg.contains("Quiet-Crafts"))
+            .map(|r| r.title.as_str())
+            .collect();
+        assert_eq!(vec![" by Quiet Crafts", "The Android app's source", "Free and open source"], theirs);
     }
 
     /// Single line breaks inside a paragraph become a space; blank lines and list items keep theirs.

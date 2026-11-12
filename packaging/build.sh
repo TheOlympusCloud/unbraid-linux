@@ -1,11 +1,13 @@
 #!/bin/bash
-# Builds dist/unbraid_<version>-1_amd64.deb (Debian 13+, Ubuntu 24.04+ and their derivatives) and dist/arch/ (a
+# Builds dist/unbraid_<version>-<revision>_amd64.deb (Debian 13+, Ubuntu 24.04+ and their derivatives) and dist/arch/ (a
 # PKGBUILD and the tree it packages, for Arch and its derivatives). The app is one native program (app/); the engine is
 # built by engine/build.sh. Both packages hold the same files.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' app/Cargo.toml | head -1)
+# The packages' own revision: raised when the packages change without a new app version, so earlier installs upgrade.
+PKGREL=2
 DIST=$ROOT/dist
 [ -x engine/out/unbraid-engine ] || engine/build.sh
 command -v cargo >/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
@@ -28,6 +30,7 @@ stage() {
   install -Dm644 packaging/files/unbraid.desktop "$r/usr/share/applications/unbraid.desktop"
   install -Dm644 app/ui/unbraid.svg "$r/usr/share/icons/hicolor/scalable/apps/unbraid.svg"
   install -Dm644 app/assets/intro/intro.webm "$r/usr/share/unbraid/intro.webm"
+  install -Dm644 THIRD-PARTY.md "$r/usr/share/unbraid/THIRD-PARTY.md"
 }
 
 rm -rf "$DIST" && mkdir -p "$DIST"
@@ -36,9 +39,9 @@ D=$DIST/deb
 stage "$D"
 install -Dm644 packaging/debian/copyright "$D/usr/share/doc/unbraid/copyright"
 mkdir -p "$D/DEBIAN"
-sed -e "s/@VERSION@/$VERSION/" -e "s/@SIZE@/$(du -sk "$D" | cut -f1)/" packaging/debian/control > "$D/DEBIAN/control"
+sed -e "s/@VERSION@/$VERSION/" -e "s/@PKGREL@/$PKGREL/" -e "s/@SIZE@/$(du -sk "$D" | cut -f1)/" packaging/debian/control > "$D/DEBIAN/control"
 install -m755 packaging/debian/postinst packaging/debian/prerm packaging/debian/postrm "$D/DEBIAN/"
-fakeroot dpkg-deb -Zxz --build --root-owner-group "$D" "$DIST/unbraid_${VERSION}-1_amd64.deb" >/dev/null
+fakeroot dpkg-deb -Zxz --build --root-owner-group "$D" "$DIST/unbraid_${VERSION}-${PKGREL}_amd64.deb" >/dev/null
 rm -rf "$D"
 
 A=$DIST/arch
@@ -46,6 +49,6 @@ stage "$A/stage"
 install -Dm644 LICENSE "$A/stage/usr/share/licenses/unbraid/LICENSE"
 tar -C "$A/stage" --owner=0 --group=0 -czf "$A/unbraid-$VERSION-x86_64.tar.gz" usr
 rm -rf "$A/stage"
-sed -e "s/@VERSION@/$VERSION/" -e "s/@SHA256@/$(cd "$A" && sha256sum "unbraid-$VERSION-x86_64.tar.gz" | cut -d' ' -f1)/" packaging/arch/PKGBUILD > "$A/PKGBUILD"
+sed -e "s/@VERSION@/$VERSION/" -e "s/@PKGREL@/$PKGREL/" -e "s/@SHA256@/$(cd "$A" && sha256sum "unbraid-$VERSION-x86_64.tar.gz" | cut -d' ' -f1)/" packaging/arch/PKGBUILD > "$A/PKGBUILD"
 cp packaging/arch/unbraid.install "$A/"
 (cd "$DIST" && ls -l ./*.deb arch/)

@@ -1,13 +1,11 @@
 //! The tour of the app: eight stops, each a note beside the element it is about, on the page it is on. And the
-//! first-run state the window keeps in `unbraid_ui.properties`: the introduction, the terms, the VPN disclosure, the
+//! first-run state the window keeps in `unbraid_ui.properties`: the introduction, the welcome, the VPN disclosure, the
 //! tour still to show and the leak-proof reminder.
 
 use crate::APP;
 use crate::prefs::{Editor, SharedPreferences};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 
-/// Raise when the terms change in a way people must accept again.
-const TERMS: i32 = 1;
 const DAY_MS: i64 = 86_400_000;
 /// Starts the introduction may be tried on without one picture of it showing (the app went down meanwhile).
 const INTRO_TRIES: i32 = 2;
@@ -16,7 +14,7 @@ const INTRO_TRIES: i32 = 2;
 #[derive(Default)]
 struct Onboarding {
     prefs: Option<&'static SharedPreferences>,
-    terms_ok: bool,
+    welcomed: bool,
     vpn_ok: bool,
     tour_pending: bool,
     /// The first start's introduction is still to play: a new install's only.
@@ -38,14 +36,15 @@ impl Onboarding {
             let accepted = p.get_boolean("disclosure_accepted", false);
             p.edit(|e| e.put_boolean("vpn_disclosure", accepted));
         }
-        let terms_ok = p.get_int("terms", 0) >= TERMS;
+        // The welcome once ended on accepting terms, version 1: its key is still `terms`.
+        let welcomed = p.get_int("terms", 0) >= 1;
         Onboarding {
             prefs,
-            terms_ok,
+            welcomed,
             vpn_ok: p.get_boolean("vpn_disclosure", false),
             tour_pending: p.get_boolean("tour_pending", false),
-            // Accepted terms mean the app was started before: an update, which gets no introduction.
-            intro_pending: !p.get_boolean("intro_seen", terms_ok),
+            // A welcome gone through means the app was started before: an update, which gets no introduction.
+            intro_pending: !p.get_boolean("intro_seen", welcomed),
             intro_tries: p.get_int("intro_tries", 0),
             leak: p.get_int("leak", 0),
             leak_until: p.get_long("leak_until", 0),
@@ -59,11 +58,11 @@ impl Onboarding {
         }
     }
 
-    fn accept_terms(&mut self, fresh: bool) {
-        self.terms_ok = true;
+    fn welcome_seen(&mut self, fresh: bool) {
+        self.welcomed = true;
         self.tour_pending = fresh;
         self.edit(|e| {
-            e.put_int("terms", TERMS);
+            e.put_int("terms", 1);
             e.put_boolean("tour_pending", fresh);
         });
     }
@@ -132,8 +131,9 @@ pub fn init() {
     drop(state());
 }
 
-pub fn terms_ok() -> bool {
-    state().terms_ok
+/// The welcome was gone through, on this install or before an update.
+pub fn welcomed() -> bool {
+    state().welcomed
 }
 
 pub fn vpn_ok() -> bool {
@@ -154,8 +154,8 @@ pub fn leak_until() -> i64 {
 }
 
 /// `fresh`: a new install, which then gets the tour once it is set up.
-pub fn accept_terms(fresh: bool) {
-    state().accept_terms(fresh);
+pub fn welcome_seen(fresh: bool) {
+    state().welcome_seen(fresh);
 }
 
 pub fn accept_vpn() {
@@ -315,7 +315,8 @@ mod tests {
         SharedPreferences::new(dir.join("unbraid_ui.properties"))
     }
 
-    /// The earlier app's file reads as it wrote it: the terms, the tour still to show and a snoozed reminder.
+    /// The earlier app's file reads as it wrote it: the welcome done (its accepted terms), the tour still to show and a
+    /// snoozed reminder.
     #[test]
     fn reads_what_the_earlier_app_wrote() {
         let dir = tempfile::tempdir().unwrap();
@@ -324,11 +325,10 @@ mod tests {
             "#Tue Nov 10 22:26:00 CET 2026\nleak=1\nleak_snoozes=2\nleak_until=1762800000000\nterms=1\ntour_pending=true\nvpn_disclosure=false\n",
         );
         let o = Onboarding::load(Some(p));
-        assert!(o.terms_ok && o.tour_pending && !o.vpn_ok);
+        assert!(o.welcomed && o.tour_pending && !o.vpn_ok);
         assert_eq!((1, 1_762_800_000_000, 2), (o.leak, o.leak_until, o.snoozes));
         assert!(!o.leak_due(1_762_799_999_999) && o.leak_due(1_762_800_000_000));
-        // Terms older than the current ones count as not accepted.
-        assert!(!Onboarding::load(Some(prefs(dir.path(), "terms=0\n"))).terms_ok);
+        assert!(!Onboarding::load(Some(prefs(dir.path(), "terms=0\n"))).welcomed);
     }
 
     /// Accepting the old dialog covered the VPN: settled into the new key once, so the apps-only Agree that writes the
@@ -347,30 +347,30 @@ mod tests {
         assert!(!Onboarding::load(Some(p)).vpn_ok, "the apps' Agree doesn't accept the VPN");
     }
 
-    /// What each step accepts is written at once, and a new install has the tour waiting.
+    /// Each step is written at once as it is done, and a new install has the tour waiting.
     #[test]
     fn accepting_is_kept() {
         let dir = tempfile::tempdir().unwrap();
         let mut o = Onboarding::load(Some(prefs(dir.path(), "")));
-        assert!(!o.terms_ok && !o.tour_pending);
-        o.accept_terms(true);
+        assert!(!o.welcomed && !o.tour_pending);
+        o.welcome_seen(true);
         o.accept_vpn();
         let again = Onboarding::load(Some(Box::leak(Box::new(reopen(dir.path())))));
-        assert!(again.terms_ok && again.vpn_ok && again.tour_pending);
+        assert!(again.welcomed && again.vpn_ok && again.tour_pending);
         assert_eq!(1, reopen(dir.path()).get_int("terms", 0));
         o.tour_seen();
         assert!(!o.tour_pending && !reopen(dir.path()).get_boolean("tour_pending", true));
-        // Someone updating from before the terms accepts them without the tour.
-        o.accept_terms(false);
+        // Someone updating, welcomed again (their file lost the key), gets no tour.
+        o.welcome_seen(false);
         assert!(!reopen(dir.path()).get_boolean("tour_pending", true));
         // Without a data folder it still holds until the app quits.
         let mut lone = Onboarding::load(None);
-        lone.accept_terms(true);
-        assert!(lone.terms_ok && lone.tour_pending);
+        lone.welcome_seen(true);
+        assert!(lone.welcomed && lone.tour_pending);
     }
 
-    /// A new install plays the introduction once, counted as seen once a picture of it shows; an update (the terms
-    /// accepted before) never. Starts that try it and end before a picture are counted: after two it isn't tried again.
+    /// A new install plays the introduction once, counted as seen once a picture of it shows; an update (the welcome
+    /// gone through before) never. Starts that try it and end before a picture are counted: after two it isn't tried again.
     #[test]
     fn the_introduction_plays_once_on_a_new_install() {
         let dir = tempfile::tempdir().unwrap();
@@ -380,7 +380,7 @@ mod tests {
         o.intro_seen();
         assert!(!Onboarding::load(Some(Box::leak(Box::new(reopen(dir.path()))))).intro_due());
         assert!(!Onboarding::load(Some(prefs(dir.path(), "terms=1\n"))).intro_due(), "an update");
-        assert!(Onboarding::load(Some(prefs(dir.path(), "terms=0\n"))).intro_due(), "terms never accepted");
+        assert!(Onboarding::load(Some(prefs(dir.path(), "terms=0\n"))).intro_due(), "never welcomed");
         // Two starts that went down before a picture: the next start opens without it.
         let mut o = Onboarding::load(Some(prefs(dir.path(), "")));
         o.intro_trying();

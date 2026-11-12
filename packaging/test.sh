@@ -13,6 +13,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DIST=$ROOT/dist
 CACHE=${CACHE:-$HOME/.cache/unbraid-rootfs}
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/app/Cargo.toml" | head -1)
+PKGREL=$(sed -n 's/^PKGREL=//p' "$ROOT/packaging/build.sh")
 OUT=$DIST/test
 mkdir -p "$OUT" "$CACHE"
 : "${DISPLAY:?set DISPLAY to an X server (e.g. Xvfb :99) for the window check}"
@@ -43,7 +44,8 @@ check() {
     run "$root" '
         for f in /usr/bin/unbraid /usr/lib/unbraid/unbraid-engine /usr/lib/systemd/system/unbraid-engine.service \
                  /usr/share/polkit-1/actions/app.unbraid.engine.policy /usr/share/applications/unbraid.desktop \
-                 /usr/share/icons/hicolor/scalable/apps/unbraid.svg /usr/share/unbraid/intro.webm; do test -e "$f" || { echo "missing $f"; exit 1; }; done
+                 /usr/share/icons/hicolor/scalable/apps/unbraid.svg /usr/share/unbraid/intro.webm \
+                 /usr/share/unbraid/THIRD-PARTY.md; do test -e "$f" || { echo "missing $f"; exit 1; }; done
         # Every library the app links is installed: the dependencies of the package cover it.
         ! ldd /usr/lib/unbraid/bin/unbraid | grep "not found" || { echo "the app misses a library"; exit 1; }
         echo "libraries: complete"
@@ -85,7 +87,7 @@ debian() {
         apt-get -o APT::Sandbox::User=root -qq update
         # Other scripts that give files to a non-root group (fontconfig's /usr/local/share/fonts) fail here once: configured
         # again, every package must end up configured, which dpkg --audit checks.
-        apt-get -o APT::Sandbox::User=root -y -qq install --no-install-recommends /dist/unbraid_${VERSION}-1_amd64.deb >/tmp/apt.log 2>&1 \\
+        apt-get -o APT::Sandbox::User=root -y -qq install --no-install-recommends /dist/unbraid_${VERSION}-${PKGREL}_amd64.deb >/tmp/apt.log 2>&1 \\
             || { grep -h 'Invalid argument' /tmp/apt.log | sed 's/^/sandbox: /'; dpkg --configure -a >>/tmp/apt.log 2>&1 || true; }
         test -z \"\$(dpkg --audit)\" || { dpkg --audit; tail -40 /tmp/apt.log; exit 1; }
         dpkg -s unbraid | grep -E '^(Status|Version)'
@@ -102,7 +104,7 @@ debian() {
 refused() {
     local name=$1 image=$2 root=$CACHE/$1
     fresh "$name" "$image"
-    if ! run "$root" "apt-get -o APT::Sandbox::User=root -qq update && ! apt-get -o APT::Sandbox::User=root -y install --no-install-recommends /dist/unbraid_${VERSION}-1_amd64.deb >/tmp/apt.log 2>&1
+    if ! run "$root" "apt-get -o APT::Sandbox::User=root -qq update && ! apt-get -o APT::Sandbox::User=root -y install --no-install-recommends /dist/unbraid_${VERSION}-${PKGREL}_amd64.deb >/tmp/apt.log 2>&1
         grep -h 'libc6 (>= 2.39)' /tmp/apt.log | head -1; ! dpkg -s unbraid >/dev/null 2>&1" > "$OUT/$name-install.log" 2>&1 \
         || ! grep -q 'libc6' "$OUT/$name-install.log"; then
         echo "FAIL $name: not refused"; cat "$OUT/$name-install.log"; return 1
@@ -123,8 +125,8 @@ arch() {
     # makepkg as an ordinary user, then pacman installs the package and pulls its dependencies from the repositories.
     UID_IN=1000 HOME_IN=/build run "$root" "cd /build && makepkg -d --noconfirm >/tmp/makepkg.log 2>&1 || { tail -30 /tmp/makepkg.log; exit 1; }; ls /build/*.pkg.tar.zst" >> "$OUT/$name-install.log" 2>&1 \
         || { cat "$OUT/$name-install.log"; return 1; }
-    cp "$root/build/unbraid-${VERSION}-1-x86_64.pkg.tar.zst" "$DIST/"
-    run "$root" "pacman -U --noconfirm /build/unbraid-${VERSION}-1-x86_64.pkg.tar.zst >/tmp/u.log 2>&1 || { tail -30 /tmp/u.log; exit 1; }; grep -A1 -i 'post_install\|unbraid connects' /tmp/u.log | head -3; pacman -Q unbraid" >> "$OUT/$name-install.log" 2>&1 \
+    cp "$root/build/unbraid-${VERSION}-${PKGREL}-x86_64.pkg.tar.zst" "$DIST/"
+    run "$root" "pacman -U --noconfirm /build/unbraid-${VERSION}-${PKGREL}-x86_64.pkg.tar.zst >/tmp/u.log 2>&1 || { tail -30 /tmp/u.log; exit 1; }; grep -A1 -i 'post_install\|unbraid connects' /tmp/u.log | head -3; pacman -Q unbraid" >> "$OUT/$name-install.log" 2>&1 \
         || { cat "$OUT/$name-install.log"; return 1; }
     check "$name"
     run "$root" "pacman -R --noconfirm unbraid >/dev/null 2>&1 && ! test -e /usr/lib/unbraid && ! test -e /usr/bin/unbraid && ! pacman -Q unbraid >/dev/null 2>&1 && echo removed" > "$OUT/$name-remove.log" 2>&1 \

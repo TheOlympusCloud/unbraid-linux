@@ -1,0 +1,21 @@
+=== The introduction film's sound
+The film that opens unbraid's first start was made for unbraid. Its sound is mixed
+from seven recordings on Freesound (https://freesound.org), each dedicated to the
+public domain under Creative Commons 0 1.0 Universal
+(https://creativecommons.org/publicdomain/zero/1.0/). CC0 asks for no credit; they
+are listed here so the source of every sound is on record.
+
+- 426767, "Apartment Room Tone.wav" by cMilan:
+  https://freesound.org/people/cMilan/sounds/426767/
+- 664929, "rope leathery creaking.wav" by vestibule-door:
+  https://freesound.org/people/vestibule-door/sounds/664929/
+- 596513, "Rope Tightening.wav" by EugeneEverett:
+  https://freesound.org/people/EugeneEverett/sounds/596513/
+- 624488, "Rope - leash - slide - tie - swoosh - movement - handle.wav" by ValentinPetiteau:
+  https://freesound.org/people/ValentinPetiteau/sounds/624488/
+- 792479, "Jewel - Heavy ring" by Vrymaa:
+  https://freesound.org/people/Vrymaa/sounds/792479/
+- 181889, "Whosh - Reversed/Reverbed breath" by PrdiChlp:
+  https://freesound.org/people/PrdiChlp/sounds/181889/
+- 141524, "Taylor Guitar Harmonics Pluck 01.wav" by BStateham:
+  https://freesound.org/people/BStateham/sounds/141524/

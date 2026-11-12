@@ -1,4 +1,4 @@
-//! The welcome and the terms, before anything else; the tour over the pages.
+//! The welcome, before anything else; the tour over the pages.
 
 use super::{
     AppWindow, ProfileChip, ROUTES, SETTINGS, Strand, TourPage, WelcomePage, WelcomeStep, Win, list, text, with,
@@ -13,21 +13,20 @@ pub struct Glue {
     pub chips: Vec<ProfileChip>,
     /// Notes the window's place once it stops changing.
     pub place_timer: Option<slint::Timer>,
-    /// The welcome as shown: a new install's, or the terms alone.
-    welcome: Option<bool>,
+    /// The welcome's pages are set.
+    welcome: bool,
     tour: Option<tour::TourView>,
 }
 
 pub(super) fn wire(w: &AppWindow) {
     let p = WelcomePage::get(w);
-    p.on_accept(|| {
+    p.on_done(|| {
         with(|win| {
             let fresh = win.s.borrow().fresh.unwrap_or(true);
-            tour::accept_terms(fresh);
+            tour::welcome_seen(fresh);
             win.refresh();
         });
     });
-    p.on_open_terms(|| desktop::open(settings::TERMS_URL));
     p.on_open_privacy(|| desktop::open(settings::PRIVACY));
 
     let t = TourPage::get(w);
@@ -68,17 +67,15 @@ fn end(win: &Win) {
 }
 
 pub(super) fn show_welcome(win: &Win) {
-    // A new install gets the whole welcome; someone updating from before the terms only the terms.
-    let fresh =
-        *win.s.borrow_mut().fresh.get_or_insert_with(|| !*win.ui.signed_in.borrow() && !*win.ui.disclosed.borrow());
+    // Read before signing in changes it: only a new install gets the tour afterwards.
+    win.s.borrow_mut().fresh.get_or_insert_with(|| !*win.ui.signed_in.borrow() && !*win.ui.disclosed.borrow());
     let mut g = win.start.borrow_mut();
-    if g.welcome == Some(fresh) {
+    if g.welcome {
         return;
     }
-    g.welcome = Some(fresh);
-    let v = welcome::view(fresh);
+    g.welcome = true;
+    let v = welcome::view();
     let p = WelcomePage::get(&win.w);
-    p.set_fresh(v.fresh);
     p.set_steps(list(
         v.steps
             .iter()

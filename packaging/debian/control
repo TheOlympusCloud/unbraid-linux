@@ -1,5 +1,5 @@
 Package: unbraid
-Version: @VERSION@-1
+Version: @VERSION@-@PKGREL@
 Architecture: amd64
 Maintainer: Pablo Saura Sánchez <saurasanchezpablo@gmail.com>
 Installed-Size: @SIZE@

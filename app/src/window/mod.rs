@@ -56,7 +56,7 @@ pub struct State {
     /// Settings' Turn on for statistics, asking first.
     pub stats_consent: bool,
     pub shortcuts: bool,
-    /// The welcome's whole introduction (a new install) or only the terms; read once, when it first shows.
+    /// A new install, which gets the tour once signed in; read once, when the welcome first shows.
     pub fresh: Option<bool>,
     /// It was on at a redraw, and no redraw has seen it off since ([`ds::quits_when_hidden`]).
     pub was_on: bool,
@@ -299,10 +299,10 @@ fn end() {
     });
 }
 
-/// Everything for a command line connect: the terms and the VPN disclosure accepted, and a provider or a server.
+/// Everything for a command line connect: the welcome done, the VPN disclosure accepted, and a provider or a server.
 fn ready() -> bool {
     let s = app::store().current();
-    tour::terms_ok()
+    tour::welcomed()
         && tour::vpn_ok()
         && (!app::store().current_accounts().is_empty()
             || s.routes.iter().any(|r| r.imported())
@@ -554,7 +554,7 @@ impl Win {
             return true;
         }
         let Some(ask) = keys(text, ctrl, shift, alt) else { return false };
-        let (terms, signed_in) = (tour::terms_ok(), *self.ui.signed_in.borrow());
+        let (welcomed, signed_in) = (tour::welcomed(), *self.ui.signed_in.borrow());
         let phase = self.ui.vpn().borrow().phase;
         match ask {
             Ask::Page(t) => self.set_tab(t),
@@ -562,16 +562,16 @@ impl Win {
                 self.set_tab(APPS);
                 self.w.set_search_wanted(true);
             }
-            Ask::Shortcuts => self.s.borrow_mut().shortcuts = terms,
+            Ask::Shortcuts => self.s.borrow_mut().shortcuts = welcomed,
             // A dialog: it opens over whichever page is shown.
             Ask::NewRoute => {
-                if terms && signed_in {
+                if welcomed && signed_in {
                     self.s.borrow_mut().picker = Some(String::new());
                     picker::opened(self, "");
                 }
             }
             Ask::Connect => {
-                if terms && signed_in {
+                if welcomed && signed_in {
                     match phase {
                         vpn::Phase::Off | vpn::Phase::Paused => self.connect(),
                         _ => self.ui.disconnect(),
@@ -845,9 +845,9 @@ impl Win {
             }
         }
 
-        let terms = tour::terms_ok();
+        let welcomed = tour::welcomed();
         let signed_in = *ui.signed_in.borrow();
-        if terms {
+        if welcomed {
             // A profile asked for from the command line opens Routes on it: it switches only on Use there.
             let asked = locked(&WANTED).take();
             if let Some(name) = asked.filter(|n| setup.profiles.iter().any(|p| p.name == *n)) {
@@ -864,7 +864,7 @@ impl Win {
             }
         }
         let s = self.s.borrow();
-        let stage = if !terms {
+        let stage = if !welcomed {
             0
         } else if !signed_in {
             1

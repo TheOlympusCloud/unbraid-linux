@@ -1,7 +1,7 @@
-//! The welcome and the terms in their card in the middle of the window, with the data of the approved screenshots
-//! (1-welcome.png, 2-welcome-routes.png, 3-terms.png), and the tour over a plain page beside the
-//! sidebar, rendered headless to `target/screenshots/welcome-*.png`, `terms-*.png` and `tour-*.png`; and what a still
-//! picture can't show: the clicks, Esc, and the window behind the tour taking none.
+//! The welcome in its card in the middle of the window, with the data of the approved screenshots (1-welcome.png,
+//! 2-welcome-routes.png), and the tour over a plain page beside the sidebar, rendered headless to
+//! `target/screenshots/welcome-*.png` and `tour-*.png`; and what a still picture can't show: the clicks, Esc, and the
+//! window behind the tour taking none.
 
 mod common;
 
@@ -127,7 +127,6 @@ fn model<T: Clone + 'static>(items: impl Iterator<Item = T>) -> ModelRc<T> {
 /// The view, as the window's code hands it to the page.
 fn show_welcome(w: &WelcomeWindow, v: &welcome::WelcomeView) {
     let page = WelcomePage::get(w);
-    page.set_fresh(v.fresh);
     page.set_steps(model(v.steps.iter().map(|s| WelcomeStep {
         overline: text(&s.overline),
         title: text(&s.title),
@@ -184,17 +183,22 @@ const SURFACE_TOP: [u8; 3] = [0x23, 0x2a, 0x2e];
 const ACCENT: [u8; 3] = [0xff, 0xa6, 0x6b];
 const BLUE: [u8; 3] = [0x7c, 0xc4, 0xff];
 const BAR: [u8; 3] = [0x13, 0x17, 0x1a];
+/// On the last page at 1280 × 800: the first fact's icon tile, Get started, and the privacy policy's link.
+const START_TILE: (u32, u32) = (367, 203);
+const START: (u32, u32) = (788, 736);
+const PRIVACY: (f32, f32) = (433.0, 371.0);
 
-/// A new install, as approved: the idea with the braid, the four places, then the terms accepted; each page reached
-/// by its Next, and Accept and continue once the box is ticked. Dark and light, and the idea at the smallest window.
+/// A new install, as approved: the idea with the braid, the four places, then what to know before starting; each page
+/// reached by its Next, and Get started at once, with nothing to tick. Dark and light, and the idea at the smallest
+/// window.
 #[test]
 fn welcome_as_approved() {
     headless();
     let dir = shots_dir();
     let w = WelcomeWindow::new().expect("create the welcome");
-    show_welcome(&w, &welcome::view(true));
-    let (accepted, accept) = counter();
-    WelcomePage::get(&w).on_accept(accept);
+    show_welcome(&w, &welcome::view());
+    let (done, finish) = counter();
+    WelcomePage::get(&w).on_done(finish);
 
     let px = render(&w, 1280, 800, &dir.join("welcome-dark.png"));
     assert_eq!(GROUND, at(&px, 1280, 100, 400), "the window's ground");
@@ -215,23 +219,19 @@ fn welcome_as_approved() {
     assert_eq!(SURFACE_HIGH, at(&px, 1280, 780, 736), "Back, filled");
 
     click(w.window(), 873.0, 736.0);
-    let px = render(&w, 1280, 800, &dir.join("terms-unticked.png"));
-    assert_eq!(SURFACE_TOP, at(&px, 1280, 800, 736), "Accept and continue greys until the box is ticked");
-    click(w.window(), 815.0, 736.0);
-    assert_eq!(0, accepted.get(), "nothing to accept yet");
-    click(w.window(), 376.0, 384.0);
-    let px = render(&w, 1280, 800, &dir.join("terms-dark.png"));
-    // Under the row's hover layer, as in the approved shot.
-    assert!(near(at(&px, 1280, 368, 377), [0xeb, 0x99, 0x62]), "the ticked box: {:?}", at(&px, 1280, 368, 377));
-    assert_eq!(ACCENT, at(&px, 1280, 800, 736), "Accept and continue");
-    click(w.window(), 815.0, 736.0);
-    assert_eq!(1, accepted.get(), "accepted");
+    let px = render(&w, 1280, 800, &dir.join("welcome-start-dark.png"));
+    assert_eq!(SURFACE_TOP, at(&px, 1280, START_TILE.0, START_TILE.1), "the first fact's tile");
+    // Under the pointer that pressed Next, so in the accent's hover shade.
+    let start = at(&px, 1280, START.0, START.1);
+    assert!(near(start, [0xeb, 0x99, 0x62]), "Get started, in the accent from the first: {start:?}");
+    click(w.window(), START.0 as f32, START.1 as f32);
+    assert_eq!(1, done.get(), "done");
     Ink::get(&w).set_light(true);
-    render(&w, 1280, 800, &dir.join("terms-light.png"));
+    render(&w, 1280, 800, &dir.join("welcome-start-light.png"));
     drop(w);
 
     let w = WelcomeWindow::new().expect("create the welcome");
-    show_welcome(&w, &welcome::view(true));
+    show_welcome(&w, &welcome::view());
     let px = render(&w, 880, 600, &dir.join("welcome-small.png"));
     assert_eq!(ACCENT, at(&px, 880, 680, 538), "Next stays in reach at the bottom of the card");
 }
@@ -242,7 +242,7 @@ fn reduced_motion_draws_at_once() {
     headless();
     for reduced in [false, true] {
         let w = WelcomeWindow::new().expect("create the welcome");
-        show_welcome(&w, &welcome::view(true));
+        show_welcome(&w, &welcome::view());
         Motion::get(&w).set_reduced(reduced);
         let early = shoot(&w, 1280, 800, Duration::from_millis(60));
         let settled = shoot(&w, 1280, 800, Duration::from_secs(20));
@@ -250,38 +250,21 @@ fn reduced_motion_draws_at_once() {
     }
 }
 
-/// Someone updating from before the terms: the terms alone, with why, and no way past them but accepting.
-#[test]
-fn terms_for_an_update() {
-    headless();
-    let w = WelcomeWindow::new().expect("create the welcome");
-    show_welcome(&w, &welcome::view(false));
-    let px = render(&w, 1280, 800, &shots_dir().join("terms-update.png"));
-    assert_eq!(GROUND, at(&px, 1280, 368, 54), "no Skip");
-    assert_eq!(GROUND, at(&px, 1280, 366, 738), "no steps");
-    press(w.window(), Key::Escape);
-    let again = render(&w, 1280, 800, &shots_dir().join("terms-update.png"));
-    assert!(px == again, "Esc goes nowhere");
-}
-
-/// Skip goes straight to the terms; Esc and Back step back a page; the links ask for their pages.
+/// Skip goes straight to the last page; Esc and Back step back a page; the privacy policy asks for its page.
 #[test]
 fn skip_back_and_links() {
     headless();
     let w = WelcomeWindow::new().expect("create the welcome");
-    show_welcome(&w, &welcome::view(true));
-    let (terms, open_terms) = counter();
+    show_welcome(&w, &welcome::view());
     let (privacy, open_privacy) = counter();
-    WelcomePage::get(&w).on_open_terms(open_terms);
     WelcomePage::get(&w).on_open_privacy(open_privacy);
     let dir = shots_dir().join("welcome-check.png");
     render(&w, 1280, 800, &dir);
     click(w.window(), 368.0, 54.0);
     let px = render(&w, 1280, 800, &dir);
-    assert_eq!(SURFACE_TOP, at(&px, 1280, 800, 736), "Skip opens the terms");
-    click(w.window(), 460.0, 436.0);
-    click(w.window(), 610.0, 436.0);
-    assert_eq!((1, 1), (terms.get(), privacy.get()), "each link opens its page");
+    assert_eq!(SURFACE_TOP, at(&px, 1280, START_TILE.0, START_TILE.1), "Skip opens the last page");
+    click(w.window(), PRIVACY.0, PRIVACY.1);
+    assert_eq!(1, privacy.get(), "the privacy policy opens its page");
     press(w.window(), Key::Escape);
     let px = render(&w, 1280, 800, &dir);
     assert_eq!(BAR, at(&px, 1280, 640, 512), "Esc steps back to the four places");
