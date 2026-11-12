@@ -27,6 +27,7 @@ const VIDEO: &CStr = c"videoconvert ! videoscale ! video/x-raw,format=RGBA,pixel
 pub struct Gst {
     init_check: unsafe extern "C" fn(*mut c_int, Ptr, *mut Ptr) -> c_int,
     factory_make: unsafe extern "C" fn(*const c_char, *const c_char) -> Ptr,
+    factory_find: unsafe extern "C" fn(*const c_char) -> Ptr,
     parse_bin: unsafe extern "C" fn(*const c_char, c_int, *mut Ptr) -> Ptr,
     bin_get_by_name: unsafe extern "C" fn(Ptr, *const c_char) -> Ptr,
     ref_sink: unsafe extern "C" fn(Ptr) -> Ptr,
@@ -81,6 +82,7 @@ impl Gst {
             Some(Gst {
                 init_check: sym(gst, c"gst_init_check")?,
                 factory_make: sym(gst, c"gst_element_factory_make")?,
+                factory_find: sym(gst, c"gst_element_factory_find")?,
                 parse_bin: sym(gst, c"gst_parse_bin_from_description")?,
                 bin_get_by_name: sym(gst, c"gst_bin_get_by_name")?,
                 ref_sink: sym(gst, c"gst_object_ref_sink")?,
@@ -103,6 +105,27 @@ impl Gst {
             })
         }
     }
+
+    /// GStreamer starts and has what the film needs: WebM, and a VP9 decoder (gst-plugins-good's, or libav's).
+    pub fn can_play(&self) -> bool {
+        // SAFETY: GStreamer's calls as documented; each factory found is let go.
+        let has = |name: &CStr| unsafe {
+            let f = (self.factory_find)(name.as_ptr());
+            if !f.is_null() {
+                (self.unref)(f);
+            }
+            !f.is_null()
+        };
+        let started = unsafe { (self.init_check)(null_mut(), null_mut(), null_mut()) } != 0;
+        started && has(c"matroskademux") && (has(c"vp9dec") || has(c"avdec_vp9"))
+    }
+}
+
+/// The first start's introduction plays when it is `due` (a new install's, not yet seen), the window is `shown` at
+/// start, the desktop's `animations` are on and the `film` is there; then `player` is asked for last, as it starts
+/// GStreamer. None when it doesn't play now.
+pub fn gate<G>(due: bool, shown: bool, animations: bool, film: bool, player: impl FnOnce() -> Option<G>) -> Option<G> {
+    (due && shown && animations && film).then(player).flatten()
 }
 
 /// Plays the film at `path` until it ends, `stop` is set or it can't go on, handing each picture to `frame` as it is
@@ -218,4 +241,29 @@ unsafe fn picture(g: &Gst, sample: Ptr) -> Option<SharedPixelBuffer<Rgba8Pixel>>
     });
     unsafe { (g.buffer_unmap)(buffer, &mut map) };
     p
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    /// The film plays only when every condition holds, and GStreamer is only asked once they all do: a start that
+    /// shows no introduction never loads it.
+    #[test]
+    fn the_gate_asks_for_the_player_last() {
+        let asked = Cell::new(0);
+        let player = || {
+            asked.set(asked.get() + 1);
+            Some(())
+        };
+        assert_eq!(Some(()), gate(true, true, true, true, player));
+        for (due, shown, animations, film) in
+            [(false, true, true, true), (true, false, true, true), (true, true, false, true), (true, true, true, false)]
+        {
+            assert_eq!(None, gate(due, shown, animations, film, player));
+        }
+        assert_eq!(1, asked.get());
+        assert_eq!(None::<()>, gate(true, true, true, true, || None), "no GStreamer that plays it");
+    }
 }

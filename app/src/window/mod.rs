@@ -250,9 +250,7 @@ pub fn run(args: &Args, socket: &Path) {
     let win = open();
     follow_theme();
     // A new install's first start opens on its introduction.
-    if VISIBLE.load(Ordering::SeqCst) {
-        intro::start(&win);
-    }
+    intro::start(&win, VISIBLE.load(Ordering::SeqCst));
     // The window's last place, if it is still on a screen, before it shows: the screens are known once the loop runs.
     let placed = slint::winit_030::invoke_from_active_event_loop(|el| {
         let screens: Vec<ds::Rect> =
