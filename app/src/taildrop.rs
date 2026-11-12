@@ -222,8 +222,18 @@ fn numbered(name: &str, n: u32) -> String {
     }
     // A leading dot is part of the name, never an extension.
     let skip = usize::from(name.starts_with('.'));
-    let at = EXTENSION.find(&name[skip..]).map_or(name.len(), |m| m.start() + skip);
-    format!("{} ({n}){}", &name[..at], &name[at..])
+    let mut at = EXTENSION.find(&name[skip..]).map_or(name.len(), |m| m.start() + skip);
+    let number = format!(" ({n})");
+    // 255 bytes at most, as any file name: the number takes its room from the end of the stem (the whole name's, when
+    // the extension is too long to keep).
+    if name.len() - at + number.len() > 255 {
+        at = name.len();
+    }
+    let mut end = at.min(255 - number.len() - (name.len() - at));
+    while !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{number}{}", &name[..end], &name[at..])
 }
 
 /// Why a received file isn't in Downloads: the engine broke off (it restarted with a reload, say), which its next
@@ -388,6 +398,10 @@ mod tests {
         assert_eq!(".bashrc (1)", numbered(".bashrc", 1));
         assert_eq!("report v2 (3).pdf", numbered("report v2.pdf", 3));
         assert_eq!("ñandú (1).png", numbered("ñandú.png", 1));
+        // A name already as long as a file name can be gives the end of its stem to the number, at a character's edge.
+        assert_eq!(format!("{} (1).txt", "x".repeat(247)), numbered(&format!("{}.txt", "x".repeat(251)), 1));
+        assert_eq!(format!("{} (12).txt", "ñ".repeat(123)), numbered(&format!("{}.txt", "ñ".repeat(125)), 12));
+        assert!(numbered(&".a".repeat(127), 999).len() <= 255);
     }
 
     /// Downloads as user-dirs.dirs names it: under the home folder or absolute; anything else is no answer.
@@ -455,6 +469,17 @@ mod tests {
         saving.abort();
         assert!(saving.await.unwrap_err().is_cancelled());
         assert!(files(&dir).is_empty(), "{:?}", files(&dir));
+    }
+
+    /// A name as long as a file name can be, taken already, is saved under a shorter numbered one.
+    #[tokio::test]
+    async fn longest_name_taken() {
+        let tmp = tempfile::tempdir().unwrap();
+        let name = format!("{}.txt", "x".repeat(251));
+        for _ in 0..2 {
+            assert!(save(tokio_stream::iter(vec![chunk(1, b"x")]), tmp.path(), &name).await.is_ok());
+        }
+        assert_eq!(vec![format!("{} (1).txt", "x".repeat(247)), name], files(tmp.path()));
     }
 
     /// What a send streams: the start with every file's name and size, then each file in chunks and its end.
