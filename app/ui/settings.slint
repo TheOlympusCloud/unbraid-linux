@@ -13,8 +13,8 @@ import { ImporterPage } from "importer.slint";
 export enum SettingsAct {
     none, open, pick, url, dialog, advanced, tailscale, ts-login, suffix, lan, home-config, opt, filter, filter-routes,
     filter-direct, outside, through, stats, login, connect, minimised, close-to-tray, remember-window, theme, tour,
-    add-provider, import-file, shadowsocks, save-filter, sign-out-tailscale, ts-server, subnets, delete-stats, limit,
-    sign-out, rename-server, remove-server
+    add-provider, import-file, shadowsocks, save-filter, sign-out-tailscale, ts-server, send-files, cancel-send, subnets,
+    delete-stats, limit, sign-out, rename-server, remove-server
 }
 
 // What ends a row.
@@ -159,6 +159,9 @@ export global SettingsPage {
     callback import-shadowsocks();
     callback sign-out-tailscale();
     callback set-tailscale-server(url: string, key: string);
+    // Opens the file chooser for files to send to tailnet device [id]; stops the send that runs.
+    callback send-files(id: string);
+    callback cancel-send();
     callback set-subnets(text: string);
     // The user's own limit for [provider], as typed ("" for the provider's).
     callback set-limit(provider: string, text: string);
@@ -240,6 +243,10 @@ export global SettingsPage {
             self.sign-out-tailscale();
         } else if r.act == SettingsAct.ts-server {
             self.set-tailscale-server(a, b);
+        } else if r.act == SettingsAct.send-files {
+            self.send-files(r.arg);
+        } else if r.act == SettingsAct.cancel-send {
+            self.cancel-send();
         } else if r.act == SettingsAct.subnets {
             self.set-subnets(a);
         } else if r.act == SettingsAct.delete-stats {

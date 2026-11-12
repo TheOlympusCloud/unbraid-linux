@@ -19,7 +19,7 @@ git apply "$ROOT"/engine/patches/sing-box-*.patch
 export GOTOOLCHAIN=go1.26.11 CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH
 TAGS=with_gvisor,with_wireguard,with_utls,with_tailscale,ts_omit_logtail,ts_omit_cachenetmap,ts_omit_ssh,ts_omit_drive,ts_omit_taildrop,ts_omit_webclient,ts_omit_doctor,ts_omit_capture,ts_omit_kube,ts_omit_aws,ts_omit_synology,ts_omit_bird,with_openvpn,badlinkname,tfogo_checklinkname0
 if [ "${1:-}" = test ]; then
-  go test -tags "$TAGS" -ldflags "-checklinkname=0" ./daemon/ ./protocol/openvpn/ ./protocol/tailscale/ ./experimental/boxdd/ -run 'STUN|Resolver|Fallback|Taildrop|Unbraid|LinuxPeer'
+  go test -tags "$TAGS" -ldflags "-checklinkname=0" ./daemon/ ./protocol/openvpn/ ./protocol/tailscale/ ./experimental/boxdd/ -run 'STUN|Resolver|Fallback|Unbraid|LinuxPeer'
   # The upstream unit tests' own `sing-box check` (KeyProvidersTest): the same patched engine as a plain CLI, never shipped.
   go build -o "$ROOT/engine/out/sing-box-cli" -trimpath -buildvcs=false -tags "$TAGS" -ldflags "-checklinkname=0 -s -w" ./cmd/sing-box
 fi

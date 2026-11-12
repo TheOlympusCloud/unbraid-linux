@@ -5,9 +5,11 @@
 use crate::engine_api::daemon::managed_service_client::ManagedServiceClient;
 use crate::engine_api::daemon::started_service_client::StartedServiceClient;
 use crate::engine_api::daemon::{
-    ConnectionEvents, ServiceStatus, SetTailscaleExitNodeRequest, Status as EngineStatus, StunTestProgress,
-    StunTestRequest, SubscribeConnectionsRequest, SubscribeStatusRequest, TailscaleLogoutRequest,
-    TailscaleStatusUpdate, service_status,
+    ConnectionEvents, DeleteTaildropFileRequest, DownloadTaildropFileChunk, DownloadTaildropFileRequest, ServiceStatus,
+    SetTailscaleExitNodeRequest, Status as EngineStatus, StunTestProgress, StunTestRequest,
+    SubscribeConnectionsRequest, SubscribeStatusRequest, SubscribeTaildropInboxRequest, TaildropInbox,
+    TaildropSendClientMessage, TaildropSendServerMessage, TailscaleLogoutRequest, TailscaleStatusUpdate,
+    service_status,
 };
 use crate::engine_api::desktop::application_service_client::ApplicationServiceClient;
 use crate::engine_api::desktop::desktop_service_client::DesktopServiceClient;
@@ -199,6 +201,36 @@ impl Engine {
             .start_stun_test(StunTestRequest { server: server.into(), outbound_tag: tag.into() })
             .await
             .map(|r| r.into_inner())
+    }
+
+    /// Sends what `messages` carries (the start, then each file's chunks and its end) to a tailnet device; the engine
+    /// answers with how far it got.
+    pub async fn send_taildrop(
+        &self,
+        messages: impl tokio_stream::Stream<Item = TaildropSendClientMessage> + Send + 'static,
+    ) -> Result<Streaming<TaildropSendServerMessage>, Status> {
+        self.started().send_taildrop_files(messages).await.map(|r| r.into_inner())
+    }
+
+    /// The files the tailnet sent, each time they change.
+    pub async fn taildrop_inbox(&self, tag: &str) -> Result<Streaming<TaildropInbox>, Status> {
+        self.started()
+            .subscribe_taildrop_inbox(SubscribeTaildropInboxRequest { endpoint_tag: tag.into() })
+            .await
+            .map(|r| r.into_inner())
+    }
+
+    /// A received file: its size, then its content.
+    pub async fn taildrop_file(&self, tag: &str, name: &str) -> Result<Streaming<DownloadTaildropFileChunk>, Status> {
+        self.started()
+            .download_taildrop_file(DownloadTaildropFileRequest { endpoint_tag: tag.into(), name: name.into() })
+            .await
+            .map(|r| r.into_inner())
+    }
+
+    pub async fn delete_taildrop_file(&self, tag: &str, name: &str) -> Result<(), Status> {
+        let r = DeleteTaildropFileRequest { endpoint_tag: tag.into(), name: name.into() };
+        deadline(15, self.started().delete_taildrop_file(timed(r, 15))).await.map(|_| ())
     }
 }
 
