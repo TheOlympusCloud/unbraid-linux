@@ -21,7 +21,15 @@ pub fn open(url: &str) {
 
 /// A desktop notification (freedesktop.org), as Android's: through notify-send when it is installed; nothing otherwise.
 pub fn notify(title: &str, text: &str) {
-    start("notify-send", &["--app-name=unbraid", "--icon=unbraid", title, text]);
+    let args = notify_args(title, text);
+    start("notify-send", &args.iter().map(String::as_str).collect::<Vec<_>>());
+}
+
+/// notify-send's arguments: no words taken for an option (a file named "-x.txt"), and the body's <, > and & escaped, as
+/// servers read markup there.
+fn notify_args(title: &str, text: &str) -> Vec<String> {
+    let body = text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    vec!["--app-name=unbraid".into(), "--icon=unbraid".into(), "--".into(), title.into(), body]
 }
 
 /// Animations, unless the desktop asks for reduced motion (GNOME's or KDE's setting), as Android's animator scale 0.
@@ -344,6 +352,16 @@ mod tests {
         assert_eq!(vec![PathBuf::from("/a"), PathBuf::from("/b")], chosen(true, b"/a\n/b\n"));
         assert!(chosen(false, b"/a\n").is_empty());
         assert!(chosen(true, b"\n").is_empty());
+    }
+
+    /// A notification's words are never taken for an option, and its body shows as written: a file named "-x.txt" or
+    /// "<b>&</b>" alike.
+    #[test]
+    fn notification_text() {
+        assert_eq!(
+            vec!["--app-name=unbraid", "--icon=unbraid", "--", "-t", "-x.txt &lt;b&gt;&amp;&lt;/b&gt;"],
+            notify_args("-t", "-x.txt <b>&</b>")
+        );
     }
 
     /// The desktop's light or dark: the portal's answer (ReadOne or Read), else GNOME's setting; one that says nothing is none.
