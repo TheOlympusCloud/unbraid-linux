@@ -10,7 +10,8 @@ license=('GPL-3.0-or-later')
 depends=('glibc' 'gcc-libs' 'fontconfig' 'freetype2' 'ttf-font' 'libxkbcommon' 'libxkbcommon-x11' 'libx11' 'libxcursor' 'libxrandr' 'libxi' 'wayland')
 optdepends=('polkit: to take over the connection another user started'
             'libsecret: to keep the store key in the desktop keyring'
-            'libnotify: for desktop notifications')
+            'libnotify: for desktop notifications'
+            'gst-plugins-good: for the first-start introduction film')
 install=unbraid.install
 # Both programs are already stripped.
 options=('!strip' '!debug')
