@@ -8,6 +8,9 @@ This is the Linux version of [unbraid for Android](https://github.com/Quiet-Craf
 Crafts: the same features, the same look laid out for a computer, and the same code where Linux allows it. It runs on
 Debian 13 and later, Ubuntu 24.04 and later, Arch Linux, and the distributions built on them, on x86-64.
 
+It is an unofficial community port, not affiliated with or endorsed by Quiet Crafts: please report its problems here,
+not to them.
+
 ![Routes: the connection, the default route and the exceptions, and the exits in use](docs/screenshots/routes.png)
 
 ## What it works with
@@ -69,7 +72,8 @@ one. Server lists come from each provider's public API where there is one, and o
 
 ## Install
 
-Download the package for your distribution from the releases page, or build it (below).
+Download the package for your distribution from the [Releases page](https://github.com/TheOlympusCloud/unbraid-linux/releases),
+or build it (below).
 
 Debian, Ubuntu, Linux Mint and their derivatives:
 

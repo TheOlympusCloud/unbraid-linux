@@ -44,7 +44,8 @@ check() {
     run "$root" '
         for f in /usr/bin/unbraid /usr/lib/unbraid/unbraid-engine /usr/lib/systemd/system/unbraid-engine.service \
                  /usr/share/polkit-1/actions/app.unbraid.engine.policy /usr/share/applications/unbraid.desktop \
-                 /usr/share/icons/hicolor/scalable/apps/unbraid.svg /usr/share/unbraid/intro.webm; do test -e "$f" || { echo "missing $f"; exit 1; }; done
+                 /usr/share/icons/hicolor/scalable/apps/unbraid.svg /usr/share/unbraid/intro.webm \
+                 /usr/share/doc/unbraid/THIRD-PARTY.md; do test -e "$f" || { echo "missing $f"; exit 1; }; done
         # Every library the app links is installed: the dependencies of the package cover it.
         ! ldd /usr/lib/unbraid/bin/unbraid | grep "not found" || { echo "the app misses a library"; exit 1; }
         echo "libraries: complete"

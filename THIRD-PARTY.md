@@ -1,9 +1,9 @@
 # Third-party software
 
 unbraid is built on other people's work. This file lists what the app and its engine include or download and under which
-licence. The complete licence texts, including every Go module linked into the engine, ship inside the app in
-`app/src/main/resources/notices.txt` (Settings, Licences). `engine/notices.sh` regenerates that file after an engine
-build.
+licence; the packages install it as `/usr/share/doc/unbraid/THIRD-PARTY.md`. The complete licence texts, including every
+Go module linked into the engine, ship inside the app from `app/notices.txt` (Settings, Licences). `engine/notices.sh`
+regenerates that file after an engine build.
 
 ## The engine (unbraid-engine)
 

@@ -30,6 +30,7 @@ stage() {
   install -Dm644 packaging/files/unbraid.desktop "$r/usr/share/applications/unbraid.desktop"
   install -Dm644 app/ui/unbraid.svg "$r/usr/share/icons/hicolor/scalable/apps/unbraid.svg"
   install -Dm644 app/assets/intro/intro.webm "$r/usr/share/unbraid/intro.webm"
+  install -Dm644 THIRD-PARTY.md "$r/usr/share/doc/unbraid/THIRD-PARTY.md"
 }
 
 rm -rf "$DIST" && mkdir -p "$DIST"
