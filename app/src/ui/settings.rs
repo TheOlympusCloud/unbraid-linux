@@ -1079,7 +1079,7 @@ fn local_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
             ..prompt(
                 "tsdomains",
                 "Domains through Tailscale",
-                "Your tailnet's DNS answers these (MagicDNS, or the nameserver the Tailscale admin console sets for the                  domain), and their connections go through Tailscale, whichever app makes them.",
+                "Your tailnet's DNS answers these (MagicDNS, or the nameserver the Tailscale admin console sets for the domain), and their connections go through Tailscale, whichever app makes them.",
                 row("Save", "").act(Act::TsDomains, ""),
             )
         },
@@ -2021,6 +2021,7 @@ mod tests {
         assert_eq!((Act::Dialog, "tsdomains", "corp.example.com"), (row.act, row.arg.as_str(), row.sub.as_str()));
         let d = v.dialogs.iter().find(|d| d.key == "tsdomains").unwrap();
         assert_eq!(("corp.example.com", Act::TsDomains), (d.inputs[0].value.as_str(), d.confirm.act));
+        assert!(d.text.contains("admin console sets for the domain), and"), "{}", d.text);
     }
 
     fn strs(v: &[&str]) -> Vec<String> {
