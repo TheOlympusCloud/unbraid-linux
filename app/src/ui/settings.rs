@@ -18,7 +18,8 @@ use std::sync::LazyLock;
 
 pub const PRIVACY: &str = "https://unbraid.app/privacy";
 pub const TERMS_URL: &str = "https://unbraid.app/terms";
-const SOURCE: &str = "https://github.com/quiet-crafts/unbraid";
+/// This port's own source: the code this build is made from, as the GPL asks.
+const SOURCE: &str = "https://github.com/TheOlympusCloud/unbraid-linux";
 
 /// The file choosers' titles: the home tunnel's config.
 pub const PICK_HOME_CONFIG: &str = "Choose your router's WireGuard config";
