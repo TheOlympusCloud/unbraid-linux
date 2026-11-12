@@ -1,5 +1,4 @@
-//! The welcome and the terms, before anything else. A new install gets the idea, the four places, then the terms;
-//! someone updating from before the terms gets only the terms, as "One thing first". The terms can't be skipped.
+//! The welcome, before anything else on a new install: the idea, the four places, then what to know before starting.
 
 use crate::APP;
 use std::f64::consts::PI;
@@ -24,39 +23,23 @@ pub struct Strand {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WelcomeView {
-    /// A new install: the idea and the four places come first, with Skip, Back and the steps; otherwise it opens on
-    /// the terms, alone.
-    pub fresh: bool,
-    /// The three pages: the idea, the four places, the terms.
+    /// The three pages: the idea, the four places, what to know before starting.
     pub steps: Vec<WelcomeStep>,
     /// The braid on the first page, drawn in this order.
     pub strands: Vec<Strand>,
 }
 
-/// The welcome for a new install (`fresh`: not signed in and no disclosure accepted yet) or for someone updating.
-pub fn view(fresh: bool) -> WelcomeView {
+pub fn view() -> WelcomeView {
     let step = |overline: &str, title: &str, lead: String| WelcomeStep {
         overline: overline.into(),
         title: title.into(),
         lead,
     };
-    let terms = if fresh {
-        step("Terms", "Before you start", String::new())
-    } else {
-        step(
-            "Updated",
-            "One thing first",
-            format!(
-                "{APP} now has Terms of use. Accept them once to go on; your routes and your connection stay as they are."
-            ),
-        )
-    };
     WelcomeView {
-        fresh,
         steps: vec![
             step("Welcome", "Every app, its own exit", "Your bank direct, streaming through another country, everything else private. All at once, from one switch.".into()),
             step("Four places", "Find your way", format!("Everything {APP} does lives in one of four places.")),
-            terms,
+            step("Good to know", "Before you start", String::new()),
         ],
         strands: braid(),
     }
@@ -121,30 +104,21 @@ pub fn braid() -> Vec<Strand> {
 mod tests {
     use super::*;
 
-    /// A new install meets the idea, the four places and the terms; an update only the terms, with why.
+    /// The idea, the four places, and what to know before starting.
     #[test]
-    fn words_for_a_new_install_and_an_update() {
-        let fresh = view(true);
-        assert!(fresh.fresh);
-        let heads: Vec<_> = fresh.steps.iter().map(|s| (s.overline.as_str(), s.title.as_str())).collect();
+    fn words_for_each_page() {
+        let v = view();
+        let heads: Vec<_> = v.steps.iter().map(|s| (s.overline.as_str(), s.title.as_str())).collect();
         assert_eq!(
             vec![
                 ("Welcome", "Every app, its own exit"),
                 ("Four places", "Find your way"),
-                ("Terms", "Before you start")
+                ("Good to know", "Before you start")
             ],
             heads
         );
-        assert_eq!("Everything unbraid does lives in one of four places.", fresh.steps[1].lead);
-        assert_eq!("", fresh.steps[2].lead);
-
-        let update = view(false);
-        assert!(!update.fresh);
-        assert_eq!(("Updated", "One thing first"), (update.steps[2].overline.as_str(), update.steps[2].title.as_str()));
-        assert_eq!(
-            "unbraid now has Terms of use. Accept them once to go on; your routes and your connection stay as they are.",
-            update.steps[2].lead
-        );
+        assert_eq!("Everything unbraid does lives in one of four places.", v.steps[1].lead);
+        assert_eq!("", v.steps[2].lead);
     }
 
     fn points(path: &str) -> Vec<(f32, f32)> {

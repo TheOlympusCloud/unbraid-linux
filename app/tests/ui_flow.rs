@@ -1,5 +1,5 @@
-//! The screens as a person first meets them, in the app's own window, headless and clicked through: the welcome and
-//! terms, sign-in, then Routes, Apps, Stats, Settings and the location picker of a set-up app; the smallest window; the
+//! The screens as a person first meets them, in the app's own window, headless and clicked through: the welcome,
+//! sign-in, then Routes, Apps, Stats, Settings and the location picker of a set-up app; the smallest window; the
 //! tray's profile switch. Each step leaves a shot in `target/screenshots/flow-*.png`, to set beside the approved ones
 //! (the earlier app's `UiFlowTest` took them). The data folder is a temporary one, and there is no engine.
 
@@ -17,12 +17,12 @@ use slint::{ComponentHandle, Global, LogicalPosition, Model, SharedString};
 use unbraid::desktop_settings::{self as ds, Theme};
 use unbraid::limits::LIMIT_OPT;
 use unbraid::model::{City, Country, DIRECT, Location, Profile, Route, Setup, VERSION, WgPeer};
-use unbraid::window::{
-    self, AppWindow, AppsPage, Ink, PickerPage, SettingsPage, SignInPage, StatsPage, WelcomePage, Win,
-};
+use unbraid::window::{self, AppWindow, AppsPage, Ink, PickerPage, SettingsPage, SignInPage, StatsPage, Win};
 use unbraid::{app, paths, stats, tray, ui};
 
 const KEY: &str = "5p4RkybdRU5uaDi90eu4KZPTFif0lKCg4Qp6t1c4F30=";
+/// The welcome's Get started, on its last page at 1280 × 800.
+const START: (f32, f32) = (848.0, 736.0);
 
 /// The apps' stand-in programs: an /opt of their own, which the shots show (never this computer's paths), where the
 /// approved ones had it.
@@ -219,11 +219,10 @@ fn at(px: &[slint::Rgb8Pixel], width: u32, x: u32, y: u32) -> [u8; 3] {
 }
 
 #[test]
-fn a_welcome_terms_and_sign_in() {
+fn a_welcome_and_sign_in() {
     let _turn = turn(0);
     let win = open();
     assert_eq!(0, win.w.get_stage(), "the welcome before anything else");
-    assert!(WelcomePage::get(&win.w).get_fresh(), "a new install gets the whole welcome");
     shot(&win, "1-welcome", 1280, 800);
     // A new install's introduction (the film itself plays through GStreamer): Esc skips it, and so does a click, which
     // goes no further than the film. The welcome's Next under it stays unpressed, or the clicks below would miss; and
@@ -242,9 +241,8 @@ fn a_welcome_terms_and_sign_in() {
     click(&win.w, 873.0, 738.0); // Next
     shot(&win, "2-welcome-routes", 1280, 800);
     click(&win.w, 873.0, 736.0); // Next
-    click(&win.w, 376.0, 384.0); // I accept the Terms of use
-    shot(&win, "3-terms", 1280, 800);
-    click(&win.w, 815.0, 736.0); // Accept and continue
+    shot(&win, "3-welcome-start", 1280, 800);
+    click(&win.w, START.0, START.1); // Get started, with nothing to tick
     wait_until(&win, "sign-in", |w| w.w.get_stage() == 1);
     let page = SignInPage::get(&win.w);
     assert!(
@@ -338,7 +336,7 @@ fn nord_countries() -> Vec<Country> {
 fn b_screens_of_a_set_up_app() {
     let _turn = turn(1);
     // As the first flow leaves it, also when it ran in an earlier process.
-    ui::tour::accept_terms(true);
+    ui::tour::welcome_seen(true);
     let lab =
         WgPeer::new("Home lab", KEY, vec!["10.8.0.2/32".into()], KEY, "203.0.113.7:51820", vec!["0.0.0.0/0".into()]);
     edit(|s| {

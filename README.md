@@ -100,8 +100,8 @@ back by itself): apps use your normal connection until you connect again.
 
 Open unbraid from your launcher. The first start plays a 16-second introduction, which a click or Esc skips. It plays
 through GStreamer's good plug-ins, which the package recommends (`gst-plugins-good` on Arch); without them, the window
-simply opens. Then the first start walks you through the terms and signing in. After that, give apps their exits on the
-Apps page, and connect on Routes.
+simply opens. Then a short welcome leads to signing in. After that, give apps their exits on the Apps page, and
+connect on Routes.
 
 The window is laid out for a computer. The sidebar keeps the connection and its power button in view, with the pages:
 Routes, Apps, Stats and Settings; in a narrow window it folds to icons. Apps is a table to search and sort, with the
