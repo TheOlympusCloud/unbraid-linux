@@ -227,7 +227,7 @@ file only you can read), and are only sent to the service they belong to. The en
 configuration to disk. A Tailscale node's keys stay in the engine's own folder, which only root can read, as with
 Tailscale's own Linux daemon; so does a file your devices send, until unbraid has saved it in your Downloads folder.
 The list of installed apps is read on your computer so you can assign routes, and it never
-leaves it. The privacy policy, with every service the app talks to, is at [unbraid.app/privacy](https://unbraid.app/privacy).
+leaves it. [PRIVACY.md](PRIVACY.md) lists every service the app connects to, and why.
 
 Routing by program is not a security boundary. A program you run can give itself another program's name, or put
 itself in a folder an app runs from, and so take that app's route, Direct included. Android tells apps apart by their
