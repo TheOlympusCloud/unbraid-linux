@@ -39,6 +39,22 @@ build.
 | [PIA manual-connections](https://github.com/pia-foss/manual-connections) | Sign-in and region steps for Private Internet Access | MIT |
 | PIA certificate authority (`pia_ca_rsa_4096.crt`) | Pinning TLS to PIA's WireGuard servers | MIT, from PIA manual-connections |
 
+## The introduction's sound
+
+The first start's introduction (`app/assets/intro/intro.webm`) is a film made for unbraid. Its sound is mixed from seven
+recordings on [Freesound](https://freesound.org), all under [Creative Commons 0 1.0](https://creativecommons.org/publicdomain/zero/1.0/),
+a public domain dedication. CC0 asks for no credit; they are listed so each sound's source is on record.
+
+| Freesound | Recording | Author | Used for |
+|---|---|---|---|
+| [426767](https://freesound.org/people/cMilan/sounds/426767/) | Apartment Room Tone.wav | cMilan | the room air under the whole film |
+| [664929](https://freesound.org/people/vestibule-door/sounds/664929/) | rope leathery creaking.wav | vestibule-door | the cord turning in close-up |
+| [596513](https://freesound.org/people/EugeneEverett/sounds/596513/) | Rope Tightening.wav | EugeneEverett | the fine crackle under the creaks |
+| [624488](https://freesound.org/people/ValentinPetiteau/sounds/624488/) | Rope - leash - slide - tie - swoosh - movement - handle.wav | ValentinPetiteau | the strands sliding apart, and the strand drawing in to the slash |
+| [792479](https://freesound.org/people/Vrymaa/sounds/792479/) | Jewel - Heavy ring | Vrymaa | the three ring clicks |
+| [181889](https://freesound.org/people/PrdiChlp/sounds/181889/) | Whosh - Reversed/Reverbed breath | PrdiChlp | the air of the camera's rise |
+| [141524](https://freesound.org/people/BStateham/sounds/141524/) | Taylor Guitar Harmonics Pluck 01.wav | BStateham | the title's note |
+
 ## Downloaded while the app runs
 
 | Source | Used for | Licence |

@@ -4,7 +4,7 @@ Architecture: amd64
 Maintainer: Pablo Saura Sánchez <saurasanchezpablo@gmail.com>
 Installed-Size: @SIZE@
 Depends: libc6 (>= 2.39), libgcc-s1, libfontconfig1, libfreetype6, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libx11-xcb1, libxcursor1, libxrandr2, libxi6, libwayland-client0, libwayland-cursor0
-Recommends: polkitd | policykit-1, libsecret-tools, libnotify-bin
+Recommends: polkitd | policykit-1, libsecret-tools, libnotify-bin, gstreamer1.0-plugins-good
 Section: net
 Priority: optional
 Homepage: https://github.com/TheOlympusCloud/unbraid-linux

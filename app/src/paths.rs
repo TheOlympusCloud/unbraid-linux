@@ -30,6 +30,11 @@ pub fn engine() -> String {
     env("UNBRAID_ENGINE_SOCKET").unwrap_or_else(|| "/run/unbraid-engine/engine.sock".into())
 }
 
+/// The first start's introduction film ([`crate::intro`]).
+pub fn intro() -> PathBuf {
+    env("UNBRAID_INTRO").map_or_else(|| "/usr/share/unbraid/intro.webm".into(), PathBuf::from)
+}
+
 /// The engine's program, which also runs the app's own unprivileged worker.
 pub fn engine_binary() -> String {
     env("UNBRAID_ENGINE_BIN").unwrap_or_else(|| "/usr/lib/unbraid/unbraid-engine".into())

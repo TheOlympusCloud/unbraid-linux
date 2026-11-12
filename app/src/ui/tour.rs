@@ -1,6 +1,6 @@
 //! The tour of the app: eight stops, each a note beside the element it is about, on the page it is on. And the
-//! first-run state the window keeps in `unbraid_ui.properties`: the terms, the VPN disclosure, the tour still to show
-//! and the leak-proof reminder.
+//! first-run state the window keeps in `unbraid_ui.properties`: the introduction, the terms, the VPN disclosure, the
+//! tour still to show and the leak-proof reminder.
 
 use crate::APP;
 use crate::prefs::{Editor, SharedPreferences};
@@ -9,6 +9,8 @@ use std::sync::{LazyLock, Mutex, MutexGuard};
 /// Raise when the terms change in a way people must accept again.
 const TERMS: i32 = 1;
 const DAY_MS: i64 = 86_400_000;
+/// Starts the introduction may be tried on without one picture of it showing (the app went down meanwhile).
+const INTRO_TRIES: i32 = 2;
 
 /// First-run state, as its preferences hold it; without them (no data folder) it lasts until the app quits.
 #[derive(Default)]
@@ -17,6 +19,10 @@ struct Onboarding {
     terms_ok: bool,
     vpn_ok: bool,
     tour_pending: bool,
+    /// The first start's introduction is still to play: a new install's only.
+    intro_pending: bool,
+    /// Starts that tried it without a picture showing.
+    intro_tries: i32,
     /// Leak-proof setup: 0 not offered yet, 1 snoozed (the Routes reminder comes back at `leak_until`), 3 never remind.
     leak: i32,
     leak_until: i64,
@@ -32,11 +38,15 @@ impl Onboarding {
             let accepted = p.get_boolean("disclosure_accepted", false);
             p.edit(|e| e.put_boolean("vpn_disclosure", accepted));
         }
+        let terms_ok = p.get_int("terms", 0) >= TERMS;
         Onboarding {
             prefs,
-            terms_ok: p.get_int("terms", 0) >= TERMS,
+            terms_ok,
             vpn_ok: p.get_boolean("vpn_disclosure", false),
             tour_pending: p.get_boolean("tour_pending", false),
+            // Accepted terms mean the app was started before: an update, which gets no introduction.
+            intro_pending: !p.get_boolean("intro_seen", terms_ok),
+            intro_tries: p.get_int("intro_tries", 0),
             leak: p.get_int("leak", 0),
             leak_until: p.get_long("leak_until", 0),
             snoozes: p.get_int("leak_snoozes", 0),
@@ -66,6 +76,21 @@ impl Onboarding {
     fn tour_seen(&mut self) {
         self.tour_pending = false;
         self.edit(|e| e.put_boolean("tour_pending", false));
+    }
+
+    fn intro_due(&self) -> bool {
+        self.intro_pending && self.intro_tries < INTRO_TRIES
+    }
+
+    fn intro_trying(&mut self) {
+        self.intro_tries += 1;
+        let tries = self.intro_tries;
+        self.edit(|e| e.put_int("intro_tries", tries));
+    }
+
+    fn intro_seen(&mut self) {
+        self.intro_pending = false;
+        self.edit(|e| e.put_boolean("intro_seen", true));
     }
 
     fn set_leak(&mut self, v: i32) {
@@ -139,6 +164,22 @@ pub fn accept_vpn() {
 
 pub fn tour_seen() {
     state().tour_seen();
+}
+
+/// The introduction is still to play: a new install's, until a picture of it has shown, or two starts that tried it
+/// ended before one did.
+pub fn intro_due() -> bool {
+    state().intro_due()
+}
+
+/// A start is about to play the introduction.
+pub fn intro_trying() {
+    state().intro_trying();
+}
+
+/// A picture of the introduction has shown.
+pub fn intro_seen() {
+    state().intro_seen();
 }
 
 pub fn set_leak(v: i32) {
@@ -326,6 +367,26 @@ mod tests {
         let mut lone = Onboarding::load(None);
         lone.accept_terms(true);
         assert!(lone.terms_ok && lone.tour_pending);
+    }
+
+    /// A new install plays the introduction once, counted as seen once a picture of it shows; an update (the terms
+    /// accepted before) never. Starts that try it and end before a picture are counted: after two it isn't tried again.
+    #[test]
+    fn the_introduction_plays_once_on_a_new_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut o = Onboarding::load(Some(prefs(dir.path(), "")));
+        assert!(o.intro_due());
+        o.intro_trying();
+        o.intro_seen();
+        assert!(!Onboarding::load(Some(Box::leak(Box::new(reopen(dir.path()))))).intro_due());
+        assert!(!Onboarding::load(Some(prefs(dir.path(), "terms=1\n"))).intro_due(), "an update");
+        assert!(Onboarding::load(Some(prefs(dir.path(), "terms=0\n"))).intro_due(), "terms never accepted");
+        // Two starts that went down before a picture: the next start opens without it.
+        let mut o = Onboarding::load(Some(prefs(dir.path(), "")));
+        o.intro_trying();
+        assert!(Onboarding::load(Some(Box::leak(Box::new(reopen(dir.path()))))).intro_due());
+        o.intro_trying();
+        assert!(!Onboarding::load(Some(Box::leak(Box::new(reopen(dir.path()))))).intro_due());
     }
 
     /// Not now: back in 3 days, then 7, then every 14.

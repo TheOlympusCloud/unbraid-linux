@@ -5,6 +5,7 @@
 slint::include_modules!();
 
 mod apps;
+mod intro;
 mod keys;
 mod picker;
 mod routes;
@@ -248,6 +249,8 @@ pub fn run(args: &Args, socket: &Path) {
     *locked(&SYSTEM_DARK) = desktop::system_dark();
     let win = open();
     follow_theme();
+    // A new install's first start opens on its introduction.
+    intro::start(&win, VISIBLE.load(Ordering::SeqCst));
     // The window's last place, if it is still on a screen, before it shows: the screens are known once the loop runs.
     let placed = slint::winit_030::invoke_from_active_event_loop(|el| {
         let screens: Vec<ds::Rect> =
@@ -543,6 +546,13 @@ impl Win {
 
     /// A shortcut: the window's keys, before anything in it sees them. True for one it used.
     fn key(&self, text: &str, ctrl: bool, shift: bool, alt: bool) -> bool {
+        // The introduction has every key; Esc skips it.
+        if self.w.get_intro_on() {
+            if text == "\u{1b}" {
+                intro::end(self);
+            }
+            return true;
+        }
         let Some(ask) = keys(text, ctrl, shift, alt) else { return false };
         let (terms, signed_in) = (tour::terms_ok(), *self.ui.signed_in.borrow());
         let phase = self.ui.vpn().borrow().phase;
@@ -612,6 +622,8 @@ impl Win {
     }
 
     pub fn hide(&self) {
+        // The introduction ends with the window: it never plays on, or sounds, with none on screen.
+        intro::end(self);
         self.save_place();
         VISIBLE.store(false, Ordering::SeqCst);
         let _ = self.w.hide();
@@ -655,6 +667,9 @@ impl Win {
     fn wire(&self) {
         let w = &self.w;
         w.on_key(|t, c, s, a| with(|win| win.key(&t, c, s, a)).unwrap_or(false));
+        w.on_intro_skip(|| {
+            with(intro::end);
+        });
         w.on_page_clicked(|i| {
             with(|win| win.page_clicked(i.max(0) as usize));
         });

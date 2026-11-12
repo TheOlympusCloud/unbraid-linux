@@ -27,6 +27,7 @@ stage() {
   install -Dm644 packaging/files/app.unbraid.engine.policy "$r/usr/share/polkit-1/actions/app.unbraid.engine.policy"
   install -Dm644 packaging/files/unbraid.desktop "$r/usr/share/applications/unbraid.desktop"
   install -Dm644 app/ui/unbraid.svg "$r/usr/share/icons/hicolor/scalable/apps/unbraid.svg"
+  install -Dm644 app/assets/intro/intro.webm "$r/usr/share/unbraid/intro.webm"
 }
 
 rm -rf "$DIST" && mkdir -p "$DIST"
