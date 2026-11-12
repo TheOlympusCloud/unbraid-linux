@@ -167,6 +167,8 @@ pub fn compile(i: &Input) -> Result<String> {
             shared.get(id).cloned().unwrap_or_else(|| format!("r-{id}"))
         }
     };
+    // The user's own domains through Tailscale: only while the tailnet can be reached, whose DNS answers them.
+    let through_ts: &[String] = if s.home.tailscale { &s.home.domains } else { &[] };
     let ts_domains: Vec<String> = ["ts.net".to_string()]
         .into_iter()
         .filter(|_| official_ts(&s.home))
@@ -306,6 +308,11 @@ pub fn compile(i: &Input) -> Result<String> {
         dns_rules.push(json!({"domain_suffix": ["local", "lan", "home.arpa", "fritz.box"], "server": "local"}));
     }
     dns_rules.push(json!({"query_type": ["A", "AAAA"], "server": "fake", "rewrite_ttl": 1}));
+    // Their addresses are fake ones too, so each connection still names its domain; its other lookups (HTTPS, SRV, TXT…)
+    // go to the tailnet's DNS, whichever app asks.
+    if !through_ts.is_empty() {
+        dns_rules.push(json!({"domain_suffix": through_ts, "server": "dns-tailnet"}));
+    }
     // Other query types (HTTPS, SVCB, TXT…) go to the asking app's own exit, never the ISP.
     for (id, pkgs) in &per_app {
         dns_rules.push(if i.blocked.contains(id) {
@@ -430,6 +437,11 @@ pub fn compile(i: &Input) -> Result<String> {
         }
     }
     rules.extend(network.iter().cloned());
+    // The user's domains through Tailscale beat any app's route: looked up on the tailnet's DNS, then out through it.
+    if !through_ts.is_empty() {
+        rules.push(json!({"domain_suffix": through_ts, "action": "resolve", "server": "dns-tailnet"}));
+        rules.push(json!({"domain_suffix": through_ts, "outbound": TS_TAG}));
+    }
     // While Tailscale waits for a sign-in, its login pages skip the tailnet for apps on a Tailscale exit: the exit node
     // can't carry them before the sign-in. Other apps keep their own exits, and once signed in these sites follow the
     // exit too (the engine's own control traffic never needs the rule).
@@ -2134,6 +2146,33 @@ PersistentKeepalive = 25
         );
     }
 
+    /// Domains through Tailscale: their fake addresses resolve on the tailnet's DNS and leave through Tailscale before
+    /// any app's route, and their other lookups go to the tailnet's DNS; nothing of it while the tailnet is off.
+    #[test]
+    fn domains_go_through_tailscale() {
+        let domains = strs(&["corp.example.com", "internal"]);
+        let with = |tailscale: bool, domains: Vec<String>| Setup {
+            home: Home { tailscale, domains, ..example().home },
+            ..example()
+        };
+        let c = compiled(&with(true, domains.clone()));
+        let (route, dns) = (rules(&c), dns_rules(&c));
+        let resolve =
+            route.iter().position(|r| r["domain_suffix"] == json!(domains) && r["action"] == "resolve").unwrap();
+        assert_eq!("dns-tailnet", route[resolve]["server"]);
+        assert_eq!(json!({"domain_suffix": domains, "outbound": "home-ts"}), route[resolve + 1]);
+        let app = route.iter().position(|r| r.get("package_name").is_some()).unwrap();
+        let home = route.iter().position(|r| r["outbound"] == "home-ts" && r.get("ip_cidr").is_some()).unwrap();
+        assert!(home < resolve && resolve < app, "{home} {resolve} {app}");
+        let fake = dns.iter().position(|r| r["server"] == "fake").unwrap();
+        assert_eq!(json!({"domain_suffix": domains, "server": "dns-tailnet"}), dns[fake + 1]);
+        assert!(dns[fake + 2].get("package_name").is_some());
+        for off in [with(false, domains.clone()), with(true, vec![])] {
+            let c = compiled(&off);
+            assert!(rules(&c).iter().chain(dns_rules(&c)).all(|r| r["domain_suffix"] != json!(domains)));
+        }
+    }
+
     #[test]
     fn tailscale_exit_node_takes_an_ip_and_keeps_its_name() {
         let nas = Route { ts_name: Some("nas".into()), ..ts_route("ts", "100.101.102.103", 4) };
@@ -2371,6 +2410,18 @@ PersistentKeepalive = 25
         };
         let s = Setup { home, ..g_setup(vec![g_nl()], "nl", &[("firefox", DIRECT)]) };
         golden("home-tailnet", Golden { ts_suffix: Some("tail1234.ts.net"), fake_block: 5, ..g(s) });
+    }
+
+    #[test]
+    fn golden_ts_domains() {
+        let home = Home {
+            tailscale: true,
+            subnets: strs(&["192.168.178.0/24"]),
+            domains: strs(&["corp.example.com", "internal"]),
+            ..Home::default()
+        };
+        let s = Setup { home, ..g_setup(vec![g_nl(), g_se()], "nl", &[("firefox", "se"), ("spotify", DIRECT)]) };
+        golden("ts-domains", Golden { ts_suffix: Some("tail1234.ts.net"), ..g(s) });
     }
 
     #[test]

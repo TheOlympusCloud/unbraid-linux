@@ -333,6 +333,10 @@ pub struct Home {
     /// A Headscale server's DNS suffix the user allowed to answer every app's lookups under it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ts_suffix_allowed: Option<String>,
+    /// Domains reached through Tailscale, e.g. corp.example.com: their lookups (subdomains too) go to the tailnet's DNS
+    /// and their connections through Tailscale, whichever app makes them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub domains: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]

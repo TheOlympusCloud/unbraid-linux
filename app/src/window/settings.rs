@@ -54,7 +54,7 @@ macro_rules! same {
         }
     };
 }
-same!(act: Act => SettingsAct [None, Open, Pick, Url, Dialog, Advanced, Tailscale, TsLogin, Suffix, Lan, HomeConfig, Opt, Filter, FilterRoutes, FilterDirect, Outside, Through, Stats, Login, Connect, Minimised, CloseToTray, RememberWindow, Theme, Tour, AddProvider, ImportFile, Shadowsocks, SaveFilter, SignOutTailscale, TsServer, SendFiles, CancelSend, Subnets, DeleteStats, Limit, SignOut, RenameServer, RemoveServer]);
+same!(act: Act => SettingsAct [None, Open, Pick, Url, Dialog, Advanced, Tailscale, TsLogin, Suffix, Lan, HomeConfig, Opt, Filter, FilterRoutes, FilterDirect, Outside, Through, Stats, Login, Connect, Minimised, CloseToTray, RememberWindow, Theme, Tour, AddProvider, ImportFile, Shadowsocks, SaveFilter, SignOutTailscale, TsServer, TsDomains, SendFiles, CancelSend, Subnets, DeleteStats, Limit, SignOut, RenameServer, RemoveServer]);
 same!(end: End => SettingsEnd [None, Chevron, Dot, Toggle, Radio, External, Delete, Mark, Keys, Remove, Expand]);
 same!(glyph: Glyph => SettingsGlyph [None, VpnKey, Hub, Home, Tunnel, Shield, Layers, Stats, Bolt, Info, File, Phone, Dns, Lan, Router, Power, Routes, Sliders]);
 same!(tone: Tone => SettingsTone [Good, Warn, Bad, Idle]);
@@ -271,6 +271,9 @@ pub(super) fn wire(w: &AppWindow) {
     p.on_cancel_send(taildrop::cancel);
     p.on_set_subnets(|t| {
         app::store().edit(|s| logic::set_subnets(s, &t).unwrap_or_else(|| s.clone()));
+    });
+    p.on_set_ts_domains(|t| {
+        app::store().edit(|s| logic::set_ts_domains(s, &t).unwrap_or_else(|| s.clone()));
     });
     p.on_sign_out(|provider| {
         with(|win| win.ui.sign_out(&provider));

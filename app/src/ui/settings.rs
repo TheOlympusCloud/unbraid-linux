@@ -131,6 +131,8 @@ pub enum Act {
     SaveFilter,
     SignOutTailscale,
     TsServer,
+    /// Saves the domains through Tailscale, as typed.
+    TsDomains,
     /// Sends files to tailnet device `arg` (its Tailscale ID): the file chooser opens.
     SendFiles,
     CancelSend,
@@ -1017,7 +1019,7 @@ fn local_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
         }
         None => row("Home WireGuard tunnel", "Not set up · import your router's .conf").end(End::Chevron),
     };
-    let subnets = h.subnets.join(", ");
+    let (subnets, domains) = (h.subnets.join(", "), h.domains.join(", "));
     let mut groups = vec![
         group(
             "This network",
@@ -1046,21 +1048,42 @@ fn local_page(i: &Inputs) -> (Vec<Group>, Vec<Dialog>) {
         "{} · a WireGuard tunnel uses its own config's ranges",
         if subnets.is_empty() { "None" } else { &subnets }
     );
+    let none = |t: &str| if t.is_empty() { "none".to_string() } else { t.to_string() };
     groups.extend(advanced(
-        format!("Home subnets through Tailscale: {}", if subnets.is_empty() { "none" } else { &subnets }),
+        format!("Home subnets through Tailscale: {} · Domains: {}", none(&subnets), none(&domains)),
         vec![
             row("Home subnets through Tailscale", line)
                 .act(Act::Dialog, "subnets")
                 .icon(Glyph::Router)
                 .end(End::Chevron),
+            row(
+                "Domains through Tailscale",
+                if domains.is_empty() { "None · e.g. a company's internal domain".into() } else { domains.clone() },
+            )
+            .act(Act::Dialog, "tsdomains")
+            .icon(Glyph::Dns)
+            .end(End::Chevron),
         ],
     ));
-    let dialogs = vec![Dialog {
-        inputs: vec![input("", "192.168.178.0/24", subnets)],
-        hint: "Separate several with commas.".into(),
-        error: "Private ranges only, in CIDR notation, e.g. 192.168.178.0/24".into(),
-        ..prompt("subnets", "Home subnets", "", row("Save", "").act(Act::Subnets, ""))
-    }];
+    let dialogs = vec![
+        Dialog {
+            inputs: vec![input("", "192.168.178.0/24", subnets)],
+            hint: "Separate several with commas.".into(),
+            error: "Private ranges only, in CIDR notation, e.g. 192.168.178.0/24".into(),
+            ..prompt("subnets", "Home subnets", "", row("Save", "").act(Act::Subnets, ""))
+        },
+        Dialog {
+            inputs: vec![input("", "corp.example.com", domains)],
+            hint: "Separate several with commas. Their subdomains go too.".into(),
+            error: "Domain names only, e.g. corp.example.com".into(),
+            ..prompt(
+                "tsdomains",
+                "Domains through Tailscale",
+                "Your tailnet's DNS answers these (MagicDNS, or the nameserver the Tailscale admin console sets for the domain), and their connections go through Tailscale, whichever app makes them.",
+                row("Save", "").act(Act::TsDomains, ""),
+            )
+        },
+    ];
     (groups, dialogs)
 }
 
@@ -1435,6 +1458,26 @@ pub fn home_subnets(text: &str) -> Option<Vec<String>> {
     Some(l.into_iter().filter_map(canonical).collect::<indexmap::IndexSet<_>>().into_iter().collect())
 }
 
+/// The domains typed for Tailscale, as they're saved (lower case, once, without a leading "*." or a trailing dot), or
+/// none while one isn't a domain name. Empty clears them.
+pub fn ts_domains(text: &str) -> Option<Vec<String>> {
+    static NAME: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$").unwrap()
+    });
+    let mut out = indexmap::IndexSet::new();
+    for t in text.split([',', ' ', '\t', '\n', '\r']).filter(|t| !t.is_empty()) {
+        let t = t.to_lowercase();
+        let d = t.trim_start_matches("*.").trim_start_matches('.').trim_end_matches('.');
+        // An address isn't a domain: no top-level domain is all digits.
+        let numeric = d.rsplit('.').next().is_some_and(|l| l.bytes().all(|b| b.is_ascii_digit()));
+        if d.len() > 253 || !NAME.is_match(d) || numeric {
+            return None;
+        }
+        out.insert(d.to_string());
+    }
+    Some(out.into_iter().collect())
+}
+
 /// Whether dialog `key` can save `a`, what's typed in its first field.
 pub fn valid(key: &str, a: &str) -> bool {
     match key {
@@ -1444,6 +1487,7 @@ pub fn valid(key: &str, a: &str) -> bool {
         }
         "tsserver" => a.trim().is_empty() || HTTPS_URL.is_match(a.trim()),
         "subnets" => home_subnets(a).is_some(),
+        "tsdomains" => ts_domains(a).is_some(),
         k if k.starts_with("limit:") => a.is_empty() || a.parse::<i32>().is_ok_and(|n| (1..=999).contains(&n)),
         k if k.starts_with("server:") => !a.trim().is_empty(),
         _ => true,
@@ -1491,6 +1535,13 @@ pub fn remove_home_wg(s: &Setup) -> Setup {
 pub fn set_subnets(s: &Setup, text: &str) -> Option<Setup> {
     let mut s = s.clone();
     s.home.subnets = home_subnets(text)?;
+    Some(s)
+}
+
+/// Saves the domains through Tailscale typed; none while they aren't [`valid`].
+pub fn set_ts_domains(s: &Setup, text: &str) -> Option<Setup> {
+    let mut s = s.clone();
+    s.home.domains = ts_domains(text)?;
     Some(s)
 }
 
@@ -1943,6 +1994,38 @@ mod tests {
         assert_eq!(None, home_subnets("192.168.1.0/33"));
         let s = set_subnets(&Setup::default(), "192.168.178.1/24").unwrap();
         assert_eq!(vec!["192.168.178.0/24".to_string()], s.home.subnets);
+    }
+
+    /// Domains for Tailscale as typed: lower case, once, a wildcard's or a dot's mark dropped; anything that isn't a
+    /// domain name refuses the whole line. Local & home access lists them, in its Advanced settings.
+    #[test]
+    fn domains_through_tailscale() {
+        assert_eq!(
+            Some(strs(&["corp.example.com", "internal", "nas.home.arpa"])),
+            ts_domains("Corp.Example.com, *.internal  .nas.home.arpa. corp.example.com")
+        );
+        assert_eq!(Some(vec![]), ts_domains(" , "));
+        for bad in ["http://corp.example.com", "corp_example.com", "a..b", "-x.com", "x-.com", "10.0.0.1", "ñ.com"] {
+            assert_eq!(None, ts_domains(bad), "{bad}");
+        }
+        assert_eq!(None, ts_domains(&format!("{}.com", "x".repeat(64))));
+        assert!(valid("tsdomains", "corp.example.com") && !valid("tsdomains", "corp example/x"));
+        let s = set_ts_domains(&Setup::default(), "Corp.Example.com").unwrap();
+        assert_eq!(strs(&["corp.example.com"]), s.home.domains);
+        assert_eq!(None, set_ts_domains(&s, "not/a/domain"));
+        let w = World { setup: s, ..World::new() }.at(&["local"]);
+        let v = w.view();
+        let advanced = v.groups.iter().find(|g| g.advanced).unwrap();
+        assert_eq!("Home subnets through Tailscale: none · Domains: corp.example.com", advanced.rows[0].sub);
+        let row = advanced.rows.iter().find(|r| r.title == "Domains through Tailscale").unwrap();
+        assert_eq!((Act::Dialog, "tsdomains", "corp.example.com"), (row.act, row.arg.as_str(), row.sub.as_str()));
+        let d = v.dialogs.iter().find(|d| d.key == "tsdomains").unwrap();
+        assert_eq!(("corp.example.com", Act::TsDomains), (d.inputs[0].value.as_str(), d.confirm.act));
+        assert!(d.text.contains("admin console sets for the domain), and"), "{}", d.text);
+    }
+
+    fn strs(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
     }
 
     /// What each dialog accepts, and keeps of what's typed.
