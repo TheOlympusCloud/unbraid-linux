@@ -110,6 +110,10 @@ export component AppWindow inherits Window {
 
     // The logo, drawn at start (the window's icon in the desktop's task bar).
     in property <image> logo;
+    // A new install's introduction film, over everything, and its newest picture. A click or Esc skips it.
+    in property <bool> intro-on;
+    in property <image> intro-frame;
+    callback intro-skip();
 
     title: "Unbraid by TheOlympus";
     icon: root.logo;
@@ -362,6 +366,36 @@ export component AppWindow inherits Window {
         if root.shortcuts: ShortcutsDialog {
             close => {
                 root.shortcuts-closed();
+            }
+        }
+        // The introduction takes every click, and through the window's keys every key. It shows at once and fades into
+        // the window when it ends. Its ground is the film's own, the dark theme's, which the film ends on.
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            opacity: root.intro-on ? 1 : 0;
+            animate opacity {
+                duration: root.intro-on ? 0ms : Motion.slow-effects;
+                easing: spring(0);
+            }
+            visible: self.opacity > 0;
+            background: #0F1214;
+            Image {
+                width: 100%;
+                height: 100%;
+                source: root.intro-frame;
+                image-fit: contain;
+            }
+            TouchArea {
+                enabled: root.intro-on;
+                accessible-role: button;
+                accessible-label: "Skip the introduction";
+                accessible-action-default => {
+                    root.intro-skip();
+                }
+                clicked => {
+                    root.intro-skip();
+                }
             }
         }
     }

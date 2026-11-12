@@ -225,6 +225,15 @@ fn a_welcome_terms_and_sign_in() {
     assert_eq!(0, win.w.get_stage(), "the welcome before anything else");
     assert!(WelcomePage::get(&win.w).get_fresh(), "a new install gets the whole welcome");
     shot(&win, "1-welcome", 1280, 800);
+    // A new install's introduction (the film itself plays through GStreamer): Esc skips it, and so does a click, which
+    // goes no further than the film. The welcome's Next under it stays unpressed, or the clicks below would miss; and
+    // once the film is over, clicks reach the welcome again.
+    win.w.set_intro_on(true);
+    press(&win.w, Key::Escape);
+    assert!(!win.w.get_intro_on(), "Esc skips the introduction");
+    win.w.set_intro_on(true);
+    click(&win.w, 873.0, 738.0); // where the welcome's Next is
+    assert!(!win.w.get_intro_on(), "a click skips it");
     click(&win.w, 873.0, 738.0); // Next
     shot(&win, "2-welcome-routes", 1280, 800);
     click(&win.w, 873.0, 736.0); // Next

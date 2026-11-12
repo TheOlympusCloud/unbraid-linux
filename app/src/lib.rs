@@ -15,6 +15,7 @@ pub mod exit_check;
 pub mod health;
 pub mod http;
 pub mod instance;
+pub mod intro;
 pub mod keyring;
 pub mod limits;
 pub mod link_picker;

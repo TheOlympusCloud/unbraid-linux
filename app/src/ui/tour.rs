@@ -1,6 +1,6 @@
 //! The tour of the app: eight stops, each a note beside the element it is about, on the page it is on. And the
-//! first-run state the window keeps in `unbraid_ui.properties`: the terms, the VPN disclosure, the tour still to show
-//! and the leak-proof reminder.
+//! first-run state the window keeps in `unbraid_ui.properties`: the introduction, the terms, the VPN disclosure, the
+//! tour still to show and the leak-proof reminder.
 
 use crate::APP;
 use crate::prefs::{Editor, SharedPreferences};
@@ -17,6 +17,8 @@ struct Onboarding {
     terms_ok: bool,
     vpn_ok: bool,
     tour_pending: bool,
+    /// The first start's introduction is still to play: a new install's only.
+    intro_pending: bool,
     /// Leak-proof setup: 0 not offered yet, 1 snoozed (the Routes reminder comes back at `leak_until`), 3 never remind.
     leak: i32,
     leak_until: i64,
@@ -32,11 +34,14 @@ impl Onboarding {
             let accepted = p.get_boolean("disclosure_accepted", false);
             p.edit(|e| e.put_boolean("vpn_disclosure", accepted));
         }
+        let terms_ok = p.get_int("terms", 0) >= TERMS;
         Onboarding {
             prefs,
-            terms_ok: p.get_int("terms", 0) >= TERMS,
+            terms_ok,
             vpn_ok: p.get_boolean("vpn_disclosure", false),
             tour_pending: p.get_boolean("tour_pending", false),
+            // Accepted terms mean the app was started before: an update, which gets no introduction.
+            intro_pending: !p.get_boolean("intro_seen", terms_ok),
             leak: p.get_int("leak", 0),
             leak_until: p.get_long("leak_until", 0),
             snoozes: p.get_int("leak_snoozes", 0),
@@ -66,6 +71,11 @@ impl Onboarding {
     fn tour_seen(&mut self) {
         self.tour_pending = false;
         self.edit(|e| e.put_boolean("tour_pending", false));
+    }
+
+    fn intro_seen(&mut self) {
+        self.intro_pending = false;
+        self.edit(|e| e.put_boolean("intro_seen", true));
     }
 
     fn set_leak(&mut self, v: i32) {
@@ -139,6 +149,15 @@ pub fn accept_vpn() {
 
 pub fn tour_seen() {
     state().tour_seen();
+}
+
+/// A new install's first start plays the introduction, once.
+pub fn intro_pending() -> bool {
+    state().intro_pending
+}
+
+pub fn intro_seen() {
+    state().intro_seen();
 }
 
 pub fn set_leak(v: i32) {
@@ -326,6 +345,18 @@ mod tests {
         let mut lone = Onboarding::load(None);
         lone.accept_terms(true);
         assert!(lone.terms_ok && lone.tour_pending);
+    }
+
+    /// A new install plays the introduction once; an update (the terms accepted before) never.
+    #[test]
+    fn the_introduction_plays_once_on_a_new_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut o = Onboarding::load(Some(prefs(dir.path(), "")));
+        assert!(o.intro_pending);
+        o.intro_seen();
+        assert!(!Onboarding::load(Some(Box::leak(Box::new(reopen(dir.path()))))).intro_pending);
+        assert!(!Onboarding::load(Some(prefs(dir.path(), "terms=1\n"))).intro_pending, "an update");
+        assert!(Onboarding::load(Some(prefs(dir.path(), "terms=0\n"))).intro_pending, "terms never accepted");
     }
 
     /// Not now: back in 3 days, then 7, then every 14.
