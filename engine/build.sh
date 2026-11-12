@@ -50,6 +50,9 @@ libraries that only sing-box's naive outbound uses: this engine is built without
       -ldflags "$LDFLAGS" \\
       -o unbraid-engine ./experimental/boxdd
 
+That engine links the same modules, at the same versions, as the released one, but isn't byte-identical to it: in
+vendor mode Go leaves the modules' checksums (\`h1:\`) out of the build info it embeds, so the file is about 8 KB smaller.
+
 sing-box is licensed under the GNU General Public License, version 3 or later (\`LICENSE\`). Each module in
 \`vendor/\` comes with its own licence.
 END
