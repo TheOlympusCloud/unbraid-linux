@@ -238,9 +238,19 @@ fn here(e: std::io::Error) -> Unsaved {
     Unsaved::Here(e.to_string())
 }
 
+/// A received file's hidden copy while it is written, removed however the save ends: also when the connection's watcher
+/// is aborted mid-file (a disconnect, a pause, a reload). Once linked to its own name, only the hidden name goes.
+struct Temp(PathBuf);
+
+impl Drop for Temp {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 /// Writes a file the engine received into `dir`, under `name` or, if that is taken, the first free "name (n)": never
 /// over a file the user has. The engine's first chunk says the size; the rest is the content. A file that doesn't
-/// arrive whole leaves nothing behind.
+/// arrive whole, or a save cut off, leaves nothing behind.
 pub async fn save<S>(chunks: S, dir: &Path, name: &str) -> Result<PathBuf, Unsaved>
 where
     S: Stream<Item = Result<DownloadTaildropFileChunk, Status>> + Unpin,
@@ -249,22 +259,19 @@ where
         return Err(Unsaved::Here("Its name isn't a file name".into()));
     }
     tokio::fs::create_dir_all(dir).await.map_err(here)?;
-    // Written under a hidden name of its own, then linked to the free name at once: no half file ever shows.
-    let temp = dir.join(format!(".unbraid-{:08x}.part", rand::random::<u32>()));
-    let r = write(chunks, &temp).await;
-    let r = match r {
-        Ok(()) => place(&temp, dir, name),
-        Err(e) => Err(e),
-    };
-    let _ = tokio::fs::remove_file(&temp).await;
-    r
+    // Written under a hidden name of its own, then linked to the free name at once: no half file ever shows. Made and
+    // guarded with no await in between, so no abort comes between the two.
+    let path = dir.join(format!(".unbraid-{:08x}.part", rand::random::<u32>()));
+    let f = std::fs::OpenOptions::new().write(true).create_new(true).open(&path).map_err(here)?;
+    let temp = Temp(path);
+    write(chunks, tokio::fs::File::from_std(f)).await?;
+    place(&temp.0, dir, name)
 }
 
-async fn write<S>(mut chunks: S, to: &Path) -> Result<(), Unsaved>
+async fn write<S>(mut chunks: S, mut f: tokio::fs::File) -> Result<(), Unsaved>
 where
     S: Stream<Item = Result<DownloadTaildropFileChunk, Status>> + Unpin,
 {
-    let mut f = tokio::fs::OpenOptions::new().write(true).create_new(true).open(to).await.map_err(here)?;
     let (mut size, mut written) = (None, 0u64);
     while let Some(c) = chunks.next().await {
         let c = c.map_err(|e| Unsaved::Engine(told(&e)))?;
@@ -432,6 +439,22 @@ mod tests {
         assert!(matches!(blocked, Err(Unsaved::Here(_))), "{blocked:?}");
         assert_eq!(vec!["a (1).txt", "a.txt"], files(&dir));
         assert!(!tmp.path().join("x").exists());
+    }
+
+    /// A save cut off mid-file, as the connection's watcher is when it disconnects, pauses or reloads, leaves nothing in
+    /// Downloads.
+    #[tokio::test]
+    async fn aborted_save_leaves_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("Downloads");
+        let chunks = tokio_stream::iter(vec![chunk(10, b"abc")]).chain(tokio_stream::pending());
+        let d = dir.clone();
+        let saving = tokio::spawn(async move { save(chunks, &d, "a.txt").await });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(1, files(&dir).len(), "the hidden file is being written");
+        saving.abort();
+        assert!(saving.await.unwrap_err().is_cancelled());
+        assert!(files(&dir).is_empty(), "{:?}", files(&dir));
     }
 
     /// What a send streams: the start with every file's name and size, then each file in chunks and its end.
