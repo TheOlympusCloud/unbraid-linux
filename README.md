@@ -62,9 +62,12 @@ Some apps leave part of their networking to a desktop service (KDE's file worker
 accounts); that part follows the default route.
 
 DNS is answered with fake addresses and looked up again on the exit the app really uses, so a site sees the country you
-picked for that app. Linux can't leave single apps out of a tunnel, so Direct apps, like your local network, pass
-through the engine and leave directly. Nothing goes around the engine while it runs, and the lookups your router would
-have seen go through it too. Only the default route and the routes your apps use are connected.
+picked for that app, and the lookups your router would have seen go through the engine too. A name under a domain one
+of your networks gives, such as a work VPN's own domain, is the exception: no exit knows it, so it is looked up on that
+network, through it. Linux can't leave single apps out of a tunnel, so Direct apps pass through the engine and leave
+directly. Traffic to a network the computer has a route of its own for, such as your local network or a work VPN's
+networks, goes there as the system routes it, around the engine. Only the default route and the routes your apps use
+are connected.
 
 For NordVPN, unbraid picks a server from the provider's low-load recommendations when it connects, unless you pinned
 one. Server lists come from each provider's public API where there is one, and otherwise from
@@ -91,7 +94,11 @@ cd dist/arch && makepkg -si
 sudo systemctl enable --now unbraid-engine
 ```
 
-Turn off any other VPN that routes all traffic, including your provider's own app.
+A VPN that reaches a work or school network, such as FortiClient, openfortivpn or one set up in NetworkManager, works
+beside unbraid: its networks are reached through it, and names under its domain are looked up on its DNS server. If it
+carries all traffic, unbraid's exits leave through it too. Turn off your VPN provider's own app, and a VPN that takes
+all traffic with two half routes (OpenVPN's `redirect-gateway def1`, openfortivpn's `--half-internet-routes`): those
+routes come before unbraid's, so no app would reach its exit.
 
 Upgrading the package restarts the engine, which ends the connection (it never keeps your configuration to bring it
 back by itself): apps use your normal connection until you connect again.
@@ -179,8 +186,9 @@ packaging/build.sh                                # writes the .deb and the Arch
 `engine/build.sh source FILE.tar.xz` writes the engine's complete source, with every Go module it builds with, so it
 builds without a network. The patches stop the engine from writing the running configuration, which holds private keys,
 to disk, give an OpenVPN tunnel a resolver inside it when its server pushes none, let the app's connection checks look
-up their servers through the tunnel being checked, and name the daemon `unbraid-engine`. To try the app without
-installing it, run the engine and point the app at it:
+up their servers through the tunnel being checked, look up a name under another network's own domain (a work VPN's) on
+that network, through it, and name the daemon `unbraid-engine`. To try the app without installing it, run the engine
+and point the app at it:
 
 ```bash
 sudo engine/out/unbraid-engine run --working-directory /var/lib/unbraid-engine --socket /run/unbraid-engine/engine.sock
