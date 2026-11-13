@@ -95,10 +95,12 @@ sudo systemctl enable --now unbraid-engine
 ```
 
 A VPN that reaches a work or school network, such as FortiClient, openfortivpn or one set up in NetworkManager, works
-beside unbraid: its networks are reached through it, and names under its domain are looked up on its DNS server. If it
-carries all traffic, unbraid's exits leave through it too. Turn off your VPN provider's own app, and a VPN that takes
-all traffic with two half routes (OpenVPN's `redirect-gateway def1`, openfortivpn's `--half-internet-routes`): those
-routes come before unbraid's, so no app would reach its exit.
+beside unbraid: names under its domain are looked up on its DNS server. If it routes only the work networks (a split
+tunnel), they are reached through it. If it carries all traffic, unbraid's exits leave through it too, but a work server
+is reached through it only from apps set to Direct, or on a private address while Local network bypasses the VPN is on;
+other apps reach it through their own exit, like any other server. Turn off your VPN provider's own app, and a VPN that
+takes all traffic with two half routes (OpenVPN's `redirect-gateway def1`, openfortivpn's `--half-internet-routes`):
+those routes come before unbraid's, so no app would reach its exit.
 
 Upgrading the package restarts the engine, which ends the connection (it never keeps your configuration to bring it
 back by itself): apps use your normal connection until you connect again.
