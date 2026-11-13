@@ -50,6 +50,12 @@
                 "server": "local"
             },
             {
+                "preferred_by": [
+                    "local"
+                ],
+                "server": "local"
+            },
+            {
                 "query_type": [
                     "A",
                     "AAAA"

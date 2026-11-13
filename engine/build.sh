@@ -69,7 +69,7 @@ END
   exit 0
 fi
 if [ "${1:-}" = test ]; then
-  go test -tags "$TAGS" -ldflags "-checklinkname=0" ./daemon/ ./protocol/openvpn/ ./protocol/tailscale/ ./experimental/boxdd/ -run 'STUN|Resolver|Fallback|Unbraid|LinuxPeer'
+  go test -tags "$TAGS" -ldflags "-checklinkname=0" ./daemon/ ./protocol/openvpn/ ./protocol/tailscale/ ./experimental/boxdd/ ./dns/transport/local/ -run 'STUN|Resolver|Fallback|Unbraid|LinuxPeer'
   # The upstream unit tests' own `sing-box check` (KeyProvidersTest): the same patched engine as a plain CLI, never shipped.
   go build -o "$ROOT/engine/out/sing-box-cli" -trimpath -buildvcs=false -tags "$TAGS" -ldflags "-checklinkname=0 -s -w" ./cmd/sing-box
 fi

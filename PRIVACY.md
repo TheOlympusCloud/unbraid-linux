@@ -42,6 +42,11 @@ connects to, and why.
     gives, or else by Quad9 (`9.9.9.9`).
   - Apps set to Direct, and the VPN servers' own names, are looked up with your computer's own resolver.
   - A DNS filter you set in unbraid replaces these where you apply it.
+  - A name under a domain one of your networks gives (your router's own, a work VPN's) is looked up by that network's
+    resolver, through that network, for every app and whatever the filter: no other resolver knows it. Those domains
+    are systemd-resolved's for each network, or else the `search` line of `/etc/resolv.conf`, which without one is the
+    domain of the computer's own name. A domain of one label never counts, so no network can take a whole top-level
+    domain such as `com`.
 - **Speed tests**, only when you start one, after you agree to M-Lab's terms. The test uses M-Lab's Locate service
   (`locate.measurementlab.net`) and the M-Lab server it names, through the exit being tested. M-Lab publishes every
   result with the address it came from, which is that exit's: see

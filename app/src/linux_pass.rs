@@ -7,6 +7,8 @@
 //! - The engine's cache file goes: it would keep every name looked up on disk, where only root could delete it. Each
 //!   engine start is a new domain table ([`crate::compiler::next_block`]).
 //! - Every connection is matched to its process, so statistics can name the app.
+//! - A name under a domain one of the computer's networks gives (a work VPN's, through systemd-resolved or
+//!   resolv.conf) gets its real address from that network, asked through it: the engine's `local` server knows them.
 
 use crate::apps::Matchers;
 use indexmap::IndexSet;
@@ -17,7 +19,10 @@ const ACTION: [&str; 5] = ["action", "outbound", "server", "no_drop", "rewrite_t
 
 pub fn config(json: &str, apps: impl Fn(&str) -> Matchers, own: Option<&str>) -> String {
     let mut c: Map<String, Value> = serde_json::from_str(json).expect("the compiler's own config");
-    let dns_rules = rules(&c["dns"]["rules"], &apps);
+    let mut dns_rules = rules(&c["dns"]["rules"], &apps);
+    // Ahead of the fake addresses, which would send such a name to an exit that doesn't know it.
+    let fake = dns_rules.iter().position(|r| r["server"] == "fake").unwrap_or(dns_rules.len());
+    dns_rules.insert(fake, json!({"preferred_by": ["local"], "server": "local"}));
     c["dns"]["rules"] = Value::Array(dns_rules);
     for i in c["inbounds"].as_array_mut().into_iter().flatten() {
         if let Some(i) = i.as_object_mut() {
@@ -255,6 +260,17 @@ mod tests {
         let c = linux(&setup(), Some(OWN));
         assert!(c.get("experimental").is_none());
         assert_eq!(true, c["route"]["find_process"]);
+    }
+
+    /// A name under a domain one of the computer's networks gives, such as a work VPN's, is looked up on that network
+    /// for its real address, ahead of the fake ones: no exit knows it.
+    #[test]
+    fn network_domains_are_looked_up_on_their_network() {
+        let c = linux(&setup(), Some(OWN));
+        let dns = c["dns"]["rules"].as_array().unwrap();
+        let at = dns.iter().position(|r| r["preferred_by"] == json!(["local"])).unwrap();
+        assert_eq!("local", dns[at]["server"]);
+        assert_eq!(Some(at + 1), dns.iter().position(|r| r["server"] == "fake"));
     }
 
     #[test]
