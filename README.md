@@ -81,7 +81,7 @@ or build it (below).
 Debian, Ubuntu, Linux Mint and their derivatives:
 
 ```bash
-sudo apt install ./unbraid_2.8.2-2_amd64.deb
+sudo apt install ./unbraid_2.8.2-3_amd64.deb
 ```
 
 The engine service is enabled and started for you.

@@ -7,7 +7,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' app/Cargo.toml | head -1)
 # The packages' own revision: raised when the packages change without a new app version, so earlier installs upgrade.
-PKGREL=2
+PKGREL=3
 DIST=$ROOT/dist
 [ -x engine/out/unbraid-engine ] || engine/build.sh
 command -v cargo >/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
