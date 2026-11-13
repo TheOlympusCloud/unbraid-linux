@@ -1,19 +1,27 @@
 diff --git a/dns/transport/local/local.go b/dns/transport/local/local.go
-index 275fe04..f65911f 100644
+index 275fe04..d65033a 100644
 --- a/dns/transport/local/local.go
 +++ b/dns/transport/local/local.go
-@@ -54,6 +54,10 @@ func NewTransport(ctx context.Context, logger log.ContextLogger, tag string, opt
+@@ -2,6 +2,7 @@ package local
+ 
+ import (
+ 	"context"
++	"reflect"
+ 	"sync"
+ 	"sync/atomic"
+ 
+@@ -54,6 +55,10 @@ func NewTransport(ctx context.Context, logger log.ContextLogger, tag string, opt
  	if err != nil {
  		return nil, err
  	}
-+	// Unbraid: a server's own dial options win over the routing table.
-+	if options.Detour == "" && options.BindInterface == "" {
++	// Unbraid: a server with dial options of its own (detour, interface, mark, addresses, netns) keeps them all.
++	if reflect.ValueOf(options.DialerOptions).IsZero() {
 +		transportDialer = &routedDialer{Dialer: transportDialer, ctx: ctx}
 +	}
  	return &Transport{
  		TransportAdapter:  dns.NewTransportAdapterWithLocalOptions(C.DNSTypeLocal, tag, options),
  		ctx:               ctx,
-@@ -129,7 +133,7 @@ func (t *Transport) Reset() {
+@@ -129,7 +134,7 @@ func (t *Transport) Reset() {
  }
  
  func (t *Transport) PreferredDomain(domain string) bool {
@@ -24,10 +32,10 @@ index 275fe04..f65911f 100644
  func (t *Transport) Environment() []string {
 diff --git a/dns/transport/local/local_network.go b/dns/transport/local/local_network.go
 new file mode 100644
-index 0000000..74e0bf7
+index 0000000..907397a
 --- /dev/null
 +++ b/dns/transport/local/local_network.go
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,77 @@
 +package local
 +
 +import (
@@ -35,6 +43,7 @@ index 0000000..74e0bf7
 +	"net"
 +
 +	"github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/sing-box/dns/transport/local/systemconfig"
 +	"github.com/sagernet/sing-box/option"
 +	M "github.com/sagernet/sing/common/metadata"
 +	N "github.com/sagernet/sing/common/network"
@@ -45,17 +54,23 @@ index 0000000..74e0bf7
 +// Unbraid: a name under a search or routing domain that one of the computer's networks gives, such as a work VPN's
 +// own domain, belongs to that network: `preferred_by` sends it here, never to a resolver that doesn't know it.
 +func (t *Transport) networkDomain(name string) bool {
-+	systemConfig := t.configSource.Configuration()
-+	if t.resolved != nil && systemConfig.SystemdResolved {
-+		return t.resolved.NetworkDomain(name)
++	return networkDomain(t.resolved, t.configSource.Configuration(), name)
++}
++
++// Unbraid: systemd-resolved's links while it answers for the system, else resolv.conf's search line (which, without
++// one, is the domain of the computer's own name).
++func networkDomain(resolved ResolvedResolver, systemConfig *systemconfig.Config, name string) bool {
++	if resolved != nil && systemConfig.SystemdResolved {
++		return resolved.NetworkDomain(name)
 +	}
 +	return underDomain(systemConfig.Search, name)
 +}
 +
-+// Unbraid: the root ("~.") never counts: it says where every other name goes, not what a network owns.
++// Unbraid: a domain of one label never counts, so no network takes a whole top-level domain (a Wi-Fi's `search com`)
++// or every name (the root, "~."); a work VPN's own domain has two at least.
 +func underDomain(domains []string, name string) bool {
 +	for _, domain := range domains {
-+		if domain != "." && mDNS.IsSubDomain(domain, name) {
++		if mDNS.CountLabel(domain) >= 2 && mDNS.IsSubDomain(domain, name) {
 +			return true
 +		}
 +	}
@@ -100,10 +115,10 @@ index 0000000..74e0bf7
 +}
 diff --git a/dns/transport/local/local_network_linux.go b/dns/transport/local/local_network_linux.go
 new file mode 100644
-index 0000000..426c2f7
+index 0000000..f59c8f3
 --- /dev/null
 +++ b/dns/transport/local/local_network_linux.go
-@@ -0,0 +1,69 @@
+@@ -0,0 +1,71 @@
 +//go:build linux
 +
 +package local
@@ -123,6 +138,8 @@ index 0000000..426c2f7
 +
 +// Unbraid: the interface of the main routing table's most specific route to addr, or "" when that is the default
 +// route, a route through no single link, or one through the engine's own TUN.
++// shortcut: the main table only, so a server another table routes (Tailscale's 52, wg-quick's) keeps the default
++// interface; follow the policy rules if such a resolver has to be reached.
 +func routeInterface(ctx context.Context, addr netip.Addr) string {
 +	addr = addr.Unmap()
 +	if !addr.IsValid() || addr.Zone() != "" {
@@ -175,23 +192,29 @@ index 0000000..426c2f7
 +}
 diff --git a/dns/transport/local/local_network_linux_test.go b/dns/transport/local/local_network_linux_test.go
 new file mode 100644
-index 0000000..de81269
+index 0000000..9248129
 --- /dev/null
 +++ b/dns/transport/local/local_network_linux_test.go
-@@ -0,0 +1,76 @@
+@@ -0,0 +1,177 @@
 +package local
 +
 +import (
++	"context"
++	"errors"
 +	"net"
 +	"net/netip"
++	"os"
++	"os/exec"
++	"syscall"
 +	"testing"
 +
 +	"github.com/sagernet/netlink"
++	"github.com/sagernet/sing-box/dns/transport/local/systemconfig"
 +)
 +
-+// Unbraid: a network's own domains, and nothing above them; the root claims nothing.
++// Unbraid: a network's own domains, and nothing above them; a top-level domain or the root claims nothing.
 +func TestUnbraidNetworkDomain(t *testing.T) {
-+	search := []string{"corp.example.", "."}
++	search := []string{"corp.example.", "com.", "."}
 +	for name, want := range map[string]bool{
 +		"intranet.corp.example.": true,
 +		"Intranet.CORP.example.": true,
@@ -204,8 +227,8 @@ index 0000000..de81269
 +			t.Errorf("underDomain(%v, %q) = %v", search, name, !want)
 +		}
 +	}
-+	if underDomain([]string{"."}, "www.example.com.") {
-+		t.Error("the root claims every name")
++	if underDomain([]string{"."}, "www.example.com.") || underDomain([]string{"com."}, "www.example.com.") {
++		t.Error("the root or a whole top-level domain claims names (a Wi-Fi's `search com`)")
 +	}
 +
 +	resolver := &DBusResolvedResolver{}
@@ -214,10 +237,105 @@ index 0000000..de81269
 +	}
 +	resolver.savedServerSet.Store(&resolvedServerSet{scopes: []*resolvedScope{
 +		{domains: []string{"."}, defaultRoute: true},
++		{domains: []string{"com."}},
 +		{domains: []string{"corp.example."}},
 +	}})
 +	if !resolver.NetworkDomain("intranet.corp.example.") || resolver.NetworkDomain("www.example.com.") {
 +		t.Error("only the link's own domain is a network's")
++	}
++}
++
++// Unbraid: systemd-resolved's links while it answers for the system (resolv.conf names it), else resolv.conf's own
++// search line, also when resolved can't be reached.
++func TestUnbraidNetworkDomainSource(t *testing.T) {
++	resolver := &DBusResolvedResolver{}
++	resolver.savedServerSet.Store(&resolvedServerSet{scopes: []*resolvedScope{{domains: []string{"vpn.example."}}}})
++	files := &systemconfig.Config{Search: []string{"corp.example."}}
++	viaResolved := &systemconfig.Config{Search: []string{"corp.example."}, SystemdResolved: true}
++	for _, c := range []struct {
++		resolved ResolvedResolver
++		config   *systemconfig.Config
++		name     string
++		want     bool
++		source   string
++	}{
++		{nil, files, "a.corp.example.", true, "resolv.conf"},
++		{resolver, files, "a.corp.example.", true, "resolv.conf that isn't resolved's"},
++		{resolver, files, "a.vpn.example.", false, "resolv.conf that isn't resolved's"},
++		{resolver, viaResolved, "a.vpn.example.", true, "resolved's links"},
++		{resolver, viaResolved, "a.corp.example.", false, "resolved's links"},
++		{nil, viaResolved, "a.corp.example.", true, "resolved out of reach"},
++	} {
++		if networkDomain(c.resolved, c.config, c.name) != c.want {
++			t.Errorf("%s: networkDomain(%s) = %v", c.source, c.name, !c.want)
++		}
++	}
++}
++
++// Unbraid: against a real routing table, in a user and network namespace of its own (skipped where none is allowed):
++// a work VPN's split route, the LAN, the default route, IPv6, a mapped and a zoned address.
++func TestUnbraidRouteInterface(t *testing.T) {
++	if os.Getenv("UNBRAID_NETNS") == "" {
++		cmd := exec.Command(os.Args[0], "-test.run=^TestUnbraidRouteInterface$")
++		cmd.Env = append(os.Environ(), "UNBRAID_NETNS=1")
++		cmd.SysProcAttr = &syscall.SysProcAttr{
++			Cloneflags:  syscall.CLONE_NEWUSER | syscall.CLONE_NEWNET,
++			UidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}},
++			GidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
++		}
++		out, err := cmd.CombinedOutput()
++		var exit *exec.ExitError
++		if err != nil && !errors.As(err, &exit) {
++			t.Skip("no user and network namespace here: ", err)
++		}
++		if err != nil {
++			t.Fatalf("in the namespace:\n%s", out)
++		}
++		return
++	}
++	link := func(name string, addresses ...string) netlink.Link {
++		l := &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: name}}
++		if err := netlink.LinkAdd(l); err != nil {
++			t.Fatal(err)
++		}
++		for _, a := range addresses {
++			addr, err := netlink.ParseAddr(a)
++			if err == nil {
++				err = netlink.AddrAdd(l, addr)
++			}
++			if err != nil {
++				t.Fatal(err)
++			}
++		}
++		if err := netlink.LinkSetUp(l); err != nil {
++			t.Fatal(err)
++		}
++		return l
++	}
++	route := func(r netlink.Route) {
++		if err := netlink.RouteAdd(&r); err != nil {
++			t.Fatal(r, err)
++		}
++	}
++	wlan := link("wlan0", "192.168.1.10/24")
++	ppp := link("ppp0", "10.212.134.200/32")
++	route(netlink.Route{LinkIndex: wlan.Attrs().Index, Gw: net.ParseIP("192.168.1.1")})
++	_, work, _ := net.ParseCIDR("10.0.0.0/8")
++	route(netlink.Route{LinkIndex: ppp.Attrs().Index, Dst: work})
++	_, work6, _ := net.ParseCIDR("2001:db8::/32")
++	route(netlink.Route{LinkIndex: ppp.Attrs().Index, Dst: work6})
++	for addr, want := range map[string]string{
++		"10.0.0.53":        "ppp0",
++		"::ffff:10.0.0.53": "ppp0",
++		"192.168.1.1":      "wlan0",
++		"93.184.216.34":    "",
++		"127.0.0.53":       "",
++		"2001:db8::53":     "ppp0",
++		"fe80::1%wlan0":    "",
++	} {
++		if got := routeInterface(context.Background(), netip.MustParseAddr(addr)); got != want {
++			t.Errorf("routeInterface(%s) = %q, want %q", addr, got, want)
++		}
 +	}
 +}
 +
