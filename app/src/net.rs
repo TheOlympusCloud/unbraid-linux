@@ -6,9 +6,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// Tracks the computer's own default network (the main routing table's IPv4 default route, which the engine's routes
-/// leave alone) as "interface gateway". The engine follows the interface by itself; the app only needs to know when the
-/// network changed, to retry blocked routes and to stop judging servers by checks made on another network.
+/// Tracks the network the engine leaves through, the main routing table's IPv4 default route (which the engine's routes
+/// leave alone), as "interface gateway": a VPN that carries all traffic, whatever its interface, counts like any other.
+/// The engine follows the interface by itself; the app only needs to know when the network changed, to retry blocked
+/// routes and to stop judging servers by checks made on another network.
 // shortcut: IPv4 default route only, polled every 3 s; follow netlink or NetworkManager events if IPv6-only networks matter.
 pub struct NetMonitor {
     routes: PathBuf,
@@ -80,14 +81,14 @@ impl NetMonitor {
         *lock(&self.job) = None;
     }
 
-    /// The default route with the lowest metric, tunnels aside: "interface gateway", or none without one.
+    /// The default route with the lowest metric, as the engine picks it: "interface gateway", or none without one.
     pub fn read(&self) -> Option<String> {
         let text = std::fs::read_to_string(&self.routes).ok()?;
         let best = text
             .lines()
             .skip(1)
             .map(|l| l.split_whitespace().collect::<Vec<_>>())
-            .filter(|f| f.len() >= 8 && f[1] == "00000000" && f[7] == "00000000" && !f[0].starts_with("tun"))
+            .filter(|f| f.len() >= 8 && f[1] == "00000000" && f[7] == "00000000")
             .min_by_key(|f| f[6].parse::<i32>().unwrap_or(i32::MAX))?;
         Some(format!("{} {}", best[0], gateway(best[2])?))
     }
@@ -110,13 +111,19 @@ mod tests {
 
     const HEADER: &str = "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT";
 
-    /// The computer's own default network, from the main routing table: tunnels aside, the lowest metric wins.
+    /// The main routing table's default route with the lowest metric, the one the engine leaves through.
     #[test]
     fn default_network() {
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("route");
-        std::fs::write(&f, format!("{HEADER}\ntun0\t00000000\t00000000\t0001\t0\t0\t0\t00000000\t0\t0\t0\nwlp2s0\t00000000\t0101A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0\nenp3s0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\nenp3s0\t0000000A\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0\n")).unwrap();
+        std::fs::write(&f, format!("{HEADER}\nwlp2s0\t00000000\t0101A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0\nenp3s0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\nenp3s0\t0000000A\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0\n")).unwrap();
         assert_eq!(Some("enp3s0 10.0.0.1".to_string()), NetMonitor::new(&f).read());
+        // A VPN that carries all traffic (FortiClient and openfortivpn on ppp0, OpenVPN on tun0) takes the default route:
+        // the engine's tunnels now leave through it, whatever its interface is called.
+        for vpn in ["ppp0", "tun0"] {
+            std::fs::write(&f, format!("{HEADER}\n{vpn}\t00000000\t00000000\t0001\t0\t0\t50\t00000000\t0\t0\t0\nwlp2s0\t00000000\t0101A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0\n")).unwrap();
+            assert_eq!(Some(format!("{vpn} 0.0.0.0")), NetMonitor::new(&f).read());
+        }
         std::fs::write(&f, format!("{HEADER}\nwlp2s0\t0001A8C0\t00000000\t0001\t0\t0\t600\t00FFFFFF\t0\t0\t0\n"))
             .unwrap();
         assert_eq!(None, NetMonitor::new(&f).read());
