@@ -19,7 +19,8 @@ done
 (cd app && cargo audit --deny warnings -q)
 # The binary names no folder of the computer it was built on, so a build of the same commit elsewhere gives the same
 # file: the target folder and cargo's own (the crates' sources) get fixed names in every crate's paths.
-TARGET=$(realpath -m "${CARGO_TARGET_DIR:-app/target}")
+# Cargo runs in app/, so a relative CARGO_TARGET_DIR is one from there.
+TARGET=$(cd app && realpath -m "${CARGO_TARGET_DIR:-target}")
 CARGO_DIR=$(realpath -m "${CARGO_HOME:-$HOME/.cargo}")
 # shellcheck disable=SC2086 # RUSTFLAGS is split on spaces, as cargo does
 FLAGS=${CARGO_ENCODED_RUSTFLAGS:-$(echo ${RUSTFLAGS:-} | tr ' ' '\037')}
