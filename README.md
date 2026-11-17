@@ -184,6 +184,9 @@ cargo run --release --manifest-path app/Cargo.toml   # runs the app from source 
 packaging/build.sh                                # writes the .deb and the Arch PKGBUILD to dist/
 ```
 
+`packaging/build.sh` builds the app with the target folder and cargo's own named `/build` and `/cargo` in its paths, so
+the binary names no folder of your computer and a build of the same commit with the same Rust gives the same file.
+
 `engine/build.sh` keeps its work files in `~/.cache/unbraid-engine`; set `WORK` to use another folder. For a release,
 `engine/build.sh source FILE.tar.xz` writes the engine's complete source, with every Go module it builds with, so it
 builds without a network. The patches stop the engine from writing the running configuration, which holds private keys,

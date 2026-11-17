@@ -16,13 +16,25 @@ for t in cargo-audit cargo-auditable; do
 done
 # Every crate in Cargo.lock against the RustSec database: an advisory not reviewed in app/.cargo/audit.toml stops the
 # build, as govulncheck does for the engine. The binary then carries its crate list, for audits of what shipped.
-(cd app && cargo audit --deny warnings -q && cargo auditable build --release --locked -q)
+(cd app && cargo audit --deny warnings -q)
+# The binary names no folder of the computer it was built on, so a build of the same commit elsewhere gives the same
+# file: the target folder and cargo's own (the crates' sources) get fixed names in every crate's paths.
+# Cargo runs in app/, so a relative CARGO_TARGET_DIR is one from there.
+TARGET=$(cd app && realpath -m "${CARGO_TARGET_DIR:-target}")
+CARGO_DIR=$(realpath -m "${CARGO_HOME:-$HOME/.cargo}")
+# shellcheck disable=SC2086 # RUSTFLAGS is split on spaces, as cargo does
+FLAGS=${CARGO_ENCODED_RUSTFLAGS:-$(echo ${RUSTFLAGS:-} | tr ' ' '\037')}
+(cd app && CARGO_ENCODED_RUSTFLAGS="${FLAGS:+$FLAGS$'\037'}--remap-path-prefix=$TARGET=/build"$'\037'"--remap-path-prefix=$CARGO_DIR=/cargo" \
+  cargo auditable build --release --locked -q)
+for d in "$TARGET" "$CARGO_DIR" "$HOME"; do
+  ! grep -qaF "$d/" "$TARGET/release/unbraid" || { echo "the app's binary names $d"; exit 1; }
+done
 # The files both packages install, under $1.
 stage() {
   local r=$1
   rm -rf "$r" && mkdir -p "$r/usr/lib/unbraid/bin" "$r/usr/bin"
   # The app is one native program; the engine recognises it by this path, so it stays where the launcher was.
-  install -m755 "${CARGO_TARGET_DIR:-app/target}/release/unbraid" "$r/usr/lib/unbraid/bin/unbraid"
+  install -m755 "$TARGET/release/unbraid" "$r/usr/lib/unbraid/bin/unbraid"
   install -m755 engine/out/unbraid-engine "$r/usr/lib/unbraid/unbraid-engine"
   ln -s ../lib/unbraid/bin/unbraid "$r/usr/bin/unbraid"
   install -Dm644 packaging/files/unbraid-engine.service "$r/usr/lib/systemd/system/unbraid-engine.service"
